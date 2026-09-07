@@ -35,7 +35,7 @@ class ReceiptService {
                 child: pw.Column(
                   children: [
                     pw.Text('Mi~CORAZON', style: pw.TextStyle(font: boldFont, fontSize: 18)),
-                    pw.Text('FRESHMEAT BUTCHERY', style: pw.TextStyle(font: font)),
+                    pw.Text('MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: font)),
                     pw.Text('Location: New Town, Road linking From Water works Ltd. to Atronie Road', 
                       style: pw.TextStyle(font: font, fontSize: 7), textAlign: pw.TextAlign.center),
                     pw.Text('GPS: BS-0006-1566 | Tel: 0209276200', 
@@ -253,7 +253,7 @@ class ReceiptService {
   }
 static String _generateQRData(SaleRecord sale) {
     final buffer = StringBuffer();
-    buffer.writeln('Mi~CORAZON FRESHMEAT');
+    buffer.writeln('MULTI-BUSINESS MANAGER');
     buffer.writeln('Invoice: ${sale.id}');
     buffer.writeln('Date: ${DateFormat('yyyy-MM-dd HH:mm').format(sale.timestamp)}');
     buffer.writeln('Cashier: ${sale.cashierName}');
@@ -320,7 +320,7 @@ static String _generateQRData(SaleRecord sale) {
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('Mi~CORAZON FRESHMEAT BUTCHERY', style: pw.TextStyle(font: boldFont)),
+                    pw.Text('Mi~CORAZON MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont)),
                     pw.Text(DateFormat('yyyy-MM-dd').format(DateTime.now()), style: pw.TextStyle(font: font)),
                   ],
                 ),
@@ -420,7 +420,7 @@ static String _generateQRData(SaleRecord sale) {
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('Mi~CORAZON FRESHMEAT BUTCHERY', style: pw.TextStyle(font: boldFont)),
+                    pw.Text('Mi~CORAZON MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont)),
                     pw.Text(DateFormat('yyyy-MM-dd').format(DateTime.now()), style: pw.TextStyle(font: font)),
                   ],
                 ),
@@ -566,7 +566,7 @@ static String _generateQRData(SaleRecord sale) {
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('Mi~CORAZON FRESHMEAT BUTCHERY', style: pw.TextStyle(font: boldFont)),
+                    pw.Text('Mi~CORAZON MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont)),
                     pw.Text(DateFormat('yyyy-MM-dd').format(DateTime.now()), style: pw.TextStyle(font: font)),
                   ],
                 ),
@@ -690,7 +690,7 @@ static String _generateQRData(SaleRecord sale) {
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('Mi~CORAZON FRESHMEAT BUTCHERY', style: pw.TextStyle(font: boldFont)),
+                    pw.Text('Mi~CORAZON MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont)),
                     pw.Text(DateFormat('yyyy-MM-dd').format(DateTime.now()), style: pw.TextStyle(font: font)),
                   ],
                 ),
@@ -808,7 +808,7 @@ static String _generateQRData(SaleRecord sale) {
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('Mi~CORAZON FRESHMEAT BUTCHERY', style: pw.TextStyle(font: boldFont)),
+                    pw.Text('Mi~CORAZON MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont)),
                     pw.Text(DateFormat('yyyy-MM-dd').format(DateTime.now()), style: pw.TextStyle(font: font)),
                   ],
                 ),
@@ -917,7 +917,7 @@ static String _generateQRData(SaleRecord sale) {
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('Mi~CORAZON FRESHMEAT BUTCHERY', style: pw.TextStyle(font: boldFont)),
+                    pw.Text('Mi~CORAZON MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont)),
                     pw.Text(DateFormat('yyyy-MM-dd').format(DateTime.now()), style: pw.TextStyle(font: font)),
                   ],
                 ),

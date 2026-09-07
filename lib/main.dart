@@ -99,7 +99,7 @@ void main() async {
     
     runApp(
       const ProviderScope(
-        child: MeatShopApp(),
+        child: MultiBusinessApp(),
       ),
     );
   } catch (e, stack) {
@@ -305,8 +305,8 @@ void _showManualConfigDialog(BuildContext context) {
   );
 }
 
-class MeatShopApp extends ConsumerWidget {
-  const MeatShopApp({super.key});
+class MultiBusinessApp extends ConsumerWidget {
+  const MultiBusinessApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

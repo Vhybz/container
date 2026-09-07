@@ -187,7 +187,7 @@ class SmsService {
         ? 'Your account has been approved. You can now log in.' 
         : 'Your application is pending administrator approval. You will be notified once approved.';
 
-    String message = 'Hello ${user.firstName}, thank you for registering with Mi~Corazon Freshmeat Butchery. $statusMessage';
+    String message = 'Hello ${user.firstName}, thank you for registering with Multi-Business Manager. $statusMessage';
     
     if (user.role == UserRole.admin && user.branchCode != null) {
       message += ' Your Shop Registration Code is: ${user.branchCode}. Please share this with your staff to link them to your branch.';
@@ -211,7 +211,7 @@ class SmsService {
   static Future<void> sendCustomerWelcomeSms(String name, String phone, String? branchName) async {
     if (phone.isEmpty) return;
     final String branchText = branchName != null ? '($branchName Branch)' : '';
-    final String message = 'Hello $name, thank you for being part of our favorite customers at Mi~Corazon Freshmeat Butchery $branchText.';
+    final String message = 'Hello $name, thank you for being a valued customer at Multi-Business Manager $branchText.';
     await _sendSms(phone, message);
   }
 

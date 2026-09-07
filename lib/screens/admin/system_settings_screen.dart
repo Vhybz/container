@@ -95,7 +95,7 @@ class _SystemSettingsScreenState extends ConsumerState<SystemSettingsScreen> {
                           'Shop Identification',
                           Icons.business_rounded,
                           [
-                            _settingTile(context, Icons.store_rounded, 'Branch Name', currentBranch?.name ?? 'Mi~CORAZON FRESHMEAT BUTCHERY'),
+                            _settingTile(context, Icons.store_rounded, 'Branch Name', currentBranch?.name ?? 'MULTI-BUSINESS MANAGER'),
                             _settingTile(context, Icons.location_on_rounded, 'Branch Location', currentBranch?.location ?? 'HQ'),
                             _settingTile(context, Icons.gps_fixed_rounded, 'Digital Address (GPS)', 'BS-0006-1566'),
                             _settingTile(context, Icons.phone_android_rounded, 'Emergency Contacts', '0209276200 / 0243672146'),
