@@ -6,12 +6,16 @@ class SupabaseBranchService {
   SupabaseClient get _client => SupabaseConfig.client;
 
   Future<List<Branch>> getBranches() async {
-    final response = await _client
-        .from('branches')
-        .select()
-        .order('name', ascending: true);
-    
-    return (response as List).map((json) => Branch.fromJson(json)).toList();
+    try {
+      final response = await _client
+          .from('branches')
+          .select()
+          .order('name', ascending: true);
+      
+      return (response as List).map((json) => Branch.fromJson(json)).toList();
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<void> createBranch(Branch branch) async {

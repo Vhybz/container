@@ -227,7 +227,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
             Expanded(
               child: ListView.separated(
                 itemCount: _queue.length,
-                separatorBuilder: (_, __) => const Divider(),
+                separatorBuilder: (_, _) => const Divider(),
                 itemBuilder: (context, index) {
                   final q = _queue[index];
                   final isIn = q['status'] == 'In Service';
@@ -258,7 +258,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
         padding: const EdgeInsets.all(AppSpacing.m),
         child: ListView.separated(
           itemCount: _services.length,
-          separatorBuilder: (_, __) => const Divider(),
+          separatorBuilder: (_, _) => const Divider(),
           itemBuilder: (context, index) {
             final s = _services[index];
             return ListTile(
@@ -279,7 +279,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
         padding: const EdgeInsets.all(AppSpacing.m),
         child: ListView.separated(
           itemCount: _commissions.length,
-          separatorBuilder: (_, __) => const Divider(),
+          separatorBuilder: (_, _) => const Divider(),
           itemBuilder: (context, index) {
             final c = _commissions[index];
             return ListTile(

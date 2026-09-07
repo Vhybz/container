@@ -210,7 +210,7 @@ class _TechShopDashboardState extends ConsumerState<TechShopDashboard> with Sing
         padding: const EdgeInsets.all(AppSpacing.m),
         child: ListView.separated(
           itemCount: _devices.length,
-          separatorBuilder: (_, __) => const Divider(),
+          separatorBuilder: (_, _) => const Divider(),
           itemBuilder: (context, index) {
             final d = _devices[index];
             return ListTile(
@@ -246,7 +246,7 @@ class _TechShopDashboardState extends ConsumerState<TechShopDashboard> with Sing
             Expanded(
               child: ListView.separated(
                 itemCount: _workOrders.length,
-                separatorBuilder: (_, __) => const Divider(),
+                separatorBuilder: (_, _) => const Divider(),
                 itemBuilder: (context, index) {
                   final w = _workOrders[index];
                   return ListTile(
@@ -281,7 +281,7 @@ class _TechShopDashboardState extends ConsumerState<TechShopDashboard> with Sing
         padding: const EdgeInsets.all(AppSpacing.m),
         child: ListView.separated(
           itemCount: _warranties.length,
-          separatorBuilder: (_, __) => const Divider(),
+          separatorBuilder: (_, _) => const Divider(),
           itemBuilder: (context, index) {
             final w = _warranties[index];
             return ListTile(

@@ -78,8 +78,10 @@ class AiService {
       roleSpecificInstructions = "SOP: Manage prescription verification, inventory expiration tracking, dosage guidance, and patient safety.";
     } else if (role == UserRole.barber) {
       roleSpecificInstructions = "SOP: Track appointment schedules, service commissions, grooming supply inventory, and client queue.";
-    } else if (role == UserRole.phoneSalesGuy) {
+    } else if (role == UserRole.phoneSales || role == UserRole.phoneSalesGuy) {
       roleSpecificInstructions = "SOP: Manage device IMEI numbers, phone accessory stock, warranty tracking, and device trade-ins/repairs.";
+    } else if (role == UserRole.secretary) {
+      roleSpecificInstructions = "SOP: Oversee barbershop appointment queues and commissions, plus phone sales, IMEI device inventory, and tech repair work orders.";
     } else if (role == UserRole.butcher) {
       roleSpecificInstructions = "SOP: Record Farm Price, weigh parts accurately (90-100% yield), and attach barcodes.";
     } else if (role == UserRole.cashier) {

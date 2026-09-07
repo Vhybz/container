@@ -265,7 +265,7 @@ class _PharmacyDashboardState extends ConsumerState<PharmacyDashboard> with Sing
             Expanded(
               child: ListView.separated(
                 itemCount: _batches.length,
-                separatorBuilder: (_, __) => const Divider(),
+                separatorBuilder: (_, _) => const Divider(),
                 itemBuilder: (context, index) {
                   final b = _batches[index];
                   final isExpired = b['status'] == 'Expired';
@@ -330,7 +330,7 @@ class _PharmacyDashboardState extends ConsumerState<PharmacyDashboard> with Sing
             Expanded(
               child: ListView.separated(
                 itemCount: _prescriptions.length,
-                separatorBuilder: (_, __) => const Divider(),
+                separatorBuilder: (_, _) => const Divider(),
                 itemBuilder: (context, index) {
                   final rx = _prescriptions[index];
                   return ListTile(

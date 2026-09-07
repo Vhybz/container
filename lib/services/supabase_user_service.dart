@@ -7,12 +7,16 @@ class SupabaseUserService {
   SupabaseClient get _client => SupabaseConfig.client;
 
   Future<List<UserAccount>> getUsers() async {
-    final response = await _client
-        .from('users')
-        .select()
-        .eq('is_deleted', false);
-    
-    return (response as List).map((json) => UserAccount.fromJson(json)).toList();
+    try {
+      final response = await _client
+          .from('users')
+          .select()
+          .eq('is_deleted', false);
+      
+      return (response as List).map((json) => UserAccount.fromJson(json)).toList();
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<void> addUser(UserAccount account) async {
@@ -71,27 +75,35 @@ class SupabaseUserService {
   }
 
   Future<UserAccount?> getCurrentUser() async {
-    final user = _client.auth.currentUser;
-    if (user == null) return null;
+    try {
+      final user = _client.auth.currentUser;
+      if (user == null) return null;
 
-    final response = await _client
-        .from('users')
-        .select()
-        .eq('id', user.id)
-        .single();
-    
-    return UserAccount.fromJson(response);
+      final response = await _client
+          .from('users')
+          .select()
+          .eq('id', user.id)
+          .single();
+      
+      return UserAccount.fromJson(response);
+    } catch (e) {
+      return null;
+    }
   }
 
   Future<bool> checkPhoneExists(String phone) async {
-    final response = await _client
-        .from('users')
-        .select('phone')
-        .eq('phone', phone)
-        .limit(1)
-        .maybeSingle();
-    
-    return response != null;
+    try {
+      final response = await _client
+          .from('users')
+          .select('phone')
+          .eq('phone', phone)
+          .limit(1)
+          .maybeSingle();
+      
+      return response != null;
+    } catch (e) {
+      return false;
+    }
   }
 
   Future<String?> uploadProfilePicture(String userId, Uint8List bytes) async {

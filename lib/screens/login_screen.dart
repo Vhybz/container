@@ -110,6 +110,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             case UserRole.phoneSalesGuy:
               Navigator.pushReplacementNamed(context, '/tech');
               break;
+            case UserRole.secretary:
+              Navigator.pushReplacementNamed(context, '/barbershop');
+              break;
             case UserRole.cashier:
               Navigator.pushReplacementNamed(context, '/cashier');
               break;

@@ -1,4 +1,4 @@
-enum UserRole { superAdmin, admin, pharmacist, barber, phoneSales, phoneSalesGuy, cashier, butcher }
+enum UserRole { superAdmin, admin, pharmacist, barber, phoneSales, phoneSalesGuy, secretary, cashier, butcher }
 
 extension UserRoleExtension on UserRole {
   String get display {
@@ -14,6 +14,8 @@ extension UserRoleExtension on UserRole {
       case UserRole.phoneSales:
       case UserRole.phoneSalesGuy:
         return 'Phone Sales Guy';
+      case UserRole.secretary:
+        return 'Secretary';
       case UserRole.cashier:
         return 'Cashier';
       case UserRole.butcher:
@@ -115,6 +117,7 @@ class UserAccount {
         if (lower.contains('pharma')) return UserRole.pharmacist;
         if (lower.contains('barber')) return UserRole.barber;
         if (lower.contains('phone') || lower.contains('sales')) return UserRole.phoneSalesGuy;
+        if (lower.contains('sec')) return UserRole.secretary;
         if (lower.contains('butcher')) return UserRole.butcher;
         return UserRole.cashier;
       }

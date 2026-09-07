@@ -9,13 +9,17 @@ class SupabaseProductService implements ProductService {
 
   @override
   Future<List<Product>> getProducts(String branchCode) async {
-    final response = await _client
-        .from('products')
-        .select()
-        .eq('branch_code', branchCode)
-        .eq('is_deleted', false);
-    
-    return (response as List).map((json) => Product.fromJson(json)).toList();
+    try {
+      final response = await _client
+          .from('products')
+          .select()
+          .eq('branch_code', branchCode)
+          .eq('is_deleted', false);
+      
+      return (response as List).map((json) => Product.fromJson(json)).toList();
+    } catch (e) {
+      return [];
+    }
   }
 
   @override

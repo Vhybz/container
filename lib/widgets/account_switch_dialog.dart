@@ -300,6 +300,7 @@ class _AccountSwitchDialogState extends ConsumerState<AccountSwitchDialog> {
       case UserRole.barber: return Colors.teal;
       case UserRole.phoneSales:
       case UserRole.phoneSalesGuy: return Colors.orange;
+      case UserRole.secretary: return Colors.indigo;
       case UserRole.butcher: return AppColors.primaryMaroon;
       case UserRole.cashier: return Colors.blue;
     }
@@ -313,6 +314,7 @@ class _AccountSwitchDialogState extends ConsumerState<AccountSwitchDialog> {
       case UserRole.barber: return Icons.content_cut;
       case UserRole.phoneSales:
       case UserRole.phoneSalesGuy: return Icons.phone_android;
+      case UserRole.secretary: return Icons.assignment_ind;
       case UserRole.butcher: return Icons.restaurant;
       case UserRole.cashier: return Icons.point_of_sale;
     }

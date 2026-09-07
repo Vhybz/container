@@ -171,6 +171,7 @@ class MenuService {
     // 5. Barbershop Module
     final hasBarbershopAccess = roles.contains(UserRole.superAdmin) || 
                                 roles.contains(UserRole.barber) || 
+                                roles.contains(UserRole.secretary) ||
                                 user.enabledPermissions.contains('/barbershop');
     if (hasBarbershopAccess) {
       items.add(SidebarItem(
@@ -187,7 +188,9 @@ class MenuService {
 
     // 6. Tech & Phone Shop Module
     final hasTechAccess = roles.contains(UserRole.superAdmin) || 
+                          roles.contains(UserRole.phoneSales) || 
                           roles.contains(UserRole.phoneSalesGuy) || 
+                          roles.contains(UserRole.secretary) ||
                           user.enabledPermissions.contains('/tech');
     if (hasTechAccess) {
       items.add(SidebarItem(
@@ -265,6 +268,8 @@ class MenuService {
       case UserRole.phoneSales:
       case UserRole.phoneSalesGuy:
         return '/tech';
+      case UserRole.secretary:
+        return '/barbershop';
       case UserRole.cashier:
         return '/cashier';
       case UserRole.butcher:

@@ -68,9 +68,9 @@ extension IndustryModuleExtension on IndustryModule {
       case IndustryModule.pharmacy:
         return [UserRole.admin, UserRole.pharmacist];
       case IndustryModule.barbershop:
-        return [UserRole.admin, UserRole.barber];
+        return [UserRole.admin, UserRole.barber, UserRole.secretary];
       case IndustryModule.phoneAndAccessories:
-        return [UserRole.admin, UserRole.phoneSalesGuy];
+        return [UserRole.admin, UserRole.phoneSalesGuy, UserRole.secretary];
     }
   }
 
