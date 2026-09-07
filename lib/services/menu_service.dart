@@ -120,36 +120,7 @@ class MenuService {
       }
     }
 
-    // 3. Butcher Module
-    final hasButcherAccess = roles.contains(UserRole.superAdmin) || 
-                             roles.contains(UserRole.butcher) || 
-                             user.enabledPermissions.contains('/butcher');
 
-    if (hasButcherAccess) {
-      if (inButcherShell) {
-        items.addAll([
-          SidebarItem(icon: Icons.dashboard_rounded, label: 'Butcher Home', route: 'butcher:dashboard'),
-          SidebarItem(icon: Icons.assignment_rounded, label: 'Processing Orders', route: 'butcher:orders'),
-          SidebarItem(icon: Icons.pets_rounded, label: 'Animal Intake', route: 'butcher:animalIntake'),
-          SidebarItem(icon: Icons.history_edu_rounded, label: 'Slaughter Logs', route: 'butcher:slaughterLog'),
-          SidebarItem(icon: Icons.outdoor_grill, label: 'Meat Processing', route: 'butcher:meatProcessing'),
-          SidebarItem(icon: Icons.layers_rounded, label: 'Batch Management', route: 'butcher:batchManagement'),
-          SidebarItem(icon: Icons.local_shipping_rounded, label: 'Stock Transfer', route: 'butcher:stockTransfer'),
-          SidebarItem(icon: Icons.inventory_2_rounded, label: 'Internal Inventory', route: 'butcher:inventory'),
-          SidebarItem(icon: Icons.bar_chart_rounded, label: 'Operational Reports', route: 'butcher:reports'),
-          SidebarItem(icon: Icons.receipt_long_rounded, label: 'Unit Expenses', route: 'butcher:expenses'),
-          SidebarItem(icon: Icons.delete_outline_rounded, label: 'Waste Management', route: 'butcher:wasteManagement'),
-          SidebarItem(icon: Icons.folder_open_rounded, label: 'Documents', route: 'butcher:documents'),
-        ]);
-      } else {
-        items.add(SidebarItem(
-          icon: Icons.restaurant_rounded, 
-          label: 'Butcher Operations', 
-          route: '/butcher', 
-          isCatchy: user.newlyAddedPermissions.contains('/butcher'),
-        ));
-      }
-    }
 
     // 4. Pharmacy Module
     final hasPharmacyAccess = roles.contains(UserRole.superAdmin) || 
@@ -234,7 +205,6 @@ class MenuService {
       {'route': '/admin/recents', 'label': 'Company Recents'},
       {'route': '/admin/maintenance', 'label': 'System Maintenance'},
       {'route': '/cashier', 'label': 'Cashier POS Access'},
-      {'route': '/butcher', 'label': 'Butcher Operations Access'},
       {'route': '/pharmacy', 'label': 'Pharmacy Operations Access'},
       {'route': '/barbershop', 'label': 'Barbershop Operations Access'},
       {'route': '/tech', 'label': 'Tech Shop Operations Access'},
