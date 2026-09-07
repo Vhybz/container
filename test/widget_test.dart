@@ -4,6 +4,6 @@ import 'package:multi_business_manager/main.dart';
 
 void main() {
   testWidgets('App renders smoke test', (WidgetTester tester) async {
-    await tester.pumpWidget(const ProviderScope(child: MultiBusinessApp()));
+    await tester.pumpWidget(ProviderScope(child: const MultiBusinessApp()));
   });
 }

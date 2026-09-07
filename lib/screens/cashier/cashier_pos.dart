@@ -1151,6 +1151,7 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
           ],
         ),
       );
+      if (!mounted) return;
       if (confirmed != true) return;
     }
 
@@ -1179,6 +1180,7 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
           ],
         ),
       );
+      if (!mounted) return;
       if (confirmed != true) return;
     }
 
