@@ -656,8 +656,8 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
   void _showPromotionDialog(BuildContext context, WidgetRef ref, UserAccount user) {
     final theme = Theme.of(context);
     DateTimeRange? selectedRange;
-    final availableRoles = UserRole.values
-        .where((r) => r != UserRole.superAdmin && r != user.role)
+    final availableRoles = [UserRole.admin, UserRole.pharmacist, UserRole.secretary]
+        .where((r) => r != user.role)
         .toList();
     
     if (availableRoles.isEmpty) {
@@ -909,7 +909,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     final firstNameController = TextEditingController();
     final surnameController = TextEditingController();
     final emailController = TextEditingController();
-    UserRole selectedRole = UserRole.cashier;
+    UserRole selectedRole = UserRole.secretary;
     String? selectedBranchCode = currentUser?.branchCode;
     bool isSaving = false;
 
@@ -942,7 +942,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   ),
                   DropdownButtonFormField<UserRole>(
                     initialValue: selectedRole,
-                    items: UserRole.values.where((r) => r != UserRole.superAdmin)
+                    items: [UserRole.admin, UserRole.pharmacist, UserRole.secretary]
                         .map((r) => DropdownMenuItem(
                           value: r, 
                           child: Text(r == UserRole.secretary ? 'SECRETARY (BARBERSHOP & TECH)' : r.display.toUpperCase()),

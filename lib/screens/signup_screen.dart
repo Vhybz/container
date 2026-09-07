@@ -31,7 +31,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   
   DateTime? _selectedDob;
   String? _selectedGender;
-  UserRole _selectedRole = UserRole.cashier;
+  UserRole _selectedRole = UserRole.secretary;
   String? _selectedBranchCode;
   bool _isCreatingBranch = false;
   bool _isLoading = false;
@@ -291,9 +291,6 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                                 UserRole.admin,
                                 UserRole.pharmacist,
                                 UserRole.secretary,
-                                UserRole.cashier,
-                                UserRole.barber,
-                                UserRole.phoneSalesGuy,
                               ].map((r) => DropdownMenuItem(
                                 value: r, 
                                 child: Text(
