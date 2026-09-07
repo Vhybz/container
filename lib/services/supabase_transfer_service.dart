@@ -5,12 +5,16 @@ class SupabaseTransferService {
   final _client = SupabaseConfig.client;
 
   Future<List<StockTransfer>> getTransfers() async {
-    final response = await _client
-        .from('stock_transfers')
-        .select()
-        .order('transfer_time', ascending: false);
-    
-    return (response as List).map((json) => StockTransfer.fromJson(json)).toList();
+    try {
+      final response = await _client
+          .from('stock_transfers')
+          .select()
+          .order('transfer_time', ascending: false);
+      
+      return (response as List).map((json) => StockTransfer.fromJson(json)).toList();
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<void> addTransfer(StockTransfer transfer) async {
@@ -25,10 +29,15 @@ class SupabaseTransferService {
   }
 
   Stream<List<StockTransfer>> watchTransfers() {
-    return _client
-        .from('stock_transfers')
-        .stream(primaryKey: ['id'])
-        .order('transfer_time', ascending: false)
-        .map((data) => data.map((json) => StockTransfer.fromJson(json)).toList());
+    try {
+      return _client
+          .from('stock_transfers')
+          .stream(primaryKey: ['id'])
+          .order('transfer_time', ascending: false)
+          .map((data) => data.map((json) => StockTransfer.fromJson(json)).toList())
+          .handleError((_) => <StockTransfer>[]);
+    } catch (e) {
+      return Stream.value(<StockTransfer>[]);
+    }
   }
 }

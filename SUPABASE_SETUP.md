@@ -239,6 +239,25 @@ CREATE TABLE public.warranty_certificates (
 -- 7. LOGISTICS, EXPENSES & CRM
 -- =====================================================
 
+-- STOCK TRANSFERS
+CREATE TABLE public.stock_transfers (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  branch_code TEXT REFERENCES public.branches(code),
+  batch_id TEXT NOT NULL,
+  meat_type TEXT NOT NULL,
+  weight DECIMAL(10,2) NOT NULL,
+  unit TEXT DEFAULT 'pcs',
+  destination TEXT NOT NULL,
+  transfer_time TIMESTAMPTZ DEFAULT now() NOT NULL,
+  status TEXT DEFAULT 'pending',
+  is_individual BOOLEAN DEFAULT false,
+  is_paid BOOLEAN DEFAULT false,
+  is_third_party BOOLEAN DEFAULT false,
+  customer_name TEXT,
+  customer_phone TEXT,
+  customer_location TEXT
+);
+
 -- CUSTOMERS (CRM)
 CREATE TABLE public.customers (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -324,6 +343,7 @@ ALTER TABLE public.branches DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sales DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.stock_transfers DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.medication_batches DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.prescription_records DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.barber_services DISABLE ROW LEVEL SECURITY;

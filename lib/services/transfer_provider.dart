@@ -162,7 +162,7 @@ class TransferNotifier extends StateNotifier<List<StockTransfer>> {
   /// Heartbeat to ensure data stays fresh even if the stream disconnects
   void _startHeartbeat() {
     _refreshTimer?.cancel();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+    _refreshTimer = Timer.periodic(const Duration(seconds: 20), (timer) {
       loadTransfers();
     });
   }
