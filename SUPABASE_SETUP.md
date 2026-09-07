@@ -65,6 +65,10 @@ CREATE TABLE public.users (
   salary_day INT,
   last_salary_date DATE,
   last_payment_was_advance BOOLEAN DEFAULT false,
+  passcode TEXT,
+  passcode_sent_at TIMESTAMPTZ,
+  total_salary_paid DECIMAL(10,2) DEFAULT 0.00,
+  total_advances_taken DECIMAL(10,2) DEFAULT 0.00,
   theme_mode TEXT DEFAULT 'system',
   theme_primary_color BIGINT
 );
