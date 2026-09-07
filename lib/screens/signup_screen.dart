@@ -287,7 +287,21 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                             DropdownButtonFormField<UserRole>(
                               initialValue: _selectedRole,
                               decoration: const InputDecoration(labelText: 'Applying For Role', prefixIcon: Icon(Icons.work_outline)),
-                              items: [UserRole.admin, UserRole.pharmacist, UserRole.barber, UserRole.phoneSalesGuy, UserRole.secretary, UserRole.cashier].map((r) => DropdownMenuItem(value: r, child: Text(r.display.toUpperCase()))).toList(),
+                              items: [
+                                UserRole.admin,
+                                UserRole.pharmacist,
+                                UserRole.secretary,
+                                UserRole.cashier,
+                                UserRole.barber,
+                                UserRole.phoneSalesGuy,
+                              ].map((r) => DropdownMenuItem(
+                                value: r, 
+                                child: Text(
+                                  r == UserRole.secretary 
+                                      ? 'SECRETARY (BARBERSHOP & TECH)' 
+                                      : r.display.toUpperCase()
+                                ),
+                              )).toList(),
                               onChanged: (v) {
                                 setState(() {
                                   _selectedRole = v!;

@@ -943,7 +943,10 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   DropdownButtonFormField<UserRole>(
                     initialValue: selectedRole,
                     items: UserRole.values.where((r) => r != UserRole.superAdmin)
-                        .map((r) => DropdownMenuItem(value: r, child: Text(r.name.toUpperCase()))).toList(),
+                        .map((r) => DropdownMenuItem(
+                          value: r, 
+                          child: Text(r == UserRole.secretary ? 'SECRETARY (BARBERSHOP & TECH)' : r.display.toUpperCase()),
+                        )).toList(),
                     onChanged: (v) => setState(() => selectedRole = v!),
                     decoration: const InputDecoration(labelText: 'Role'),
                   ),
