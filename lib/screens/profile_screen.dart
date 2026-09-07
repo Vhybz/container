@@ -418,11 +418,12 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
             const SnackBar(content: Text('Profile picture updated successfully!'), backgroundColor: Colors.green),
           );
         } else {
-          // Upload failed (offline), but we keep showing the local image for "seamlessness"
+          // Upload failed (e.g. Storage bucket 'user-profiles' missing or network offline)
           messenger.showSnackBar(
             const SnackBar(
-              content: Text('Working offline. Image will sync when connection returns.'),
+              content: Text('Profile picture saved locally. (Ensure "user-profiles" bucket exists in Supabase Storage)'),
               backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
             ),
           );
         }

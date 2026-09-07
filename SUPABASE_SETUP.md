@@ -398,6 +398,18 @@ $$ LANGUAGE plpgsql;
 
 GRANT ALL ON FUNCTION public.increment_stock TO anon, authenticated, service_role;
 
+-- =====================================================
+-- 11. STORAGE BUCKETS (User Profiles & Product Images)
+-- =====================================================
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('user-profiles', 'user-profiles', true)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('product-images', 'product-images', true)
+ON CONFLICT (id) DO NOTHING;
+
 -- Notify schema reload
 NOTIFY pgrst, 'reload schema';
 ```
