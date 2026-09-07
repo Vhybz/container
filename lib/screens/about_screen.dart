@@ -121,7 +121,7 @@ class AboutScreen extends ConsumerWidget {
                     ],
                     border: Border.all(color: AppColors.primaryMaroon.withValues(alpha: 0.1), width: 2),
                     image: const DecorationImage(
-                      image: AssetImage('assets/logo/logo.jpg'),
+                      image: AssetImage('assets/logo/logg.jpeg'),
                       fit: BoxFit.cover,
                     ),
                   ),

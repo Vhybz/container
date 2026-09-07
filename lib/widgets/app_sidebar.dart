@@ -152,7 +152,7 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
               borderRadius: BorderRadius.circular(AppRadius.s),
               border: Border.all(color: Colors.white24),
               image: const DecorationImage(
-                image: AssetImage('assets/logo/logo.jpg'),
+                image: AssetImage('assets/logo/logg.jpeg'),
                 fit: BoxFit.cover,
               ),
             ),

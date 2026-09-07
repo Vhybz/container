@@ -188,7 +188,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
                           ),
                           child: ClipOval(
                             child: Image.asset(
-                              'assets/logo/logo.jpg',
+                              'assets/logo/logg.jpeg',
                               fit: BoxFit.cover,
                             ),
                           ),

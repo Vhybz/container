@@ -198,7 +198,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                             ),
                             child: ClipOval(
                               child: Image.asset(
-                                'assets/logo/logo.jpg',
+                                'assets/logo/logg.jpeg',
                                 fit: BoxFit.cover,
                               ),
                             ),
