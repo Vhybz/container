@@ -9,7 +9,6 @@ import '../services/product_service.dart';
 import '../services/expense_provider.dart';
 import '../services/branch_provider.dart';
 import '../services/transfer_provider.dart';
-import '../services/butcher_service.dart';
 import '../services/auth_provider.dart';
 import 'account_switch_dialog.dart';
 
@@ -521,10 +520,6 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
       ref.invalidate(expenseProvider);
       ref.invalidate(branchesProvider);
       ref.invalidate(transferProvider);
-      ref.invalidate(slaughterLogsProvider);
-      ref.invalidate(activeBatchesProvider);
-      ref.invalidate(recentCutsProvider);
-      ref.invalidate(butcherWasteProvider);
       
       debugPrint('System Refresh triggered');
     } catch (e) {

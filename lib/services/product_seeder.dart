@@ -1,6 +1,5 @@
 import '../core/uuid_utils.dart';
 import '../models/product.dart';
-import '../models/butcher_models.dart';
 import 'product_service.dart';
 import 'user_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,68 +14,40 @@ class ProductSeeder {
 
     final service = ref.read(productServiceProvider);
     
-    final List<Map<String, List<String>>> data = [
+    final List<Map<String, List<Map<String, dynamic>>>> multiSectorData = [
       {
-        'HARD CHICKEN (LAYER)': [
-          'Hard Whole Chicken (Layer)',
-          'Hard Thigh (Layer)',
-          'Hard Breast (Layer)',
-          'Hard Back (Layer)',
-          'Hard Wings (Layer)',
-          'Hard Drumsticks (Layer)',
-          'Gizzard'
+        'PHARMACY': [
+          {'name': 'Amoxicillin 500mg', 'price': 25.0, 'unit': 'pcs', 'requiresPrescription': true},
+          {'name': 'Paracetamol Extra 500mg', 'price': 10.0, 'unit': 'pcs', 'requiresPrescription': false},
+          {'name': 'Ibuprofen 400mg', 'price': 15.0, 'unit': 'pcs', 'requiresPrescription': false},
+          {'name': 'Metformin 850mg', 'price': 35.0, 'unit': 'pcs', 'requiresPrescription': true},
+          {'name': 'Omeprazole 20mg', 'price': 30.0, 'unit': 'pcs', 'requiresPrescription': false},
+          {'name': 'Vitamin C 1000mg Chewable', 'price': 18.0, 'unit': 'pcs', 'requiresPrescription': false},
+          {'name': 'First Aid Kit', 'price': 85.0, 'unit': 'pcs', 'requiresPrescription': false},
+          {'name': 'Hand Sanitizer 500ml', 'price': 25.0, 'unit': 'pcs', 'requiresPrescription': false},
         ]
       },
       {
-        'SOFT CHICKEN (BROILER)': [
-          'Soft Whole Chicken (Broiler)',
-          'Soft Thigh (Broiler)',
-          'Soft Breast (Broiler)',
-          'Soft Back (Broiler)',
-          'Soft Wings (Broiler)',
-          'Soft Drumsticks (Broiler)',
-          'Gizzard'
+        'BARBERSHOP': [
+          {'name': 'Executive Haircut', 'price': 50.0, 'unit': 'service', 'isService': true},
+          {'name': 'Beard Grooming & Oil', 'price': 30.0, 'unit': 'service', 'isService': true},
+          {'name': 'Hair Dye / Blackening', 'price': 45.0, 'unit': 'service', 'isService': true},
+          {'name': 'Facial Scrub & Steam', 'price': 60.0, 'unit': 'service', 'isService': true},
+          {'name': 'Kids Haircut', 'price': 30.0, 'unit': 'service', 'isService': true},
+          {'name': 'Premium Hair Gel (150g)', 'price': 25.0, 'unit': 'pcs', 'isService': false},
+          {'name': 'Beard Growth Oil (50ml)', 'price': 40.0, 'unit': 'pcs', 'isService': false},
         ]
       },
       {
-        'COW': [ 
-          'Offals / Yemadeɛ', 'Feet', 'Head'
+        'PHONE & ACCESSORIES': [
+          {'name': 'iPhone 15 Pro 128GB', 'price': 14500.0, 'unit': 'unit', 'requiresImei': true},
+          {'name': 'Samsung Galaxy S24 Ultra', 'price': 15200.0, 'unit': 'unit', 'requiresImei': true},
+          {'name': 'Google Pixel 8 Pro', 'price': 8500.0, 'unit': 'unit', 'requiresImei': true},
+          {'name': '20W USB-C Fast Charger', 'price': 180.0, 'unit': 'pcs', 'requiresImei': false},
+          {'name': 'MagSafe Clear Case', 'price': 120.0, 'unit': 'pcs', 'requiresImei': false},
+          {'name': '9D Curved Tempered Glass', 'price': 50.0, 'unit': 'pcs', 'requiresImei': false},
+          {'name': 'iPhone Screen Repair (Labor + Part)', 'price': 1200.0, 'unit': 'service', 'isService': true},
         ]
-      },
-      {
-        'BEEF': [
-          'Standard Meat', 'Boneless', 'Cow Steak', 'Liver & Lungs', 
-          'Grounded Meat', 'Tail / Padua'
-        ]
-      },
-      {
-        'GOAT': [
-          'Standard Meat', 'Boneless', 'Offals / Yemadeɛ', 'Head', 'Feet'
-        ]
-      },
-      {
-        'SHEEP': [
-          'Standard Meat', 'Boneless', 'Offals / Yemadeɛ', 'Head', 'Feet'
-        ]
-      },
-      {
-        'PORK': [
-          'Standard Meat', 'Boneless Meat', 'Offals / Yemadeɛ', 'Pork Steak',
-          'Head', 'Ear', 'Feet', 'Liver', 'Skin'
-        ]
-      },
-      {
-        'TURKEY': [
-          'Whole Turkey', 'Breast', 'Thighs', 'Drumsticks', 'Wings', 'Gizzards', 'Feet'
-        ]
-      },
-      {
-        'RABBIT': [
-          'Whole Rabbit', 'Legs', 'Saddle', 'Shoulders'
-        ]
-      },
-      {
-        'FEEDS': ['Dog Feed']
       }
     ];
 
@@ -84,66 +55,40 @@ class ProductSeeder {
     final existingProductsAsync = ref.read(productsFutureProvider);
     final existingNames = existingProductsAsync.value?.map((p) => p.name.toLowerCase()).toSet() ?? {};
 
-    for (var categoryMap in data) {
+    for (var categoryMap in multiSectorData) {
       final category = categoryMap.keys.first;
-      final productNames = categoryMap.values.first;
+      final productList = categoryMap.values.first;
 
-      for (var name in productNames) {
-        final bool isChicken = category == 'HARD CHICKEN (LAYER)' || category == 'SOFT CHICKEN (BROILER)';
+      for (var item in productList) {
+        final String name = item['name'];
+        if (existingNames.contains(name.toLowerCase())) continue;
+
+        final double price = (item['price'] as num).toDouble();
+        final String unit = item['unit'] ?? 'pcs';
+        final bool isService = item['isService'] ?? false;
+        final bool requiresPrescription = item['requiresPrescription'] ?? false;
+        final bool requiresImei = item['requiresImei'] ?? false;
+
+        final String validUuid = UuidUtils.generate();
+
+        final product = Product(
+          id: validUuid,
+          branchCode: user.branchCode,
+          name: name,
+          retailPrice: price,
+          wholesalePrice: price,
+          costPrice: price * 0.7,
+          imageUrl: '', 
+          category: category,
+          stockQuantity: isService ? 999.0 : 50.0,
+          unit: unit,
+          isUnlimited: isService,
+          isService: isService,
+          requiresPrescription: requiresPrescription,
+          requiresImei: requiresImei,
+        );
         
-        if (isChicken && name.toUpperCase() != 'GIZZARD') {
-          // Special handling for chicken parts - Create separate cards for each weight range
-          final bool isHard = category == 'HARD CHICKEN (LAYER)';
-          final type = isHard ? AnimalType.hardChicken : AnimalType.softChicken;
-          final ranges = type.chickenRanges;
-
-          for (var range in ranges) {
-            final rangeName = '$name (${range.label})';
-            if (existingNames.contains(rangeName.toLowerCase())) continue;
-
-            // Only set price automatically for Whole Chickens
-            final double initialPrice = name.contains('Whole') ? range.price : 0.0;
-            final String validUuid = UuidUtils.generate();
-
-            final product = Product(
-              id: validUuid,
-              branchCode: user.branchCode,
-              name: rangeName,
-              retailPrice: initialPrice,
-              wholesalePrice: 0.0,
-              costPrice: 0.0,
-              imageUrl: '', 
-              category: category,
-              stockQuantity: 0.0,
-              unit: name.contains('Whole') ? 'unit' : 'kg',
-            );
-            await service.addProduct(product);
-          }
-        } else {
-          // Standard single card seeding for other items
-          if (existingNames.contains(name.toLowerCase())) continue;
-
-          final String validUuid = UuidUtils.generate();
-
-          final product = Product(
-            id: validUuid,
-            branchCode: user.branchCode,
-            name: name,
-            retailPrice: 0.0,
-            wholesalePrice: 0.0,
-            costPrice: 0.0,
-            imageUrl: '', 
-            category: category,
-            stockQuantity: 0.0,
-            unit: (name.contains('Whole') || 
-                   category == 'TURKEY' || 
-                   category == 'RABBIT') 
-                  ? 'unit' 
-                  : 'kg',
-          );
-          
-          await service.addProduct(product);
-        }
+        await service.addProduct(product);
       }
     }
   }

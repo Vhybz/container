@@ -58,30 +58,21 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
   String? _uploadedReceiptUrl;
 
   static const Map<String, List<String>> allowedCatalog = {
-    'HARD CHICKEN': [
-      'Hard Whole Chicken (Layer)', 'Hard Thigh (Layer)', 'Hard Breast (Layer)', 
-      'Hard Back (Layer)', 'Hard Wings (Layer)', 'Hard Drumsticks (Layer)', 'Gizzard'
+    'PHARMACY': [
+      'Amoxicillin 500mg', 'Paracetamol Extra 500mg', 'Ibuprofen 400mg',
+      'Metformin 850mg', 'Omeprazole 20mg', 'Vitamin C 1000mg Chewable',
+      'First Aid Kit', 'Hand Sanitizer 500ml', 'Digital Thermometer'
     ],
-    'SOFT CHICKEN': [
-      'Soft Whole Chicken (Broiler)', 'Soft Thigh (Broiler)', 'Soft Breast (Broiler)', 
-      'Soft Back (Broiler)', 'Soft Wings (Broiler)', 'Soft Drumsticks (Broiler)', 'Gizzard'
+    'BARBERSHOP': [
+      'Executive Haircut', 'Beard Grooming & Oil', 'Hair Dye / Blackening',
+      'Facial Scrub & Steam', 'Kids Haircut', 'Premium Hair Gel (150g)',
+      'Beard Growth Oil (50ml)'
     ],
-    'BEEF': [
-      'Standard Meat', 'Boneless', 'Cow Steak', 
-      'Liver & Lungs', 'Grounded Meat', 'Tail / Padua'
+    'PHONE & ACCESSORIES': [
+      'iPhone 15 Pro 128GB', 'Samsung Galaxy S24 Ultra', 'Google Pixel 8 Pro',
+      '20W USB-C Fast Charger', 'MagSafe Clear Case', '9D Curved Tempered Glass',
+      'iPhone Screen Repair (Labor + Part)', 'Charging Port Repair'
     ],
-    'COW': [
-      'Offals / Yemadeɛ', 'Feet', 'Head'
-    ],
-    'GOAT': ['Standard Meat', 'Boneless', 'Offals / Yemadeɛ', 'Head', 'Feet'],
-    'SHEEP': ['Standard Meat', 'Boneless', 'Offals / Yemadeɛ', 'Head', 'Feet'],
-    'PORK': [
-      'Standard Meat', 'Boneless Meat', 'Offals / Yemadeɛ', 'Pork Steak',
-      'Head', 'Ear', 'Feet', 'Liver', 'Skin'
-    ],
-    'TURKEY': ['Whole Turkey', 'Breast', 'Thighs', 'Drumsticks', 'Wings', 'Gizzards', 'Feet'],
-    'RABBIT': ['Whole Rabbit', 'Legs', 'Saddle', 'Shoulders'],
-    'FEEDS': ['Dog Feed'],
   };
 
   @override

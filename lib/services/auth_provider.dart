@@ -8,7 +8,6 @@ import 'product_service.dart';
 import 'expense_provider.dart';
 import 'branch_provider.dart';
 import 'transfer_provider.dart';
-import 'butcher_service.dart';
 import 'notification_service.dart';
 import 'cart_provider.dart';
 import 'audit_service.dart';
@@ -75,10 +74,6 @@ class GlobalLogout {
     ref.invalidate(expenseProvider);
     ref.invalidate(branchesProvider);
     ref.invalidate(transferProvider);
-    ref.invalidate(slaughterLogsProvider);
-    ref.invalidate(activeBatchesProvider);
-    ref.invalidate(recentCutsProvider);
-    ref.invalidate(butcherWasteProvider);
     ref.invalidate(notificationProvider);
     ref.invalidate(cartProvider);
   }

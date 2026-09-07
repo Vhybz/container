@@ -9,9 +9,7 @@ import '../../services/menu_service.dart';
 import '../../services/user_provider.dart';
 import '../../services/sale_provider.dart';
 import '../../services/expense_provider.dart';
-import '../../services/butcher_service.dart';
 import '../../models/sale_model.dart';
-import '../../models/butcher_models.dart';
 import '../../models/expense_model.dart';
 
 class RecentsScreen extends ConsumerStatefulWidget {
@@ -38,9 +36,8 @@ class _RecentsScreenState extends ConsumerState<RecentsScreen> {
 
     final sales = ref.watch(saleHistoryProvider);
     final expenses = ref.watch(expenseProvider).records;
-    final logs = ref.watch(slaughterLogsProvider).value ?? [];
 
-    final allActivity = _combineAndFilterActivity(sales, expenses, logs);
+    final allActivity = _combineAndFilterActivity(sales, expenses);
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -191,38 +188,15 @@ class _RecentsScreenState extends ConsumerState<RecentsScreen> {
           ),
         ),
       );
-    } else if (item is SlaughterLog) {
-      return Card(
-        margin: const EdgeInsets.only(bottom: 12),
-        child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.m, vertical: 4),
-          leading: CircleAvatar(
-            backgroundColor: Colors.orange.withValues(alpha: 0.1),
-            child: const Icon(Icons.pets, color: Colors.orange, size: 20),
-          ),
-          title: Row(
-            children: [
-              Expanded(child: Text('Butcher Log: ${item.type.displayName}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis)),
-              Text('${item.liveWeight}kg', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-            ],
-          ),
-          subtitle: Text(
-            'Status: ${item.status.name.toUpperCase()} • ${DateFormat('MMM dd, HH:mm').format(item.slaughterTime ?? DateTime.now())}',
-            style: const TextStyle(fontSize: 11),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      );
     }
     return const SizedBox.shrink();
   }
 
-  List<dynamic> _combineAndFilterActivity(List<SaleRecord> sales, List<ExpenseRecord> expenses, List<SlaughterLog> logs) {
+  List<dynamic> _combineAndFilterActivity(List<SaleRecord> sales, List<ExpenseRecord> expenses) {
     List<dynamic> combined = [];
     
     if (_activeFilter == 'All' || _activeFilter == 'Sales') combined.addAll(sales);
     if (_activeFilter == 'All' || _activeFilter == 'Expenses') combined.addAll(expenses);
-    if (_activeFilter == 'All' || _activeFilter == 'Butcher Logs') combined.addAll(logs);
 
     // Filter by Search Query
     if (_searchQuery.isNotEmpty) {
@@ -233,9 +207,6 @@ class _RecentsScreenState extends ConsumerState<RecentsScreen> {
         }
         if (item is ExpenseRecord) {
           return item.title.toLowerCase().contains(q) || item.category.toLowerCase().contains(q);
-        }
-        if (item is SlaughterLog) {
-          return item.animalId.toLowerCase().contains(q) || item.type.displayName.toLowerCase().contains(q);
         }
         return false;
       }).toList();
@@ -249,8 +220,6 @@ class _RecentsScreenState extends ConsumerState<RecentsScreen> {
           date = item.timestamp;
         } else if (item is ExpenseRecord) {
           date = item.date;
-        } else if (item is SlaughterLog) {
-          date = item.slaughterTime ?? DateTime.now();
         } else {
           return false;
         }
@@ -261,23 +230,8 @@ class _RecentsScreenState extends ConsumerState<RecentsScreen> {
 
     // Sort by Date Descending
     combined.sort((a, b) {
-      DateTime dateA;
-      if (a is SaleRecord) {
-        dateA = a.timestamp;
-      } else if (a is ExpenseRecord) {
-        dateA = a.date;
-      } else {
-        dateA = (a as SlaughterLog).slaughterTime ?? DateTime.now();
-      }
-
-      DateTime dateB;
-      if (b is SaleRecord) {
-        dateB = b.timestamp;
-      } else if (b is ExpenseRecord) {
-        dateB = b.date;
-      } else {
-        dateB = (b as SlaughterLog).slaughterTime ?? DateTime.now();
-      }
+      DateTime dateA = (a is SaleRecord) ? a.timestamp : (a as ExpenseRecord).date;
+      DateTime dateB = (b is SaleRecord) ? b.timestamp : (b as ExpenseRecord).date;
 
       return dateB.compareTo(dateA);
     });

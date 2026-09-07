@@ -18,17 +18,14 @@ import 'screens/admin/expense_management_screen.dart';
 import 'screens/admin/customer_management_screen.dart';
 import 'screens/admin/staff_management_screen.dart';
 import 'screens/admin/system_settings_screen.dart';
-import 'screens/admin/butcher_analytics_screen.dart';
 import 'screens/admin/recents_screen.dart';
 import 'screens/admin/system_maintenance_screen.dart';
 import 'screens/admin/tax_compliance_screen.dart';
 import 'screens/admin/salary_management_screen.dart';
 import 'screens/admin/audit_trail_screen.dart';
 import 'screens/admin/product_activity_report_screen.dart';
-import 'screens/butcher/documents_screen.dart';
 import 'screens/cashier/cashier_pos.dart';
 import 'screens/cashier/stock_verification_screen.dart';
-import 'screens/butcher/butcher_shell.dart';
 import 'screens/settings_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/about_screen.dart';
@@ -331,14 +328,12 @@ class MultiBusinessApp extends ConsumerWidget {
         '/admin/sales': (context) => const SalesReportsScreen(),
         '/admin/expenses': (context) => const ExpenseManagementScreen(),
         '/admin/customers': (context) => const CustomerManagementScreen(),
-        '/admin/documents': (context) => const DocumentsScreen(),
         '/admin/debts': (context) => const DebtManagementScreen(),
         '/admin/stock': (context) => const InventoryControlScreen(),
         '/admin/tax': (context) => const TaxComplianceScreen(),
         '/admin/product-report': (context) => const ProductActivityReportScreen(),
         '/admin/staff': (context) => const StaffManagementScreen(),
         '/admin/salaries': (context) => const SalaryManagementScreen(),
-        '/admin/butcher': (context) => const ButcherAnalyticsScreen(),
         '/admin/recents': (context) => const RecentsScreen(),
         '/admin/maintenance': (context) => const SystemMaintenanceScreen(),
         '/admin/audit': (context) => const AuditTrailScreen(),
@@ -348,7 +343,6 @@ class MultiBusinessApp extends ConsumerWidget {
         '/about': (context) => const AboutScreen(),
         '/cashier': (context) => const CashierPOS(),
         '/cashier/verify-stock': (context) => const StockVerificationScreen(),
-        '/butcher': (context) => const ButcherShell(),
         '/pharmacy': (context) => const PharmacyDashboard(),
         '/pharmacy/pos': (context) => const PharmacistPos(),
         '/barbershop': (context) => const BarbershopDashboard(),

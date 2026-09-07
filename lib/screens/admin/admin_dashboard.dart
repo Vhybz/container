@@ -11,8 +11,6 @@ import '../../services/expense_provider.dart';
 import '../../models/sale_model.dart';
 import '../../services/notification_service.dart';
 import '../../services/product_service.dart';
-import '../../services/butcher_service.dart';
-import '../../models/butcher_models.dart';
 import '../../models/system_models.dart';
 
 import '../../services/menu_service.dart';
@@ -25,6 +23,7 @@ import '../../services/report_service.dart';
 import '../../services/birthday_service.dart';
 import '../../widgets/passcode_guard.dart';
 import '../../services/till_provider.dart';
+import '../../widgets/multi_business_accordion.dart';
 import '../../core/uuid_utils.dart';
 import '../../models/expense_model.dart';
 import '../../services/daily_reminder_service.dart';
@@ -42,16 +41,9 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
   Timer? _timer;
 
   final List<String> _bannerImages = [
-    'assets/images/meat_art.jpg',
-    'assets/images/beef_art.jpg',
-    'assets/images/pork_art.jpg',
-    'assets/images/beef_art2.jpg',
-    'assets/images/butcher_beef.jpg',
-    'assets/images/meat_on_scale.jpg',
-    'assets/images/beef.jpg',
-    'assets/images/pork.jpg',
-    'assets/images/chicken.jpg',
-    'assets/images/for_splash.jpg',
+    'assets/images/bgi/img11.png',
+    'assets/images/bgi/img22.png',
+    'assets/images/CLI.png',
   ];
 
   @override
@@ -196,10 +188,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
     final sales = ref.watch(saleHistoryProvider);
     final saleRequests = sales.where((s) => s.status == SaleStatus.pendingCorrection).toList();
     
-    final notifications = ref.watch(notificationProvider);
-    final butcherReports = notifications.where((n) => n.title.contains('BUTCHER') && !n.isRead).toList();
-
-    if (saleRequests.isEmpty && butcherReports.isEmpty) return const SizedBox.shrink();
+    if (saleRequests.isEmpty) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -215,17 +204,6 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
             onAction: (sale) => _showRectifySaleDialog(context, ref, sale),
           ),
           const SizedBox(height: AppSpacing.l),
-        ],
-        if (butcherReports.isNotEmpty) ...[
-          _buildActionSection(
-            context,
-            ref,
-            title: 'Butcher Unit Reports',
-            icon: Icons.warning_amber_rounded,
-            color: Colors.red,
-            items: butcherReports,
-            onAction: (report) => _showRectifyButcherReportDialog(context, ref, report),
-          ),
         ],
       ],
     );
@@ -463,44 +441,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
     );
   }
 
-  void _showRectifyButcherReportDialog(BuildContext context, WidgetRef ref, SystemNotification report) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.l)),
-        title: const Text('Rectify Butcher Issue'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Reported: ${report.message}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
-            const SizedBox(height: 16),
-            const TextField(
-              decoration: InputDecoration(
-                labelText: 'Resolution Action',
-                hintText: 'e.g., Equipment repaired, Stock replenished',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              ref.read(notificationProvider.notifier).markAsRead(report.id);
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Butcher report resolved and archived.'), backgroundColor: AppColors.accentGreen),
-              );
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.accentGreen, foregroundColor: Colors.white),
-            child: const Text('Mark as Resolved'),
-          ),
-        ],
-      ),
-    );
-  }
+
 
   Widget _buildBanner(BuildContext context) {
     final theme = Theme.of(context);
@@ -963,18 +904,12 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
                                       } else if (r['title'] == 'Inventory Audit') {
                                         final products = ref.read(productsFutureProvider).value ?? [];
                                         await ReportService.generateInventoryAudit(products);
-                                      } else if (r['title'] == 'Slaughter & Yield Log') {
-                                        final logs = ref.read(slaughterLogsProvider).value ?? [];
-                                        await ReportService.generateSlaughterLogReport(logs);
                                       } else if (r['title'] == 'Business Expense Ledger') {
                                         final expenses = ref.read(expenseProvider).records;
                                         await ReportService.generateExpenseLedger(expenses);
                                       } else if (r['title'] == 'Customer Debt Statement') {
                                         final sales = ref.read(saleHistoryProvider);
                                         await ReportService.generateCustomerDebtStatement(sales);
-                                      } else if (r['title'] == 'Meat Breakdown Analysis') {
-                                        final cuts = ref.read(recentCutsProvider).value ?? [];
-                                        await ReportService.generateMeatBreakdownAnalysis(cuts);
                                       } else if (r['title'] == 'Staff Performance') {
                                         final sales = ref.read(saleHistoryProvider);
                                         final staff = ref.read(userProvider);
@@ -1027,12 +962,6 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
       s.timestamp.month == now.month && 
       s.timestamp.year == now.year
     ).toList();
-    
-    final logsAsync = ref.watch(slaughterLogsProvider);
-    final todayLogs = logsAsync.value?.where((l) {
-      final date = l.slaughterTime ?? now;
-      return date.day == now.day && date.month == now.month && date.year == now.year;
-    }).toList() ?? [];
 
     final totalRevenue = sales.where((s) => s.isActive).fold(0.0, (sum, sale) => sum + sale.totalAmount);
     final totalCost = sales.where((s) => s.isActive).fold(0.0, (sum, sale) => sum + sale.totalCost);
@@ -1105,7 +1034,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
             ),
             _kpiWithTrend(context, 'Total Debt', '₵${totalDebt.toStringAsFixed(0)}', Icons.money_off, Colors.red, 'TOTAL'),
             _kpiWithTrend(context, 'Promo Impact', '₵${totalDiscounts.toStringAsFixed(0)}', Icons.auto_awesome, Colors.orange, 'SAVED'),
-            _kpiWithTrend(context, 'Daily Slaughter', '${todayLogs.length}', Icons.precision_manufacturing, Colors.green, 'TODAY'),
+            _kpiWithTrend(context, 'Completed Sales', '${sales.length}', Icons.point_of_sale, Colors.green, 'TODAY'),
           ],
         ),
         const SizedBox(height: AppSpacing.m),
@@ -1184,7 +1113,6 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
   Widget _buildResponsiveMainContent(BuildContext context, WidgetRef ref) {
     final isDesktop = ResponsiveLayout.isDesktop(context);
     final sales = ref.watch(saleHistoryProvider);
-    final logsAsync = ref.watch(slaughterLogsProvider);
     
     final promoSales = sales.where((s) => s.totalDiscount > 0).toList();
     final totalImpact = promoSales.fold(0.0, (sum, s) => sum + s.totalDiscount);
@@ -1199,10 +1127,8 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
               children: [
                 _buildPerformanceChart(context, sales),
                 const SizedBox(height: AppSpacing.l),
-                logsAsync.when(
-                  data: (logs) => _buildSlaughterTrendChart(context, logs),
-                  loading: () => const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())),
-                  error: (e, _) => const Text('Error loading slaughter trend'),
+                MultiBusinessAccordion(
+                  onNavigate: (route) => MenuService.navigate(context, route, '/admin'),
                 ),
               ],
             )
@@ -1225,10 +1151,8 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
         children: [
           _buildPerformanceChart(context, sales),
           const SizedBox(height: AppSpacing.l),
-          logsAsync.when(
-            data: (logs) => _buildSlaughterTrendChart(context, logs),
-            loading: () => const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())),
-            error: (e, _) => const Text('Error loading slaughter trend'),
+          MultiBusinessAccordion(
+            onNavigate: (route) => MenuService.navigate(context, route, '/admin'),
           ),
           const SizedBox(height: AppSpacing.l),
           _buildPromotionImpactCard(context, promoSales, totalImpact),
@@ -1237,104 +1161,6 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
         ],
       );
     }
-  }
-
-  Widget _buildSlaughterTrendChart(BuildContext context, List<SlaughterLog> logs) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    
-    // Group logs by day for the last 7 days
-    final now = DateTime.now();
-    final last7Days = List.generate(7, (index) {
-      return now.subtract(Duration(days: 6 - index));
-    });
-
-    final dailyCounts = last7Days.map((date) {
-      return logs.where((l) {
-        final logDate = l.slaughterTime ?? DateTime.now();
-        return logDate.year == date.year && logDate.month == date.month && logDate.day == date.day;
-      }).length;
-    }).toList();
-
-    final maxCount = dailyCounts.isEmpty ? 10 : (dailyCounts.reduce((a, b) => a > b ? a : b) + 2);
-
-    return Container(
-      height: 350,
-      padding: const EdgeInsets.all(AppSpacing.l),
-      decoration: BoxDecoration(
-        color: theme.cardTheme.color,
-        borderRadius: BorderRadius.circular(AppRadius.l),
-        boxShadow: [
-          if (!isDark) BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4)),
-        ],
-        border: isDark ? Border.all(color: theme.dividerColor) : null,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Slaughter Trend', 
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: theme.colorScheme.onSurface),
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                    Text('Animals processed daily', 
-                      style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant),
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.xl),
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: List.generate(dailyCounts.length, (index) {
-                final count = dailyCounts[index];
-                final date = last7Days[index];
-                final double barHeight = count == 0 ? 5 : (count / maxCount) * 180;
-                final isToday = index == 6;
-
-                return Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      FittedBox(
-                        child: Text(count > 0 ? '$count' : '', 
-                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isToday ? Colors.orange : theme.colorScheme.onSurfaceVariant)),
-                      ),
-                      const SizedBox(height: 4),
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                        height: barHeight,
-                        decoration: BoxDecoration(
-                          color: isToday ? Colors.orange : Colors.orange.withValues(alpha: 0.4),
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        DateFormat('E').format(date).substring(0, 1),
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
-                          color: isToday ? Colors.orange : theme.colorScheme.onSurfaceVariant
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildPromotionImpactCard(BuildContext context, List<SaleRecord> promoSales, double totalImpact) {

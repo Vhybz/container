@@ -133,9 +133,9 @@ class AboutScreen extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'Mi~Corazon',
+                        'Multi-Business Manager',
                         style: TextStyle(
-                          fontSize: 32, 
+                          fontSize: 28, 
                           fontWeight: FontWeight.w900, 
                           letterSpacing: -1,
                           color: theme.colorScheme.primary,
@@ -144,7 +144,7 @@ class AboutScreen extends ConsumerWidget {
                         maxLines: 1,
                       ),
                       Text(
-                        'The Future of Butchery Management',
+                        'Multi-Sector Management Ecosystem',
                         style: TextStyle(
                           fontSize: 14, 
                           color: AppColors.textLight, 
@@ -166,7 +166,7 @@ class AboutScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'Mi~Corazon is a full-stack digital solution meticulously crafted to solve the unique challenges of the meat processing and retail industry. We bridge the gap between complex operational logistics and simple, high-speed retail execution.',
+              'Multi-Business Manager is an enterprise-grade digital platform designed to seamlessly integrate and manage Pharmacy, Barbershop, and Phone & Accessories Shop operations from a single unified system.',
               style: TextStyle(
                 fontSize: 16, 
                 height: 1.6, 
@@ -182,7 +182,7 @@ class AboutScreen extends ConsumerWidget {
                     children: [
                       Expanded(child: _buildAppFeatureColumn([
                         'Verified Inventory Protection',
-                        'Real-time Slaughter Yield Tracking',
+                        'Real-time Cross-Sector Sales & Inventory Tracking',
                         'Automated GRA Tax Engine',
                       ])),
                       const SizedBox(width: 24),
@@ -196,7 +196,7 @@ class AboutScreen extends ConsumerWidget {
                 }
                 return _buildAppFeatureColumn([
                   'Verified Inventory Protection',
-                  'Real-time Slaughter Yield Tracking',
+                  'Real-time Cross-Sector Sales & Inventory Tracking',
                   'Automated GRA Tax Engine',
                   'Multi-branch Global Sync',
                   'Comprehensive Debt Management',

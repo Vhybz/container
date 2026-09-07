@@ -18,7 +18,6 @@ import '../../services/transfer_provider.dart';
 import '../../widgets/passcode_guard.dart';
 
 import '../../services/product_seeder.dart';
-import '../../models/butcher_models.dart';
 
 import '../../widgets/role_pop_scope.dart';
 
@@ -640,42 +639,27 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
     final customNameController = TextEditingController();
     final theme = Theme.of(context);
 
-    String selectedCategory = 'Cow';
+    String selectedCategory = 'PHARMACY';
     String? selectedProductName;
-    WeightUnit selectedUnit = WeightUnit.kg;
+    WeightUnit selectedUnit = WeightUnit.unit;
     bool isUnlimited = false;
-    ChickenRange? selectedRange;
 
     final Map<String, List<String>> categoryProductMap = {
-      'Hard Chicken (Layer)': [
-        'Hard Whole Chicken (Layer)', 'Hard Thigh (Layer)', 'Hard Breast (Layer)', 
-        'Hard Back (Layer)', 'Hard Wings (Layer)', 'Hard Drumsticks (Layer)', 
-        'Gizzard', 'Other'
+      'PHARMACY': [
+        'Amoxicillin 500mg', 'Paracetamol Extra 500mg', 'Ibuprofen 400mg', 
+        'Metformin 850mg', 'Omeprazole 20mg', 'Vitamin C 1000mg Chewable', 
+        'First Aid Kit', 'Hand Sanitizer 500ml', 'Digital Thermometer', 'Other'
       ],
-      'Soft Chicken (Broiler)': [
-        'Soft Whole Chicken (Broiler)', 'Soft Thigh (Broiler)', 'Soft Breast (Broiler)', 
-        'Soft Back (Broiler)', 'Soft Wings (Broiler)', 'Soft Drumsticks (Broiler)', 
-        'Gizzard', 'Other'
+      'BARBERSHOP': [
+        'Executive Haircut', 'Beard Grooming & Oil', 'Hair Dye / Blackening', 
+        'Facial Scrub & Steam', 'Kids Haircut', 'Premium Hair Gel (150g)', 
+        'Beard Growth Oil (50ml)', 'Other'
       ],
-      'Beef': [
-        'Standard Meat', 'Boneless', 'Cow Steak', 
-        'Liver & Lungs', 'Grounded Meat', 'Tail / Padua',
-        'Other'
+      'PHONE & ACCESSORIES': [
+        'iPhone 15 Pro 128GB', 'Samsung Galaxy S24 Ultra', 'Google Pixel 8 Pro', 
+        '20W USB-C Fast Charger', 'MagSafe Clear Case', '9D Curved Tempered Glass', 
+        'iPhone Screen Repair (Labor + Part)', 'Charging Port Repair', 'Other'
       ],
-      'Cow': [
-        'Offals / Yemadeɛ', 'Feet', 'Head', 'Other'
-      ],
-      'Goat': ['Standard Meat', 'Boneless', 'Offals / Yemadeɛ', 'Head', 'Feet', 'Other'],
-      'Sheep': ['Standard Meat', 'Boneless', 'Offals / Yemadeɛ', 'Head', 'Feet', 'Other'],
-      'Pork': [
-        'Standard Meat', 'Boneless Meat', 'Offals / Yemadeɛ', 'Pork Steak', 
-        'Head', 'Ear', 'Feet', 'Liver', 'Skin',
-        'Other'
-      ],
-      'Turkey': ['Whole Turkey', 'Breast', 'Thighs', 'Drumsticks', 'Wings', 'Gizzards', 'Feet', 'Other'],
-      'Rabbit': ['Whole Rabbit', 'Legs', 'Saddle', 'Shoulders', 'Other'],
-      'Lamb': ['Standard Meat', 'Boneless', 'Chops', 'Other'],
-      'Feeds': ['Dog Feed', 'Other'],
       'Other': ['Custom Entry']
     };
 
@@ -790,7 +774,6 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                   }).toList(),
                   onChanged: (v) => setState(() {
                     selectedProductName = v;
-                    selectedRange = null; // Reset range when product changes
                     if (v != 'Other' && v != 'Custom Entry') {
                       nameController.text = v!;
                     } else {
@@ -799,20 +782,6 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                   }),
                   validator: (v) => (v == null) ? 'Required' : null,
                 ),
-                if ((selectedCategory == 'Hard Chicken (Layer)' || selectedCategory == 'Soft Chicken (Broiler)') && selectedProductName != 'Gizzard' && selectedProductName != null) ...[
-                  const SizedBox(height: AppSpacing.m),
-                  DropdownButtonFormField<ChickenRange>(
-                    initialValue: selectedRange,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Weight Range (LB)'),
-                    items: (selectedCategory == 'Hard Chicken (Layer)' ? AnimalType.hardChicken : AnimalType.softChicken)
-                        .chickenRanges
-                        .map((r) => DropdownMenuItem(value: r, child: Text(r.label)))
-                        .toList(),
-                    onChanged: (v) => setState(() => selectedRange = v),
-                    // validator removed to make it optional, or use the "No Range" option
-                  ),
-                ],
                 if (selectedProductName == 'Other' || selectedProductName == 'Custom Entry') ...[
                   const SizedBox(height: AppSpacing.m),
                   _buildFormTextField(
@@ -958,13 +927,6 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                   }
 
                   String finalName = nameController.text;
-                  if ((selectedCategory == 'Hard Chicken (Layer)' || selectedCategory == 'Soft Chicken (Broiler)') && 
-                      selectedRange != null && 
-                      selectedRange!.label != 'No Range') {
-                    if (!finalName.contains(selectedRange!.label)) {
-                      finalName = '$finalName (${selectedRange!.label})';
-                    }
-                  }
 
                   final String validUuid = UuidUtils.generate();
 

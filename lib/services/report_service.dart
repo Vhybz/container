@@ -4,7 +4,6 @@ import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import '../models/sale_model.dart';
 import '../models/product.dart';
-import '../models/butcher_models.dart';
 import '../models/expense_model.dart';
 import '../models/user_model.dart';
 import '../models/system_models.dart';
@@ -127,35 +126,6 @@ class ReportService {
     await Printing.layoutPdf(onLayout: (format) async => doc.save(), name: 'Inventory_Audit_${DateFormat('yyyyMMdd').format(DateTime.now())}');
   }
 
-  static Future<void> generateSlaughterLogReport(List<SlaughterLog> logs) async {
-    final doc = pw.Document();
-    
-    doc.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        header: (context) => _buildHeader('Slaughter & Yield Log', DateTime.now()),
-        footer: (context) => _buildFooter(context),
-        build: (context) => [
-          pw.TableHelper.fromTextArray(
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
-            headerDecoration: const pw.BoxDecoration(color: _primaryMaroon),
-            headers: ['Date', 'Animal Type', 'Intake (kg)', 'Yield (kg)', 'Waste (kg)', 'Status'],
-            data: logs.map((l) => [
-              DateFormat('MMM dd').format(l.slaughterTime ?? DateTime.now()),
-              l.type.displayName,
-              l.liveWeight.toStringAsFixed(1),
-              l.meatWeight.toStringAsFixed(1),
-              (l.liveWeight - l.meatWeight).toStringAsFixed(1),
-              l.status.name.toUpperCase(),
-            ]).toList(),
-          ),
-        ],
-      ),
-    );
-
-    await Printing.layoutPdf(onLayout: (format) async => doc.save(), name: 'Slaughter_Log_${DateFormat('yyyyMMdd').format(DateTime.now())}');
-  }
-
   static Future<void> generateExpenseLedger(List<ExpenseRecord> expenses) async {
     final doc = pw.Document();
     final total = expenses.fold(0.0, (sum, e) => sum + e.amount);
@@ -224,34 +194,7 @@ class ReportService {
     await Printing.layoutPdf(onLayout: (format) async => doc.save(), name: 'Debt_Statement');
   }
 
-  static Future<void> generateMeatBreakdownAnalysis(List<MeatCut> cuts) async {
-    final doc = pw.Document();
-    
-    doc.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        header: (context) => _buildHeader('Meat Breakdown & Cut Analysis', DateTime.now()),
-        footer: (context) => _buildFooter(context),
-        build: (context) => [
-          pw.Text('Detailed listing of all meat parts processed by the workstation.', style: pw.TextStyle(fontSize: 10)),
-          pw.SizedBox(height: 20),
-          pw.TableHelper.fromTextArray(
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
-            headerDecoration: const pw.BoxDecoration(color: _primaryMaroon),
-            headers: ['Processed Date', 'Batch ID', 'Cut/Part Name', 'Weight (kg)'],
-            data: cuts.map((c) => [
-              DateFormat('MMM dd, HH:mm').format(c.processedAt),
-              c.batchId.substring(c.batchId.length - 8).toUpperCase(),
-              c.name,
-              c.weight.toStringAsFixed(1),
-            ]).toList(),
-          ),
-        ],
-      ),
-    );
 
-    await Printing.layoutPdf(onLayout: (format) async => doc.save(), name: 'Breakdown_Analysis');
-  }
 
   static Future<void> generateStaffPerformanceReport(List<SaleRecord> sales, List<UserAccount> staff) async {
     final doc = pw.Document();
@@ -390,9 +333,9 @@ class ReportService {
             child: pw.Column(
               mainAxisSize: pw.MainAxisSize.min,
               children: [
-                pw.Text('HEALTH INSPECTION CERTIFICATE', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: _primaryMaroon)),
+                pw.Text('COMPLIANCE CERTIFICATE', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: _primaryMaroon)),
                 pw.SizedBox(height: 20),
-                pw.Text('This is to certify that Mi~Corazon Freshmeat Butchery has passed all health and hygiene standards for the year 2024.', textAlign: pw.TextAlign.center),
+                pw.Text('This is to certify that Multi-Business Manager has passed all compliance and health standards.', textAlign: pw.TextAlign.center),
                 pw.SizedBox(height: 40),
                 pw.Text('Status: VERIFIED', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.green)),
                 pw.SizedBox(height: 60),
