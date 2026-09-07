@@ -315,7 +315,7 @@ class MeatShopApp extends ConsumerWidget {
     ref.watch(syncProvider);
 
     return MaterialApp(
-      title: 'Mi~Corazon Freshmeat Butchery',
+      title: 'Multi-Business Manager',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.getLightTheme(themeState.primaryColor),
       darkTheme: AppTheme.getDarkTheme(themeState.primaryColor),

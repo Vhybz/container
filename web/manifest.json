@@ -1,11 +1,11 @@
 {
-    "name": "Mi Corazon Freshmeat Butchery",
-    "short_name": "Mi Corazon",
+    "name": "Multi-Business Manager",
+    "short_name": "MultiBusiness",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#6B1111",
-    "theme_color": "#6B1111",
-    "description": "Professional Butchery and Retail Management System",
+    "background_color": "#1565C0",
+    "theme_color": "#1565C0",
+    "description": "Multi-Sector Management App for Pharmacy, Barbershop, and Phone & Accessories Shop",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
