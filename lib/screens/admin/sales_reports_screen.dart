@@ -424,7 +424,7 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> with Si
       );
 
       final exportButton = ElevatedButton.icon(
-        onPressed: () => ReceiptService.printSalesReport(filteredSales),
+        onPressed: () async => await ReceiptService.printSalesReport(filteredSales),
         icon: const Icon(Icons.picture_as_pdf),
         label: const Text('Export to PDF'),
         style: ElevatedButton.styleFrom(
@@ -1448,6 +1448,28 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> with Si
     }
   }
 
+  Map<String, double> _calculateSectorBreakdown(Iterable<SaleRecord> matchingSales) {
+    double pharmacy = 0.0;
+    double phones = 0.0;
+    double barbershop = 0.0;
+
+    for (var sale in matchingSales) {
+      for (var item in sale.items) {
+        final cat = item.product.category.toUpperCase();
+        final amount = item.total;
+        if (item.product.requiresImei || cat.contains('PHONE') || cat.contains('SMART') || cat.contains('CHARGER') || cat.contains('CASE') || cat.contains('ACCESSOR') || cat.contains('AUDIO') || cat.contains('WEARABLE') || cat.contains('MOUNT') || cat.contains('REPAIR')) {
+          phones += amount;
+        } else if (item.product.isService || cat.contains('BARBER') || cat.contains('HAIR') || cat.contains('BEARD') || cat.contains('GROOM')) {
+          barbershop += amount;
+        } else {
+          // Pharmacy & Medical Products
+          pharmacy += amount;
+        }
+      }
+    }
+    return {'pharmacy': pharmacy, 'phones': phones, 'barbershop': barbershop};
+  }
+
   Widget _buildSalesTrendChart(List<SaleRecord> sales, ThemeData theme) {
     if (sales.isEmpty) return const SizedBox.shrink();
 
@@ -1470,98 +1492,168 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> with Si
       }
     }
 
-    final List<double> chartData;
+    final List<Map<String, double>> sectorBreakdowns;
     final List<String> labels;
 
     if (isSingleDay) {
       final targetDate = dates.first;
       final hours = [8, 10, 12, 14, 16, 18, 20];
-      chartData = hours.map((h) {
-        return sales
-            .where((s) => s.timestamp.year == targetDate.year && 
-                          s.timestamp.month == targetDate.month && 
-                          s.timestamp.day == targetDate.day &&
-                          s.timestamp.hour >= h && s.timestamp.hour < h + 2 &&
-                          s.isActive)
-            .fold(0.0, (sum, s) => sum + s.totalAmount);
+      sectorBreakdowns = hours.map((h) {
+        final matchingSales = sales.where((s) => 
+          s.timestamp.year == targetDate.year && 
+          s.timestamp.month == targetDate.month && 
+          s.timestamp.day == targetDate.day &&
+          s.timestamp.hour >= h && s.timestamp.hour < h + 2 &&
+          s.isActive
+        );
+        return _calculateSectorBreakdown(matchingSales);
       }).toList();
       labels = hours.map((h) => '${h > 12 ? h - 12 : h}${h >= 12 ? 'pm' : 'am'}').toList();
     } else {
-      chartData = dates.map((date) {
-        return sales
-            .where((s) => s.timestamp.year == date.year && s.timestamp.month == date.month && s.timestamp.day == date.day && s.isActive)
-            .fold(0.0, (sum, s) => sum + s.totalAmount);
+      sectorBreakdowns = dates.map((date) {
+        final matchingSales = sales.where((s) => 
+          s.timestamp.year == date.year && 
+          s.timestamp.month == date.month && 
+          s.timestamp.day == date.day && 
+          s.isActive
+        );
+        return _calculateSectorBreakdown(matchingSales);
       }).toList();
       labels = dates.map((d) => DateFormat('E').format(d).substring(0, 1)).toList();
     }
 
-    final maxTotal = chartData.isEmpty ? 100.0 : (chartData.reduce((a, b) => a > b ? a : b) + 50.0);
+    final maxTotals = sectorBreakdowns.map((b) => (b['pharmacy'] ?? 0) + (b['phones'] ?? 0) + (b['barbershop'] ?? 0)).toList();
+    final maxTotal = maxTotals.isEmpty ? 100.0 : (maxTotals.reduce((a, b) => a > b ? a : b) + 50.0);
 
     return Container(
-      height: 250,
+      height: 280,
       padding: const EdgeInsets.all(AppSpacing.l),
       decoration: BoxDecoration(
         color: theme.cardTheme.color,
         borderRadius: BorderRadius.circular(AppRadius.m),
         border: Border.all(color: theme.dividerColor),
       ),
-      child: BarChart(
-        BarChartData(
-          alignment: BarChartAlignment.spaceAround,
-          maxY: maxTotal,
-          barTouchData: BarTouchData(
-            touchTooltipData: BarTouchTooltipData(
-              getTooltipColor: (_) => theme.colorScheme.primary,
-              getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                return BarTooltipItem(
-                  '₵${rod.toY.toStringAsFixed(0)}',
-                  const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10),
-                );
-              },
-            ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Revenue Breakdown by Shop', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              Wrap(
+                spacing: 12,
+                children: [
+                  _legendDot('Pharmacy', const Color(0xFF2E7D32)),
+                  _legendDot('Phones & Tech', const Color(0xFFE65100)),
+                  _legendDot('Barbershop', const Color(0xFF1565C0)),
+                ],
+              ),
+            ],
           ),
-          titlesData: FlTitlesData(
-            show: true,
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (value, meta) {
-                  final index = value.toInt();
-                  if (index >= 0 && index < labels.length) {
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text(
-                        labels[index],
-                        style: const TextStyle(fontSize: 10, color: Colors.grey),
-                      ),
-                    );
+          const SizedBox(height: AppSpacing.m),
+          Expanded(
+            child: BarChart(
+              BarChartData(
+                alignment: BarChartAlignment.spaceAround,
+                maxY: maxTotal,
+                barTouchData: BarTouchData(
+                  touchTooltipData: BarTouchTooltipData(
+                    getTooltipColor: (_) => theme.colorScheme.surfaceContainerHighest,
+                    getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                      final b = sectorBreakdowns[groupIndex];
+                      final p = b['pharmacy'] ?? 0;
+                      final ph = b['phones'] ?? 0;
+                      final bb = b['barbershop'] ?? 0;
+                      return BarTooltipItem(
+                        'Total: ₵${rod.toY.toStringAsFixed(0)}\n'
+                        '🟢 Pharm: ₵${p.toStringAsFixed(0)}\n'
+                        '🟠 Tech: ₵${ph.toStringAsFixed(0)}\n'
+                        '🔵 Barber: ₵${bb.toStringAsFixed(0)}',
+                        TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.bold, fontSize: 10),
+                      );
+                    },
+                  ),
+                ),
+                titlesData: FlTitlesData(
+                  show: true,
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      getTitlesWidget: (value, meta) {
+                        final index = value.toInt();
+                        if (index >= 0 && index < labels.length) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Text(
+                              labels[index],
+                              style: const TextStyle(fontSize: 10, color: Colors.grey),
+                            ),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                      reservedSize: 28,
+                    ),
+                  ),
+                  leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                ),
+                gridData: const FlGridData(show: false),
+                borderData: FlBorderData(show: false),
+                barGroups: List.generate(sectorBreakdowns.length, (index) {
+                  final breakdown = sectorBreakdowns[index];
+                  final p = breakdown['pharmacy'] ?? 0.0;
+                  final ph = breakdown['phones'] ?? 0.0;
+                  final b = breakdown['barbershop'] ?? 0.0;
+
+                  final totalY = p + ph + b;
+
+                  final stacks = <BarChartRodStackItem>[];
+                  double currentY = 0.0;
+
+                  if (p > 0) {
+                    stacks.add(BarChartRodStackItem(currentY, currentY + p, const Color(0xFF2E7D32)));
+                    currentY += p;
                   }
-                  return const SizedBox.shrink();
-                },
-                reservedSize: 28,
+                  if (ph > 0) {
+                    stacks.add(BarChartRodStackItem(currentY, currentY + ph, const Color(0xFFE65100)));
+                    currentY += ph;
+                  }
+                  if (b > 0) {
+                    stacks.add(BarChartRodStackItem(currentY, currentY + b, const Color(0xFF1565C0)));
+                    currentY += b;
+                  }
+
+                  return BarChartGroupData(
+                    x: index,
+                    barRods: [
+                      BarChartRodData(
+                        toY: totalY > 0 ? totalY : 0.0,
+                        rodStackItems: stacks,
+                        color: theme.colorScheme.primary,
+                        width: isSingleDay ? 24 : (sectorBreakdowns.length > 10 ? 8 : 16),
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                      ),
+                    ],
+                  );
+                }),
               ),
             ),
-            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           ),
-          gridData: const FlGridData(show: false),
-          borderData: FlBorderData(show: false),
-          barGroups: List.generate(chartData.length, (index) {
-            return BarChartGroupData(
-              x: index,
-              barRods: [
-                BarChartRodData(
-                  toY: chartData[index],
-                  color: theme.colorScheme.primary,
-                  width: isSingleDay ? 24 : (chartData.length > 10 ? 8 : 16),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
-                ),
-              ],
-            );
-          }),
-        ),
+        ],
       ),
+    );
+  }
+
+  Widget _legendDot(String label, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+      ],
     );
   }
 

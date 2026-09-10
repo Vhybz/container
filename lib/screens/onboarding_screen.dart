@@ -52,35 +52,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final bool isSmall = size.height < 700;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFFFAF9F6), // Off-white color
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          // 1. Dynamic Background Image with sophisticated overlay
+          // 1. Dynamic Background Color
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 1000),
             child: Container(
               key: ValueKey(_currentPage),
-              decoration: BoxDecoration(
-                image: DecorationImage(
-                  image: AssetImage(_pages[_currentPage].bgAsset),
-                  fit: BoxFit.cover,
-                ),
-              ),
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.3),
-                      Colors.black.withValues(alpha: 0.7),
-                      Colors.black,
-                    ],
-                    stops: const [0.0, 0.4, 0.9],
-                  ),
-                ),
-              ),
+              color: const Color(0xFFFAF9F6), // Consistent off-white
             ),
           ),
           
@@ -102,12 +83,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               children: [
                 const Row(
                   children: [
-                    Icon(Icons.storefront_rounded, color: Colors.white, size: 24),
+                    Icon(Icons.storefront_rounded, color: Colors.black87, size: 24),
                     SizedBox(width: 8),
                     Text(
                       'MULTI-BUSINESS MANAGER',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: Colors.black87,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 1.5,
                         fontSize: 14,
@@ -120,7 +101,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   child: Text(
                     'SKIP',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.6),
+                      color: Colors.black54,
                       fontWeight: FontWeight.bold,
                       fontSize: 12,
                       letterSpacing: 1,
@@ -211,19 +192,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             child: Container(
               padding: EdgeInsets.all(isSmall ? 25 : 35),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.15),
+                color: data.color.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 1.5),
+                border: Border.all(color: data.color.withValues(alpha: 0.2), width: 1.5),
                 boxShadow: [
                   if (isActive)
                     BoxShadow(
-                      color: data.color.withValues(alpha: 0.4),
+                      color: data.color.withValues(alpha: 0.2),
                       blurRadius: 30,
                       spreadRadius: 2,
                     ),
                 ],
               ),
-              child: Icon(data.icon, size: isSmall ? 60 : 90, color: Colors.white),
+              child: Icon(data.icon, size: isSmall ? 60 : 90, color: data.color),
             ),
           ),
           SizedBox(height: isSmall ? 40 : 60),
@@ -237,7 +218,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 Text(
                   data.subtitle,
                   style: TextStyle(
-                    color: data.color.withValues(alpha: 0.9),
+                    color: data.color,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 2,
@@ -250,7 +231,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   style: TextStyle(
                     fontSize: isSmall ? 32 : 42,
                     fontWeight: FontWeight.w900,
-                    color: Colors.white,
+                    color: Colors.black87,
                     letterSpacing: -1,
                     height: 1.1,
                   ),
@@ -261,7 +242,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: isSmall ? 15 : 17,
-                    color: Colors.white.withValues(alpha: 0.7),
+                    color: Colors.black54,
                     fontWeight: FontWeight.w400,
                     height: 1.5,
                   ),

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/constants.dart';
 import '../../widgets/main_app_bar.dart';
+import '../../widgets/product_card.dart';
 import '../../services/product_service.dart';
 import '../../models/product.dart';
 import '../../core/uuid_utils.dart';
@@ -31,6 +32,30 @@ class InventoryControlScreen extends ConsumerStatefulWidget {
 class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen> {
   String _searchQuery = '';
   String _selectedCategory = 'All';
+  String _selectedSector = 'pharmacy'; // 'pharmacy', 'phones', 'all'
+
+  String _getSector(Product p) {
+    final cat = p.category.toUpperCase();
+    if (p.requiresPrescription ||
+        cat.contains('PHARM') ||
+        cat.contains('DRUG') ||
+        cat.contains('MED') ||
+        cat.contains('ANTIMALARIAL') ||
+        cat.contains('ANTIBIOTIC') ||
+        cat.contains('ANALGESIC') ||
+        cat.contains('NSAID') ||
+        cat.contains('COUGH') ||
+        cat.contains('COLD') ||
+        cat.contains('CARDIOVASCULAR') ||
+        cat.contains('GASTRO') ||
+        cat.contains('CONTRACEPTIVE') ||
+        cat.contains('SUPPLEMENT') ||
+        cat.contains('TOPICAL') ||
+        cat.contains('SEDATIVE')) {
+      return 'pharmacy';
+    }
+    return 'phones';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +73,7 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
     // Safety: Reset selected category if it no longer exists after deletions
     if (productsAsync.hasValue) {
       final products = productsAsync.value!;
-      final availableCategories = ['All', ...products.where((p) => !p.isDeleted).map((p) => _normalizeCategory(p)).toSet()];
+      final availableCategories = ['All', ...products.where((p) => !p.isDeleted).where((p) => _selectedSector == 'all' || _getSector(p) == _selectedSector).map((p) => _normalizeCategory(p)).toSet()];
       if (!availableCategories.contains(_selectedCategory)) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) setState(() => _selectedCategory = 'All');
@@ -94,13 +119,21 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _buildHeader(context, ref, productsAsync.value ?? [], isAdmin: isAdmin),
-                        const SizedBox(height: AppSpacing.l),
+                        const SizedBox(height: AppSpacing.m),
+                        _buildSectorTabBar(theme, productsAsync.value ?? []),
+                        const SizedBox(height: AppSpacing.m),
+                        _buildSectorSummaryCards(theme, productsAsync.value ?? []),
+                        const SizedBox(height: AppSpacing.m),
                         _buildFilters(theme, productsAsync.value ?? []),
                         const SizedBox(height: AppSpacing.l),
                         productsAsync.when(
                           data: (products) {
                             final activeProducts = products
                                 .where((p) => !p.isDeleted)
+                                .where((p) {
+                                  if (_selectedSector == 'all') return true;
+                                  return _getSector(p) == _selectedSector;
+                                })
                                 .where((p) {
                                   final normCat = _normalizeCategory(p);
                                   return _selectedCategory == 'All' || normCat == _selectedCategory;
@@ -124,7 +157,30 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                               return Center(
                                 child: Padding(
                                   padding: const EdgeInsets.all(40.0),
-                                  child: Text('No products match criteria', style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.inventory_2_outlined, size: 48, color: theme.disabledColor),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        _searchQuery.isNotEmpty 
+                                          ? 'No products found matching "$_searchQuery"'
+                                          : (user.branchCode == null 
+                                              ? 'The global catalog is currently empty.' 
+                                              : 'No products found for this branch.'),
+                                        style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      if (_searchQuery.isEmpty && isAdmin) ...[
+                                        const SizedBox(height: 24),
+                                        ElevatedButton.icon(
+                                          onPressed: () => _showAddProductDialog(context, ref),
+                                          icon: const Icon(Icons.add),
+                                          label: const Text('Add Your First Product'),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
                                 ),
                               );
                             }
@@ -145,9 +201,13 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
           floatingActionButton: isAdmin ? SafeArea(
             child: FloatingActionButton.extended(
               onPressed: () => _showAddProductDialog(context, ref),
-              backgroundColor: theme.colorScheme.primary,
+              backgroundColor: _selectedSector == 'pharmacy'
+                  ? const Color(0xFF2E7D32)
+                  : (_selectedSector == 'phones'
+                      ? const Color(0xFFE65100)
+                      : theme.colorScheme.primary),
               icon: const Icon(Icons.add, color: Colors.white),
-              label: const Text('Add New Product', style: TextStyle(color: Colors.white)),
+              label: const Text('Add New Product', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ) : null,
         ),
@@ -155,8 +215,178 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
     );
   }
 
+  Widget _buildSectorTabBar(ThemeData theme, List<Product> allProducts) {
+    final activeProducts = allProducts.where((p) => !p.isDeleted).toList();
+    final pharmacyCount = activeProducts.where((p) => _getSector(p) == 'pharmacy').length;
+    final phonesCount = activeProducts.where((p) => _getSector(p) == 'phones').length;
+    final totalCount = activeProducts.length;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(AppRadius.l),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _sectorPill('pharmacy', 'Pharmacy Stock', Icons.medical_services_outlined, const Color(0xFF2E7D32), pharmacyCount),
+            const SizedBox(width: 6),
+            _sectorPill('phones', 'Phones & Accessories Stock', Icons.phone_android_outlined, const Color(0xFFE65100), phonesCount),
+            const SizedBox(width: 6),
+            _sectorPill('all', 'All Inventory', Icons.inventory_2_outlined, Colors.blue.shade800, totalCount),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sectorPill(String id, String label, IconData icon, Color color, int count) {
+    final isSelected = _selectedSector == id;
+    final theme = Theme.of(context);
+
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selectedSector = id;
+          _selectedCategory = 'All'; // Reset category filter on sector change
+        });
+      },
+      borderRadius: BorderRadius.circular(AppRadius.m),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? color : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppRadius.m),
+          boxShadow: isSelected ? [BoxShadow(color: color.withValues(alpha: 0.3), blurRadius: 6, offset: const Offset(0, 2))] : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: isSelected ? Colors.white : color),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : theme.colorScheme.onSurface,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.white.withValues(alpha: 0.25) : color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  color: isSelected ? Colors.white : color,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectorSummaryCards(ThemeData theme, List<Product> allProducts) {
+    final activeProducts = allProducts.where((p) => !p.isDeleted).toList();
+    final sectorProducts = activeProducts.where((p) => _selectedSector == 'all' || _getSector(p) == _selectedSector).toList();
+    
+    final int totalCount = sectorProducts.length;
+    final int lowStockCount = sectorProducts.where((p) => !p.isUnlimited && p.stockQuantity <= p.lowStockThreshold).length;
+    final double totalValue = sectorProducts.fold(0.0, (sum, p) => sum + (p.stockQuantity * p.retailPrice));
+
+    String specialLabel = 'Rx Required';
+    String specialValue = '${sectorProducts.where((p) => p.requiresPrescription).length}';
+    IconData specialIcon = Icons.healing_outlined;
+    Color specialColor = Colors.red;
+
+    if (_selectedSector == 'phones') {
+      specialLabel = 'IMEI Registered';
+      specialValue = '${sectorProducts.where((p) => p.requiresImei).length}';
+      specialIcon = Icons.qr_code_outlined;
+      specialColor = Colors.deepOrange;
+    } else if (_selectedSector == 'all') {
+      specialLabel = 'Total Categories';
+      specialValue = '${sectorProducts.map((p) => _normalizeCategory(p)).toSet().length}';
+      specialIcon = Icons.category_outlined;
+      specialColor = Colors.purple;
+    }
+
+    return LayoutBuilder(builder: (context, constraints) {
+      final isMobile = constraints.maxWidth < 600;
+      return Container(
+        margin: const EdgeInsets.only(bottom: 4),
+        child: Wrap(
+          spacing: AppSpacing.m,
+          runSpacing: AppSpacing.m,
+          children: [
+            _statCard(theme, 'Total SKUs', '$totalCount', Icons.inventory_2_outlined, theme.colorScheme.primary, isMobile),
+            _statCard(theme, 'Low Stock Alerts', '$lowStockCount', Icons.warning_amber_rounded, Colors.orange.shade800, isMobile),
+            _statCard(theme, specialLabel, specialValue, specialIcon, specialColor, isMobile),
+            _statCard(theme, 'Stock Valuation', 'GHS ${totalValue.toStringAsFixed(2)}', Icons.payments_outlined, Colors.green.shade800, isMobile),
+          ],
+        ),
+      );
+    });
+  }
+
+  Widget _statCard(ThemeData theme, String title, String value, IconData icon, Color color, bool isMobile) {
+    return Container(
+      width: isMobile ? double.infinity : 210,
+      padding: const EdgeInsets.all(AppSpacing.m),
+      decoration: BoxDecoration(
+        color: theme.cardTheme.color,
+        borderRadius: BorderRadius.circular(AppRadius.m),
+        border: Border.all(color: theme.dividerColor),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 4, offset: const Offset(0, 2))],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(AppRadius.s),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: AppSpacing.m),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(title, style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant), maxLines: 1, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 2),
+                Text(value, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface), maxLines: 1, overflow: TextOverflow.ellipsis),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildFilters(ThemeData theme, List<Product> products) {
-    final categories = ['All', ...products.map((p) => _normalizeCategory(p)).toSet()];
+    final activeSectorProducts = products
+        .where((p) => !p.isDeleted)
+        .where((p) => _selectedSector == 'all' || _getSector(p) == _selectedSector)
+        .toList();
+
+    final categories = ['All', ...activeSectorProducts.map((p) => _normalizeCategory(p)).toSet()];
     final isMobile = ResponsiveLayout.isMobile(context);
 
     return Wrap(
@@ -169,7 +399,7 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
           child: TextField(
             onChanged: (v) => setState(() => _searchQuery = v),
             decoration: InputDecoration(
-              hintText: 'Search by Name (e.g. Cow), Category (e.g. Pork), or both...',
+              hintText: 'Search by name or category...',
               prefixIcon: const Icon(Icons.search),
               suffixIcon: _searchQuery.isNotEmpty 
                 ? IconButton(icon: const Icon(Icons.clear), onPressed: () => setState(() => _searchQuery = ''))
@@ -186,6 +416,7 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
         SizedBox(
           width: isMobile ? double.infinity : 200,
           child: DropdownButtonFormField<String>(
+            isExpanded: true,
             initialValue: categories.contains(_selectedCategory) ? _selectedCategory : 'All',
             decoration: InputDecoration(
               labelText: 'Sort Category',
@@ -282,7 +513,7 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
               context: context,
               builder: (context) => AlertDialog(
                 title: const Text('Initialize Catalog?'),
-                content: const Text('This will add all default products (Cow, Pork, Hard Chicken (Layer)/Soft Chicken (Broiler), etc.) with 0.0 quantity if they don\'t exist. Continue?'),
+                content: const Text('This will seed the standard multi-business product catalog (Pharmacy, Barber, Phone & Accessories) with 0.0 quantity if they don\'t exist. Continue?'),
                 actions: [
                   TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('CANCEL')),
                   ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('INITIALIZE')),
@@ -627,6 +858,17 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
     );
   }
 
+  String _getUnitLabel(String u) {
+    final unit = u.toLowerCase();
+    if (unit == 'tablets') return 'Tablets/Pack';
+    if (unit == 'capsules') return 'Capsules/Pack';
+    if (unit == 'mils') return 'Mils/Unit';
+    if (unit == 'bottles') return 'Units/Bottle';
+    if (unit == 'packs') return 'Units/Pack';
+    if (unit == 'boxes') return 'Units/Box';
+    return 'Pcs/Pack';
+  }
+
   void _showAddProductDialog(BuildContext context, WidgetRef ref) {
     final products = ref.read(productsFutureProvider).value ?? [];
     final formKey = GlobalKey<FormState>();
@@ -639,36 +881,151 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
     final customNameController = TextEditingController();
     final theme = Theme.of(context);
 
-    String selectedCategory = 'PHARMACY';
+    final batchNumberController = TextEditingController();
+    final imeiController = TextEditingController();
+    final boxesController = TextEditingController(text: '1');
+    final packsPerBoxController = TextEditingController(text: '10');
+    final piecesPerPackController = TextEditingController(text: '10');
+    final packPriceController = TextEditingController();
+    final boxPriceController = TextEditingController();
+    bool isPackPriceOverridden = false;
+    bool isBoxPriceOverridden = false;
+    bool isTabletPriceOverridden = false;
+
+    bool isUpdatingPrices = false;
+
+    void recalculatePharmacyValues({String source = 'boxes'}) {
+      if (isUpdatingPrices) return;
+      isUpdatingPrices = true;
+
+      final boxes = double.tryParse(boxesController.text) ?? 0.0;
+      final packsPerBox = double.tryParse(packsPerBoxController.text) ?? 1.0;
+      final piecesPerPack = double.tryParse(piecesPerPackController.text) ?? 1.0;
+
+      final totalPieces = boxes * packsPerBox * piecesPerPack;
+      stockController.text = totalPieces % 1 == 0 ? totalPieces.toInt().toString() : totalPieces.toStringAsFixed(1);
+
+      double tabletPrice = double.tryParse(retailPriceController.text) ?? 0.0;
+      double packPrice = double.tryParse(packPriceController.text) ?? 0.0;
+      double boxPrice = double.tryParse(boxPriceController.text) ?? 0.0;
+
+      if (source == 'tablet') {
+        if (!isPackPriceOverridden) {
+          packPrice = tabletPrice * piecesPerPack;
+          packPriceController.text = packPrice.toStringAsFixed(2);
+        }
+        if (!isBoxPriceOverridden) {
+          boxPrice = packPrice * packsPerBox;
+          boxPriceController.text = boxPrice.toStringAsFixed(2);
+        }
+      } else if (source == 'pack') {
+        if (piecesPerPack > 0 && !isTabletPriceOverridden) {
+          tabletPrice = packPrice / piecesPerPack;
+          retailPriceController.text = tabletPrice.toStringAsFixed(2);
+        }
+        if (!isBoxPriceOverridden) {
+          boxPrice = packPrice * packsPerBox;
+          boxPriceController.text = boxPrice.toStringAsFixed(2);
+        }
+      } else if (source == 'box') {
+        if (packsPerBox > 0 && !isPackPriceOverridden) {
+          packPrice = boxPrice / packsPerBox;
+          packPriceController.text = packPrice.toStringAsFixed(2);
+        }
+        if (piecesPerPack > 0 && packsPerBox > 0 && !isTabletPriceOverridden) {
+          tabletPrice = boxPrice / (packsPerBox * piecesPerPack);
+          retailPriceController.text = tabletPrice.toStringAsFixed(2);
+        }
+      } else {
+        if (tabletPrice > 0 && !isPackPriceOverridden) {
+          packPrice = tabletPrice * piecesPerPack;
+          packPriceController.text = packPrice.toStringAsFixed(2);
+        } else if (packPrice > 0 && !isTabletPriceOverridden) {
+          tabletPrice = packPrice / piecesPerPack;
+          retailPriceController.text = tabletPrice.toStringAsFixed(2);
+        }
+        if (!isBoxPriceOverridden) {
+          boxPrice = packPrice * packsPerBox;
+          boxPriceController.text = boxPrice.toStringAsFixed(2);
+        }
+      }
+
+      isUpdatingPrices = false;
+    }
+    DateTime? selectedExpiryDate;
+    bool requiresPrescription = _selectedSector == 'pharmacy';
+    bool requiresImei = _selectedSector == 'phones';
+    bool isService = false;
+
+    String selectedCategory;
     String? selectedProductName;
     WeightUnit selectedUnit = WeightUnit.unit;
+    String selectedPharmacyUnit = 'tablets';
     bool isUnlimited = false;
 
     final Map<String, List<String>> categoryProductMap = {
-      'PHARMACY': [
-        'Amoxicillin 500mg', 'Paracetamol Extra 500mg', 'Ibuprofen 400mg', 
-        'Metformin 850mg', 'Omeprazole 20mg', 'Vitamin C 1000mg Chewable', 
-        'First Aid Kit', 'Hand Sanitizer 500ml', 'Digital Thermometer', 'Other'
-      ],
-      'BARBERSHOP': [
-        'Executive Haircut', 'Beard Grooming & Oil', 'Hair Dye / Blackening', 
-        'Facial Scrub & Steam', 'Kids Haircut', 'Premium Hair Gel (150g)', 
-        'Beard Growth Oil (50ml)', 'Other'
-      ],
-      'PHONE & ACCESSORIES': [
-        'iPhone 15 Pro 128GB', 'Samsung Galaxy S24 Ultra', 'Google Pixel 8 Pro', 
-        '20W USB-C Fast Charger', 'MagSafe Clear Case', '9D Curved Tempered Glass', 
-        'iPhone Screen Repair (Labor + Part)', 'Charging Port Repair', 'Other'
-      ],
+      // Pharmacy Presets
+      'Antimalarial': ['Antfan Tab', 'Lufant DS', 'Artfan Suspension', 'Lufart suspension', 'Other'],
+      'Antibiotic': ['Amoxicillin caps', 'Ciprofloxacin', 'Azithromycin', 'Cefuroxime', 'Norfloxacin 200mg', 'Chloramphenicol', 'Metronidazole sirop', 'Other'],
+      'Analgesic': ['Peladol extra', 'ESKcol', 'Eskadol nyte', 'Drastin APC', 'Parabary tab', 'Other'],
+      'NSAID': ['Basecam', 'Cap celecoxib 200mg', 'Prednisolone', 'Other'],
+      'Cough & Cold': ['Coldrs... caps', 'Kwik action', 'Shaltoux', 'Ronak Inhaler', 'Other'],
+      'Cardiovascular': ['Skydipin 30', 'Losartan 50', 'Losartan Potassium', 'Other'],
+      'Gastrointestinal': ['Magnesium trisilicate sup', 'Magacid susp.', 'Zerocid susp.', 'Liver salt', 'Other'],
+      'Contraceptive': ['Lydia Secure', 'Contra-72', 'Postinor 2', 'Kiss condom', 'Other'],
+      'Supplement': ['GML-Apeti', 'Riddles Mud Syrup', 'Ayrton mult. Syrup', 'Dynoell Syrup', 'Haemoglobin sirop', 'Eppace Junior Syrp', 'Polyfer forte syrup', 'Samalin adult sirop', 'Samalin junior', 'Tres-orix', 'Cyfen syrup', 'Bricovit forte', 'Lechna syrup', 'Cehtone syrup', 'Cyproidine', 'Abytone forte caps', 'Other'],
+      'Topical & Gel': ['Ronfit Gel', 'Ronfit forte', 'Other'],
+      'Sedative': ['Chlordiazepoxide', 'Other'],
+      'General Medication': ['Zudrex tab', 'Letacam', 'Mixtel', 'Fembase extra', 'Asmanol', 'Tracaram', 'Cibro-C', 'Pecbore', 'Ronloz 100', 'Treedar', 'Let-2in simp', 'Other'],
+
+      // Phones & Accessories Presets
+      'Smartphones': ['iPhone 15 Pro 128GB', 'Samsung Galaxy S24 Ultra', 'Google Pixel 8 Pro', 'Xiaomi Redmi Note 13 Pro', 'Tecno Camon 30 Premier', 'Other'],
+      'Chargers & Power': ['20W USB-C Fast Charger', '65W GaN Desktop Fast Charger', '20,000mAh Power Bank (22.5W)', '15W MagSafe Wireless Pad', 'Type-C to Lightning Cable 1m', '100W Braided Type-C Cable', 'Other'],
+      'Cases & Protection': ['MagSafe Clear Case', 'Shockproof Silicone Armor Case', 'Leather Flip Wallet Case', 'Other'],
+      'Screen Protectors': ['9D Curved Tempered Glass', 'Anti-Spy Privacy Tempered Glass', 'HD Camera Lens Protector', 'Other'],
+      'Audio & Sound': ['Wireless ANC Noise Cancelling Earbuds', 'AirPods Pro 2nd Gen', 'Sports Bluetooth Neckband', 'Portable Mini Bluetooth Speaker', 'Other'],
+      'Smart Wearables': ['Smartwatch Series 9 (AMOLED)', 'Fitness Tracker Band 8', 'Other'],
+      'Mounts & Holders': ['Magnetic Car Air Vent Mount', 'Adjustable Desktop Phone Stand', 'Other'],
+      'Repairs & Services': ['iPhone Screen Repair (Labor + Part)', 'Battery Replacement Service', 'Charging Port Repair', 'Software Flashing & Unlocking', 'Other'],
+
       'Other': ['Custom Entry']
     };
 
-    final existingCategories = products.map((p) => _normalizeCategory(p)).toSet();
-    final List<String> categories = categoryProductMap.keys.toList();
-    for (var cat in existingCategories) {
-      if (!categories.contains(cat)) {
-        categories.insert(categories.length - 1, cat);
-      }
+    final List<String> categories;
+    if (_selectedSector == 'pharmacy') {
+      final pharmacyPresetCategories = [
+        'Antimalarial', 'Antibiotic', 'Analgesic', 'NSAID', 'Cough & Cold',
+        'Cardiovascular', 'Gastrointestinal', 'Contraceptive', 'Supplement',
+        'Topical & Gel', 'Sedative', 'General Medication',
+      ];
+      final existingPharmacyCats = products
+          .where((p) => _getSector(p) == 'pharmacy')
+          .map((p) => _normalizeCategory(p))
+          .toSet();
+      categories = [...{...pharmacyPresetCategories, ...existingPharmacyCats}, 'Other'];
+      selectedCategory = categories.first;
+    } else if (_selectedSector == 'phones') {
+      final phonePresetCategories = [
+        'Smartphones', 'Chargers & Power', 'Cases & Protection', 'Screen Protectors',
+        'Audio & Sound', 'Smart Wearables', 'Mounts & Holders', 'Repairs & Services',
+      ];
+      final existingPhoneCats = products
+          .where((p) => _getSector(p) == 'phones')
+          .map((p) => _normalizeCategory(p))
+          .toSet();
+      categories = [...{...phonePresetCategories, ...existingPhoneCats}, 'Other'];
+      selectedCategory = categories.first;
+    } else {
+      final allCategories = [
+        'Antimalarial', 'Antibiotic', 'Analgesic', 'NSAID', 'Cough & Cold',
+        'Cardiovascular', 'Gastrointestinal', 'Contraceptive', 'Supplement',
+        'Topical & Gel', 'Sedative', 'General Medication',
+        'Smartphones', 'Chargers & Power', 'Cases & Protection', 'Screen Protectors',
+        'Audio & Sound', 'Smart Wearables', 'Mounts & Holders', 'Repairs & Services',
+      ];
+      final existingCats = products.map((p) => _normalizeCategory(p)).toSet();
+      categories = [...{...allCategories, ...existingCats}, 'Other'];
+      selectedCategory = categories.first;
     }
 
     Uint8List? imageBytes;
@@ -679,13 +1036,37 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
       context: context,
       barrierDismissible: false,
       builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setState) {
+          final isPharmacySection = _selectedSector == 'pharmacy' ||
+              ['Antimalarial', 'Antibiotic', 'Analgesic', 'NSAID', 'Cough & Cold', 'Cardiovascular', 'Gastrointestinal', 'Contraceptive', 'Supplement', 'Topical & Gel', 'Sedative', 'General Medication'].contains(selectedCategory) ||
+              selectedCategory.toUpperCase().contains('PHARM') ||
+              selectedCategory.toUpperCase().contains('DRUG') ||
+              selectedCategory.toUpperCase().contains('MED');
+
+          final isPhoneSection = _selectedSector == 'phones' ||
+              ['Smartphones', 'Chargers & Power', 'Cases & Protection', 'Screen Protectors', 'Audio & Sound', 'Smart Wearables', 'Mounts & Holders'].contains(selectedCategory) ||
+              selectedCategory.toUpperCase().contains('PHONE') ||
+              selectedCategory.toUpperCase().contains('SMART') ||
+              selectedCategory.toUpperCase().contains('ACCESSOR') ||
+              selectedCategory.toUpperCase().contains('MOBILE');
+
+          final isRepairSection = selectedCategory == 'Repairs & Services' ||
+              selectedCategory.toUpperCase().contains('REPAIR') ||
+              selectedCategory.toUpperCase().contains('SERVICE');
+
+          final Color sectorColor = _selectedSector == 'pharmacy'
+              ? const Color(0xFF2E7D32)
+              : (_selectedSector == 'phones'
+                  ? const Color(0xFFE65100)
+                  : theme.colorScheme.primary);
+
+          return AlertDialog(
           scrollable: true,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.l)),
           title: Container(
             padding: const EdgeInsets.all(AppSpacing.l),
             decoration: BoxDecoration(
-              color: theme.colorScheme.primary,
+              color: sectorColor,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.l)),
             ),
             child: const Column(
@@ -758,7 +1139,7 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                     context: context,
                     controller: otherCategoryController,
                     label: 'Custom Category Name',
-                    hint: 'e.g. Rabbit',
+                    hint: 'e.g. Special Tech',
                     icon: Icons.edit_note,
                     isName: true,
                     validator: (v) => (selectedCategory == 'Other' && (v == null || v.isEmpty)) ? 'Required' : null,
@@ -788,7 +1169,7 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                     context: context,
                     controller: customNameController,
                     label: 'Custom Product Name',
-                    hint: 'e.g. Sirloin Steak',
+                    hint: 'e.g. Product Item Name',
                     icon: Icons.edit_note,
                     isName: true,
                     onChanged: (v) => nameController.text = v,
@@ -809,6 +1190,10 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                           if (retailPriceController.text == '0.0' || retailPriceController.text == '0') {
                             retailPriceController.clear();
                           }
+                        },
+                        onChanged: (v) {
+                          isTabletPriceOverridden = true;
+                          recalculatePharmacyValues(source: 'tablet');
                         },
                         validator: (v) {
                           if (v == null || v.isEmpty) return 'Required';
@@ -868,7 +1253,7 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                         context: context,
                         controller: stockController,
                         label: isUnlimited ? 'Current Quantity (Display only)' : 'Initial Stock',
-                        suffix: selectedUnit.name,
+                        suffix: isPharmacySection ? selectedPharmacyUnit : selectedUnit.name,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         validator: (v) {
                           if (isUnlimited) return null;
@@ -880,13 +1265,23 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                     ),
                     const SizedBox(width: AppSpacing.s),
                     Expanded(
-                      child: DropdownButtonFormField<WeightUnit>(
-                        initialValue: selectedUnit,
-                        isExpanded: true,
-                        decoration: const InputDecoration(labelText: 'Unit'),
-                        items: WeightUnit.values.map((u) => DropdownMenuItem(value: u, child: Text(u == WeightUnit.unit ? 'PCS' : u.name.toUpperCase()))).toList(),
-                        onChanged: (v) => setState(() => selectedUnit = v!),
-                      ),
+                      child: isPharmacySection
+                          ? DropdownButtonFormField<String>(
+                              initialValue: selectedPharmacyUnit,
+                              isExpanded: true,
+                              decoration: const InputDecoration(labelText: 'Unit'),
+                              items: ['tablets', 'capsules', 'pcs', 'mils', 'bottles', 'packs', 'boxes']
+                                  .map((u) => DropdownMenuItem(value: u, child: Text(u.toUpperCase())))
+                                  .toList(),
+                              onChanged: (v) => setState(() => selectedPharmacyUnit = v!),
+                            )
+                          : DropdownButtonFormField<WeightUnit>(
+                              initialValue: selectedUnit,
+                              isExpanded: true,
+                              decoration: const InputDecoration(labelText: 'Unit'),
+                              items: WeightUnit.values.map((u) => DropdownMenuItem(value: u, child: Text(u == WeightUnit.unit ? 'PCS' : u.name.toUpperCase()))).toList(),
+                              onChanged: (v) => setState(() => selectedUnit = v!),
+                            ),
                     ),
                   ],
                 ),
@@ -900,6 +1295,206 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                   contentPadding: EdgeInsets.zero,
                   dense: true,
                 ),
+
+                if (isPharmacySection) ...[
+                  const SizedBox(height: AppSpacing.m),
+                  Container(
+                    padding: const EdgeInsets.all(AppSpacing.m),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2E7D32).withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(AppRadius.m),
+                      border: Border.all(color: const Color(0xFF2E7D32).withValues(alpha: 0.2)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.medication_liquid_outlined, size: 18, color: Color(0xFF2E7D32)),
+                            SizedBox(width: 6),
+                            Text('Boxes, Packs & ${selectedPharmacyUnit.toUpperCase()} Configuration', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF2E7D32))),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text('Enter boxes, packs per box & $selectedPharmacyUnit per pack to calculate stock & pricing', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                        const SizedBox(height: AppSpacing.m),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildFormTextField(
+                                context: context,
+                                controller: boxesController,
+                                label: 'Boxes',
+                                hint: 'e.g. 2',
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                onChanged: (v) => recalculatePharmacyValues(),
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.s),
+                            Expanded(
+                              child: _buildFormTextField(
+                                context: context,
+                                controller: packsPerBoxController,
+                                label: 'Packs/Box',
+                                hint: 'e.g. 10',
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                onChanged: (v) => recalculatePharmacyValues(),
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.s),
+                            Expanded(
+                              child: _buildFormTextField(
+                                context: context,
+                                controller: piecesPerPackController,
+                                label: _getUnitLabel(selectedPharmacyUnit),
+                                hint: 'e.g. 10',
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                onChanged: (v) => recalculatePharmacyValues(),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.s),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildFormTextField(
+                                context: context,
+                                controller: packPriceController,
+                                label: 'Price per Pack',
+                                prefix: '₵ ',
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                onChanged: (v) {
+                                  isPackPriceOverridden = true;
+                                  recalculatePharmacyValues(source: 'pack');
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.s),
+                            Expanded(
+                              child: _buildFormTextField(
+                                context: context,
+                                controller: boxPriceController,
+                                label: 'Price per Box',
+                                prefix: '₵ ',
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                onChanged: (v) {
+                                  isBoxPriceOverridden = true;
+                                  recalculatePharmacyValues(source: 'box');
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.m),
+                  _buildFormTextField(
+                    context: context,
+                    controller: batchNumberController,
+                    label: 'Batch Number (Optional)',
+                    hint: 'e.g. BATCH-2026-001',
+                    icon: Icons.numbers_outlined,
+                  ),
+                  const SizedBox(height: AppSpacing.m),
+                  InkWell(
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now().add(const Duration(days: 365)),
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 3650)),
+                      );
+                      if (picked != null) setState(() => selectedExpiryDate = picked);
+                    },
+                    child: Container(
+                      height: 52,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: theme.dividerColor),
+                        borderRadius: BorderRadius.circular(AppRadius.s),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.event_outlined, size: 20, color: theme.colorScheme.onSurfaceVariant),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              selectedExpiryDate == null 
+                                  ? 'Batch Expiry Date (Optional)' 
+                                  : 'Expiry: ${DateFormat('yyyy-MM-dd').format(selectedExpiryDate!)}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: selectedExpiryDate == null ? theme.colorScheme.onSurfaceVariant : theme.colorScheme.onSurface,
+                              ),
+                            ),
+                          ),
+                          if (selectedExpiryDate != null)
+                            IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              onPressed: () => setState(() => selectedExpiryDate = null),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.m),
+                  SwitchListTile(
+                    title: const Text('Requires Doctor Prescription (Rx)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    value: requiresPrescription,
+                    onChanged: (v) => setState(() => requiresPrescription = v),
+                    activeThumbColor: Colors.red,
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                ],
+
+                if (isPhoneSection) ...[
+                  const SizedBox(height: AppSpacing.m),
+                  SwitchListTile(
+                    title: const Text('Track Serial / IMEI Numbers', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    subtitle: const Text('Enables individual IMEI tracking per unit', style: TextStyle(fontSize: 11)),
+                    value: requiresImei,
+                    onChanged: (v) => setState(() => requiresImei = v),
+                    activeThumbColor: Colors.blue,
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                  if (requiresImei) ...[
+                    const SizedBox(height: AppSpacing.m),
+                    _buildFormTextField(
+                      context: context,
+                      controller: imeiController,
+                      label: 'IMEI Numbers (Comma or Newline Separated)',
+                      hint: 'e.g. 356789123456789, 864210987654321',
+                      icon: Icons.qr_code,
+                      keyboardType: TextInputType.multiline,
+                      onChanged: (v) {
+                        final count = v.split(RegExp(r'[,\n]')).map((e) => e.trim()).where((e) => e.isNotEmpty).length;
+                        if (count > 0) {
+                          stockController.text = count.toString();
+                        }
+                      },
+                    ),
+                  ],
+                ],
+
+                if (isRepairSection) ...[
+                  const SizedBox(height: AppSpacing.m),
+                  SwitchListTile(
+                    title: const Text('Is Service / Labor', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    subtitle: const Text('No physical inventory is subtracted on sale', style: TextStyle(fontSize: 11)),
+                    value: isService,
+                    onChanged: (v) => setState(() {
+                      isService = v;
+                      if (v) isUnlimited = true;
+                    }),
+                    activeThumbColor: Colors.purple,
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                ],
               ],
             ),
           ),
@@ -914,7 +1509,7 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                 if (formKey.currentState!.validate()) {
                   setState(() => isUploading = true);
                   
-                  String finalImageUrl = 'assets/images/meat_art.jpg';
+                  String finalImageUrl = '';
                   
                   if (imageBytes != null && imageName != null) {
                     final uploadedUrl = await ref.read(productsFutureProvider.notifier).uploadImage(
@@ -930,24 +1525,52 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
 
                   final String validUuid = UuidUtils.generate();
 
+                  List<String>? imeis;
+                  if (imeiController.text.trim().isNotEmpty) {
+                    imeis = imeiController.text
+                        .split(RegExp(r'[,\n]'))
+                        .map((e) => e.trim())
+                        .where((e) => e.isNotEmpty)
+                        .toList();
+                  }
+
+                  final double? boxesCount = isPharmacySection ? double.tryParse(boxesController.text) : null;
+                  final double? packsPerBox = isPharmacySection ? double.tryParse(packsPerBoxController.text) : null;
+                  final double? piecesPerPack = isPharmacySection ? double.tryParse(piecesPerPackController.text) : null;
+                  final double? packPrice = isPharmacySection ? double.tryParse(packPriceController.text) : null;
+                  final double? boxPrice = isPharmacySection ? double.tryParse(boxPriceController.text) : null;
+
                   final newProduct = Product(
                     id: validUuid,
                     name: finalName,
                     retailPrice: double.tryParse(retailPriceController.text) ?? 0.0,
-                    wholesalePrice: double.tryParse(wholesalePriceController.text) ?? 0.0,
+                    wholesalePrice: (isPharmacySection && packPrice != null) ? packPrice : (double.tryParse(wholesalePriceController.text) ?? 0.0),
                     costPrice: double.tryParse(costPriceController.text) ?? 0.0,
                     category: selectedCategory == 'Other' ? otherCategoryController.text : selectedCategory,
                     imageUrl: finalImageUrl,
-                    stockQuantity: double.tryParse(stockController.text) ?? 0.0,
-                    unit: selectedUnit.name,
-                    isUnlimited: isUnlimited,
+                    stockQuantity: (requiresImei && imeis != null && imeis.isNotEmpty) 
+                        ? imeis.length.toDouble() 
+                        : (double.tryParse(stockController.text) ?? 0.0),
+                    unit: isPharmacySection ? selectedPharmacyUnit : selectedUnit.name,
+                    isUnlimited: isUnlimited || isService,
+                    batchNumber: batchNumberController.text.trim().isNotEmpty ? batchNumberController.text.trim() : null,
+                    batchExpiryDate: selectedExpiryDate,
+                    requiresPrescription: requiresPrescription,
+                    requiresImei: requiresImei,
+                    numberOfBoxes: boxesCount,
+                    packsPerBox: packsPerBox,
+                    boxPrice: boxPrice,
+                    piecesPerPack: piecesPerPack,
+                    packPrice: packPrice,
+                    imeiList: imeis,
+                    isService: isService,
                   );
                   await ref.read(productsFutureProvider.notifier).addProduct(newProduct);
                   if (context.mounted) Navigator.pop(context);
                 }
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: theme.colorScheme.primary,
+                backgroundColor: sectorColor,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 15),
               ),
@@ -956,10 +1579,11 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                 : const Text('Add Product'),
             ),
           ],
-        ),
-      ),
-    );
-  }
+        );
+      },
+    ),
+  );
+}
 
   void _showEditProductDialog(BuildContext context, WidgetRef ref, Product product) {
     final formKey = GlobalKey<FormState>();
@@ -967,12 +1591,104 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
     final retailPriceController = TextEditingController(text: product.retailPrice.toString());
     final wholesalePriceController = TextEditingController(text: product.wholesalePrice.toString());
     final costPriceController = TextEditingController(text: product.costPrice.toString());
+    final stockController = TextEditingController(text: product.stockQuantity.toString());
     final otherCategoryController = TextEditingController();
+    final batchNumberController = TextEditingController(text: product.batchNumber ?? '');
+    final imeiController = TextEditingController(text: product.imeiList?.join(', ') ?? '');
+    final double initialPcsPerPack = (product.piecesPerPack != null && product.piecesPerPack! > 0) ? product.piecesPerPack! : 10.0;
+    final double initialPacksPerBox = (product.packsPerBox != null && product.packsPerBox! > 0) ? product.packsPerBox! : 10.0;
+    final double initialBoxes = (product.numberOfBoxes != null && product.numberOfBoxes! > 0) 
+        ? product.numberOfBoxes! 
+        : (initialPacksPerBox > 0 && initialPcsPerPack > 0 ? (product.stockQuantity / (initialPacksPerBox * initialPcsPerPack)) : 1.0);
+    
+    final double initialPackPrice = product.packPrice ?? (product.retailPrice * initialPcsPerPack);
+    final double initialBoxPrice = product.boxPrice ?? (initialPackPrice * initialPacksPerBox);
+
+    final boxesController = TextEditingController(text: initialBoxes.toStringAsFixed(0));
+    final packsPerBoxController = TextEditingController(text: initialPacksPerBox.toStringAsFixed(0));
+    final piecesPerPackController = TextEditingController(text: initialPcsPerPack.toStringAsFixed(0));
+    final packPriceController = TextEditingController(text: initialPackPrice.toStringAsFixed(2));
+    final boxPriceController = TextEditingController(text: initialBoxPrice.toStringAsFixed(2));
+    bool isPackPriceOverridden = product.packPrice != null;
+    bool isBoxPriceOverridden = product.boxPrice != null;
+    bool isTabletPriceOverridden = product.retailPrice > 0;
+
+    bool isUpdatingPrices = false;
+
+    void recalculatePharmacyValues({String source = 'boxes'}) {
+      if (isUpdatingPrices) return;
+      isUpdatingPrices = true;
+
+      final boxes = double.tryParse(boxesController.text) ?? 0.0;
+      final packsPerBox = double.tryParse(packsPerBoxController.text) ?? 1.0;
+      final piecesPerPack = double.tryParse(piecesPerPackController.text) ?? 1.0;
+
+      final totalPieces = boxes * packsPerBox * piecesPerPack;
+      stockController.text = totalPieces % 1 == 0 ? totalPieces.toInt().toString() : totalPieces.toStringAsFixed(1);
+
+      double tabletPrice = double.tryParse(retailPriceController.text) ?? 0.0;
+      double packPrice = double.tryParse(packPriceController.text) ?? 0.0;
+      double boxPrice = double.tryParse(boxPriceController.text) ?? 0.0;
+
+      if (source == 'tablet') {
+        if (!isPackPriceOverridden) {
+          packPrice = tabletPrice * piecesPerPack;
+          packPriceController.text = packPrice.toStringAsFixed(2);
+        }
+        if (!isBoxPriceOverridden) {
+          boxPrice = packPrice * packsPerBox;
+          boxPriceController.text = boxPrice.toStringAsFixed(2);
+        }
+      } else if (source == 'pack') {
+        if (piecesPerPack > 0 && !isTabletPriceOverridden) {
+          tabletPrice = packPrice / piecesPerPack;
+          retailPriceController.text = tabletPrice.toStringAsFixed(2);
+        }
+        if (!isBoxPriceOverridden) {
+          boxPrice = packPrice * packsPerBox;
+          boxPriceController.text = boxPrice.toStringAsFixed(2);
+        }
+      } else if (source == 'box') {
+        if (packsPerBox > 0 && !isPackPriceOverridden) {
+          packPrice = boxPrice / packsPerBox;
+          packPriceController.text = packPrice.toStringAsFixed(2);
+        }
+        if (piecesPerPack > 0 && packsPerBox > 0 && !isTabletPriceOverridden) {
+          tabletPrice = boxPrice / (packsPerBox * piecesPerPack);
+          retailPriceController.text = tabletPrice.toStringAsFixed(2);
+        }
+      } else {
+        if (tabletPrice > 0 && !isPackPriceOverridden) {
+          packPrice = tabletPrice * piecesPerPack;
+          packPriceController.text = packPrice.toStringAsFixed(2);
+        } else if (packPrice > 0 && !isTabletPriceOverridden) {
+          tabletPrice = packPrice / piecesPerPack;
+          retailPriceController.text = tabletPrice.toStringAsFixed(2);
+        }
+        if (!isBoxPriceOverridden) {
+          boxPrice = packPrice * packsPerBox;
+          boxPriceController.text = boxPrice.toStringAsFixed(2);
+        }
+      }
+
+      isUpdatingPrices = false;
+    }
+    DateTime? selectedExpiryDate = product.batchExpiryDate;
+    bool requiresPrescription = product.requiresPrescription;
+    bool requiresImei = product.requiresImei;
+    bool isService = product.isService;
+    String selectedPharmacyUnit = ['tablets', 'capsules', 'pcs', 'mils', 'bottles', 'packs', 'boxes'].contains(product.unit) ? product.unit : 'tablets';
     final theme = Theme.of(context);
     
-    final categories = ['Beef', 'Cow', 'Pork', 'Hard Chicken (Layer)', 'Soft Chicken (Broiler)', 'Lamb', 'Goat', 'Turkey', 'Rabbit', 'Feeds', 'Other'];
-    String normalized = _normalizeCategory(product);
-    String selectedCategory = categories.contains(normalized) ? normalized : 'Other';
+    final categories = [
+      'Antimalarial', 'Antibiotic', 'Analgesic', 'NSAID', 'Cough & Cold',
+      'Cardiovascular', 'Gastrointestinal', 'Contraceptive', 'Supplement',
+      'Topical & Gel', 'Sedative', 'General Medication',
+      'Smartphones', 'Chargers & Power', 'Cases & Protection', 'Screen Protectors',
+      'Audio & Sound', 'Smart Wearables', 'Mounts & Holders', 'Repairs & Services',
+      'Other'
+    ];
+    String selectedCategory = categories.contains(product.category) ? product.category : 'Other';
     bool isUnlimited = product.isUnlimited;
 
     if (selectedCategory == 'Other') {
@@ -986,7 +1702,21 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setState) {
+          final isPharmacySection = _getSector(product) == 'pharmacy' ||
+              ['Antimalarial', 'Antibiotic', 'Analgesic', 'NSAID', 'Cough & Cold', 'Cardiovascular', 'Gastrointestinal', 'Contraceptive', 'Supplement', 'Topical & Gel', 'Sedative', 'General Medication'].contains(selectedCategory) ||
+              selectedCategory.toUpperCase().contains('PHARM') ||
+              selectedCategory.toUpperCase().contains('DRUG') ||
+              selectedCategory.toUpperCase().contains('MED');
+
+          final isPhoneSection = _getSector(product) == 'phones' ||
+              ['Smartphones', 'Chargers & Power', 'Cases & Protection', 'Screen Protectors', 'Audio & Sound', 'Smart Wearables', 'Mounts & Holders'].contains(selectedCategory) ||
+              selectedCategory.toUpperCase().contains('PHONE') ||
+              selectedCategory.toUpperCase().contains('SMART') ||
+              selectedCategory.toUpperCase().contains('ACCESSOR') ||
+              selectedCategory.toUpperCase().contains('MOBILE');
+
+          return AlertDialog(
           scrollable: true,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.l)),
           title: Text('Edit Product: ${product.name}'),
@@ -1022,9 +1752,7 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                           borderRadius: BorderRadius.circular(AppRadius.m),
                           child: imageBytes != null
                               ? Image.memory(imageBytes!, fit: BoxFit.cover)
-                              : (product.imageUrl.startsWith('http')
-                                  ? Image.network(product.imageUrl, fit: BoxFit.cover)
-                                  : Image.asset(product.imageUrl, fit: BoxFit.cover)),
+                              : _buildProductImageWidget(product.imageUrl),
                         ),
                       ),
                     ),
@@ -1068,6 +1796,10 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                             if (retailPriceController.text == '0.0' || retailPriceController.text == '0') {
                               retailPriceController.clear();
                             }
+                          },
+                          onChanged: (v) {
+                            isTabletPriceOverridden = true;
+                            recalculatePharmacyValues(source: 'tablet');
                           },
                           validator: (v) {
                             if (v == null || v.isEmpty) return 'Required';
@@ -1119,6 +1851,41 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                     ],
                   ),
                   const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: _buildFormTextField(
+                          context: context,
+                          controller: stockController,
+                          label: isUnlimited ? 'Current Quantity (Display only)' : 'Stock Quantity',
+                          suffix: isPharmacySection ? selectedPharmacyUnit : product.unit,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          validator: (v) {
+                            if (isUnlimited) return null;
+                            if (v == null || v.isEmpty) return 'Required';
+                            if (double.tryParse(v) == null) return 'Invalid qty';
+                            return null;
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.s),
+                      Expanded(
+                        child: isPharmacySection
+                            ? DropdownButtonFormField<String>(
+                                initialValue: selectedPharmacyUnit,
+                                isExpanded: true,
+                                decoration: const InputDecoration(labelText: 'Unit'),
+                                items: ['tablets', 'capsules', 'pcs', 'mils', 'bottles', 'packs', 'boxes']
+                                    .map((u) => DropdownMenuItem(value: u, child: Text(u.toUpperCase())))
+                                    .toList(),
+                                onChanged: (v) => setState(() => selectedPharmacyUnit = v!),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
                   SwitchListTile(
                     title: const Text('Unlimited Stock', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                     subtitle: const Text('Sales will not subtract from quantity', style: TextStyle(fontSize: 11)),
@@ -1128,6 +1895,199 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                     contentPadding: EdgeInsets.zero,
                     dense: true,
                   ),
+
+                  if (isPharmacySection) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(AppSpacing.m),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2E7D32).withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(AppRadius.m),
+                        border: Border.all(color: const Color(0xFF2E7D32).withValues(alpha: 0.2)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.medication_liquid_outlined, size: 18, color: Color(0xFF2E7D32)),
+                              SizedBox(width: 6),
+                              Text('Boxes, Packs & ${selectedPharmacyUnit.toUpperCase()} Configuration', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF2E7D32))),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text('Enter boxes, packs per box & $selectedPharmacyUnit per pack to calculate stock & pricing', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                          const SizedBox(height: AppSpacing.m),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildFormTextField(
+                                  context: context,
+                                  controller: boxesController,
+                                  label: 'Boxes',
+                                  hint: 'e.g. 2',
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  onChanged: (v) => recalculatePharmacyValues(),
+                                ),
+                              ),
+                              const SizedBox(width: AppSpacing.s),
+                              Expanded(
+                                child: _buildFormTextField(
+                                  context: context,
+                                  controller: packsPerBoxController,
+                                  label: 'Packs/Box',
+                                  hint: 'e.g. 10',
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  onChanged: (v) => recalculatePharmacyValues(),
+                                ),
+                              ),
+                              const SizedBox(width: AppSpacing.s),
+                              Expanded(
+                                child: _buildFormTextField(
+                                  context: context,
+                                  controller: piecesPerPackController,
+                                  label: _getUnitLabel(selectedPharmacyUnit),
+                                  hint: 'e.g. 10',
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  onChanged: (v) => recalculatePharmacyValues(),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: AppSpacing.s),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildFormTextField(
+                                  context: context,
+                                  controller: packPriceController,
+                                  label: 'Price per Pack',
+                                  prefix: '₵ ',
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  onChanged: (v) {
+                                    isPackPriceOverridden = true;
+                                    recalculatePharmacyValues();
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: AppSpacing.s),
+                              Expanded(
+                                child: _buildFormTextField(
+                                  context: context,
+                                  controller: boxPriceController,
+                                  label: 'Price per Box',
+                                  prefix: '₵ ',
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  onChanged: (v) {
+                                    isBoxPriceOverridden = true;
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildFormTextField(
+                      context: context,
+                      controller: batchNumberController,
+                      label: 'Batch Number',
+                      hint: 'e.g. BATCH-2026-001',
+                      icon: Icons.numbers_outlined,
+                    ),
+                    const SizedBox(height: 16),
+                    InkWell(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: selectedExpiryDate ?? DateTime.now().add(const Duration(days: 365)),
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime.now().add(const Duration(days: 3650)),
+                        );
+                        if (picked != null) setState(() => selectedExpiryDate = picked);
+                      },
+                      child: Container(
+                        height: 52,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: theme.dividerColor),
+                          borderRadius: BorderRadius.circular(AppRadius.s),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.event_outlined, size: 20, color: theme.colorScheme.onSurfaceVariant),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                selectedExpiryDate == null 
+                                    ? 'Batch Expiry Date (Optional)' 
+                                    : 'Expiry: ${DateFormat('yyyy-MM-dd').format(selectedExpiryDate!)}',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: selectedExpiryDate == null ? theme.colorScheme.onSurfaceVariant : theme.colorScheme.onSurface,
+                                ),
+                              ),
+                            ),
+                            if (selectedExpiryDate != null)
+                              IconButton(
+                                icon: const Icon(Icons.clear, size: 18),
+                                onPressed: () => setState(() => selectedExpiryDate = null),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SwitchListTile(
+                      title: const Text('Requires Doctor Prescription (Rx)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                      value: requiresPrescription,
+                      onChanged: (v) => setState(() => requiresPrescription = v),
+                      activeThumbColor: Colors.red,
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  ],
+
+                  if (isPhoneSection) ...[
+                    const SizedBox(height: 16),
+                    SwitchListTile(
+                      title: const Text('Track Serial / IMEI Numbers', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                      subtitle: const Text('Enables individual IMEI tracking per unit', style: TextStyle(fontSize: 11)),
+                      value: requiresImei,
+                      onChanged: (v) => setState(() => requiresImei = v),
+                      activeThumbColor: Colors.blue,
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                    if (requiresImei) ...[
+                      const SizedBox(height: 16),
+                      _buildFormTextField(
+                        context: context,
+                        controller: imeiController,
+                        label: 'IMEI Numbers (Comma or Newline Separated)',
+                        hint: 'e.g. 356789123456789, 864210987654321',
+                        icon: Icons.qr_code,
+                        keyboardType: TextInputType.multiline,
+                      ),
+                    ],
+                  ],
+
+                  if (selectedCategory == 'Repairs & Services' || selectedCategory.toUpperCase().contains('REPAIR') || selectedCategory.toUpperCase().contains('SERVICE')) ...[
+                    const SizedBox(height: 16),
+                    SwitchListTile(
+                      title: const Text('Is Service / Labor', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                      subtitle: const Text('No physical inventory is subtracted on sale', style: TextStyle(fontSize: 11)),
+                      value: isService,
+                      onChanged: (v) => setState(() {
+                        isService = v;
+                        if (v) isUnlimited = true;
+                      }),
+                      activeThumbColor: Colors.purple,
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1154,16 +2114,48 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                     }
                   }
 
-                  final updated = product.copyWith(
+                  List<String>? imeis;
+                  if (imeiController.text.trim().isNotEmpty) {
+                    imeis = imeiController.text
+                        .split(RegExp(r'[,\n]'))
+                        .map((e) => e.trim())
+                        .where((e) => e.isNotEmpty)
+                        .toList();
+                  }
+
+                  final double? boxesCount = isPharmacySection ? double.tryParse(boxesController.text) : product.numberOfBoxes;
+                  final double? packsPerBox = isPharmacySection ? double.tryParse(packsPerBoxController.text) : product.packsPerBox;
+                  final double? piecesPerPack = isPharmacySection ? double.tryParse(piecesPerPackController.text) : product.piecesPerPack;
+                  final double? packPrice = isPharmacySection ? double.tryParse(packPriceController.text) : product.packPrice;
+                  final double? boxPrice = isPharmacySection ? double.tryParse(boxPriceController.text) : product.boxPrice;
+
+                  final fullUpdatedProduct = Product(
+                    id: product.id,
+                    branchCode: product.branchCode,
                     name: nameController.text,
-                    retailPrice: double.tryParse(retailPriceController.text),
-                    wholesalePrice: double.tryParse(wholesalePriceController.text),
-                    costPrice: double.tryParse(costPriceController.text),
+                    retailPrice: double.tryParse(retailPriceController.text) ?? product.retailPrice,
+                    wholesalePrice: (isPharmacySection && packPrice != null) ? packPrice : (double.tryParse(wholesalePriceController.text) ?? product.wholesalePrice),
+                    costPrice: double.tryParse(costPriceController.text) ?? product.costPrice,
                     category: selectedCategory == 'Other' ? otherCategoryController.text : selectedCategory,
                     imageUrl: finalImageUrl,
-                    isUnlimited: isUnlimited,
+                    stockQuantity: (requiresImei && imeis != null && imeis.isNotEmpty)
+                        ? imeis.length.toDouble()
+                        : (double.tryParse(stockController.text) ?? product.stockQuantity),
+                    unit: isPharmacySection ? selectedPharmacyUnit : product.unit,
+                    isUnlimited: isUnlimited || isService,
+                    batchNumber: batchNumberController.text.trim().isNotEmpty ? batchNumberController.text.trim() : null,
+                    batchExpiryDate: selectedExpiryDate,
+                    requiresPrescription: requiresPrescription,
+                    requiresImei: requiresImei,
+                    numberOfBoxes: boxesCount,
+                    packsPerBox: packsPerBox,
+                    boxPrice: boxPrice,
+                    piecesPerPack: piecesPerPack,
+                    packPrice: packPrice,
+                    imeiList: imeis,
+                    isService: isService,
                   );
-                  await ref.read(productsFutureProvider.notifier).updateProduct(updated);
+                  await ref.read(productsFutureProvider.notifier).updateProduct(fullUpdatedProduct);
                   if (context.mounted) Navigator.pop(context);
                 }
               },
@@ -1173,10 +2165,11 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                 : const Text('Save Changes'),
             ),
           ],
-        ),
-      ),
-    );
-  }
+        );
+      },
+    ),
+  );
+}
 
   Widget _buildFormTextField({
     required BuildContext context,
@@ -1255,19 +2248,7 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(AppRadius.s),
-                            child: product.imageUrl.isEmpty
-                                ? const Icon(Icons.image)
-                                : (product.imageUrl.startsWith('assets/') && product.imageUrl.isNotEmpty)
-                                    ? Image.asset(
-                                        product.imageUrl, 
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, _, _) => const Icon(Icons.image),
-                                      )
-                                    : Image.network(
-                                        product.imageUrl, 
-                                        fit: BoxFit.cover, 
-                                        errorBuilder: (context, error, stackTrace) => const Icon(Icons.image),
-                                      ),
+                            child: _buildProductImageWidget(product.imageUrl),
                           ),
                         ),
                         const SizedBox(width: AppSpacing.m),
@@ -1378,21 +2359,9 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                     Expanded(
                       child: Stack(
                         children: [
-                          product.imageUrl.isEmpty
-                              ? Container(color: Theme.of(context).colorScheme.surfaceContainerHighest, child: const Center(child: Icon(Icons.image)))
-                              : (product.imageUrl.startsWith('assets/') && product.imageUrl.isNotEmpty)
-                                  ? Image.asset(
-                                      product.imageUrl, 
-                                      fit: BoxFit.cover, 
-                                      width: double.infinity,
-                                      errorBuilder: (_, _, _) => const Center(child: Icon(Icons.image)),
-                                    )
-                                  : Image.network(
-                                      product.imageUrl, 
-                                      fit: BoxFit.cover, 
-                                      width: double.infinity, 
-                                      errorBuilder: (context, error, stackTrace) => const Center(child: Icon(Icons.image)),
-                                    ),
+                          Positioned.fill(
+                            child: _buildProductImageWidget(product.imageUrl, width: double.infinity, height: double.infinity),
+                          ),
                           if (isLowStock)
                             Positioned(
                               top: 8,
@@ -1524,7 +2493,7 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                                   Text(
                                     product.isUnlimited 
                                       ? 'UNLIMITED' 
-                                      : '${product.stockQuantity.toStringAsFixed(product.unit == 'unit' ? 0 : 1)}${product.unit == 'unit' ? (product.category == 'CHICKEN' ? " birds" : " pcs") : product.unit}', 
+                                      : '${product.stockQuantity.toStringAsFixed(product.unit == 'unit' ? 0 : 1)}${product.unit == 'unit' ? " pcs" : product.unit}', 
                                     style: TextStyle(fontWeight: FontWeight.bold, color: product.isUnlimited ? Colors.blue : (isLowStock ? Colors.red : Colors.green))
                                   ),
                                   if (hasIncoming)
@@ -1594,14 +2563,10 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
   }
 
   Widget _buildItemMenu(BuildContext context, WidgetRef ref, Product product) {
-    final bool isWholeChicken = product.name.contains('Whole Chicken');
-
     return PopupMenuButton<String>(
       onSelected: (val) {
         if (val == 'edit') {
           _showEditProductDialog(context, ref, product);
-        } else if (val == 'portion' && isWholeChicken) {
-          _showChickenPortioningDialog(context, ref, product);
         } else if (val == 'delete') {
           _confirmDeleteProduct(context, ref, product);
         } else if (val == 'stop_promo') {
@@ -1613,17 +2578,6 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
       icon: const Icon(Icons.more_vert, size: 18),
       padding: EdgeInsets.zero,
       itemBuilder: (context) => [
-        if (isWholeChicken)
-          const PopupMenuItem(
-            value: 'portion',
-            child: Row(
-              children: [
-                Icon(Icons.restaurant_rounded, size: 18, color: Colors.orange),
-                SizedBox(width: 8),
-                Text('Portion Bird'),
-              ],
-            ),
-          ),
         const PopupMenuItem(
           value: 'edit',
           child: Row(
@@ -1854,257 +2808,58 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
     );
   }
 
-  void _showChickenPortioningDialog(BuildContext context, WidgetRef ref, Product wholeChicken) {
-    final qtyController = TextEditingController(text: '1');
-    
-    // Weight controllers for all parts
-    final thighWeightController = TextEditingController(text: '0');
-    final wingWeightController = TextEditingController(text: '0');
-    final drumWeightController = TextEditingController(text: '0');
-    final breastWeightController = TextEditingController(text: '0');
-    final backWeightController = TextEditingController(text: '0');
-    final gizzardWeightController = TextEditingController(text: '0');
 
-    final type = wholeChicken.name.contains('Soft') ? 'Soft' : 'Hard';
-    bool isProcessing = false;
-    WeightUnit selectedUnit = WeightUnit.kg;
-    bool isLegSeparated = false;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          scrollable: true,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.l)),
-          title: Row(
-            children: [
-              const Icon(Icons.restaurant_rounded, color: Colors.orange),
-              const SizedBox(width: 12),
-              Expanded(child: Text('Portion: ${wholeChicken.name}', overflow: TextOverflow.ellipsis)),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Enter the total weight for each part group resulting from this batch.', 
-                style: TextStyle(fontSize: 12, color: Colors.grey)),
-              const SizedBox(height: 16),
-              
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: qtyController,
-                      decoration: const InputDecoration(
-                        labelText: 'Number of Birds',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.numbers),
-                        isDense: true,
-                      ),
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    children: [
-                      const Text('INPUT UNIT', style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold)),
-                      ToggleButtons(
-                        constraints: const BoxConstraints(minWidth: 40, minHeight: 32),
-                        isSelected: [
-                          selectedUnit == WeightUnit.kg, 
-                          selectedUnit == WeightUnit.lb,
-                        ],
-                        onPressed: (index) {
-                          setState(() {
-                            selectedUnit = index == 0 ? WeightUnit.kg : WeightUnit.lb;
-                          });
-                        },
-                        borderRadius: BorderRadius.circular(8),
-                        selectedColor: Colors.white,
-                        fillColor: Colors.orange,
-                        children: const [
-                          Text('kg', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                          Text('lb', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Divider(),
-              ),
-              
-              const Text('PART WEIGHTS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.orange, letterSpacing: 1)),
-              const SizedBox(height: 8),
-              SwitchListTile(
-                title: const Text('Separate Thighs & Drumsticks?', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                subtitle: const Text('OFF: Thigh includes Drumstick. ON: They are separate.', style: TextStyle(fontSize: 9)),
-                value: isLegSeparated, 
-                onChanged: (v) => setState(() => isLegSeparated = v),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                activeThumbColor: Colors.orange,
-              ),
-              const SizedBox(height: 8),
-              
-              _weightInputField(
-                isLegSeparated ? 'Thighs (Separated)' : ((double.tryParse(drumWeightController.text) ?? 0) > 0 ? 'Thighs (Separated)' : 'Thighs (Whole Leg)'), 
-                thighWeightController, 
-                selectedUnit,
-                enabled: isLegSeparated || (double.tryParse(drumWeightController.text) ?? 0) == 0,
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 8),
-              _weightInputField('Wings Weight', wingWeightController, selectedUnit),
-              const SizedBox(height: 8),
-              _weightInputField(
-                isLegSeparated ? 'Drumsticks (Separated)' : ((double.tryParse(thighWeightController.text) ?? 0) > 0 ? 'Drumsticks (Included in Thigh)' : 'Drumsticks Weight'), 
-                drumWeightController, 
-                selectedUnit,
-                enabled: isLegSeparated || (double.tryParse(thighWeightController.text) ?? 0) == 0,
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 8),
-              _weightInputField('Breast Weight', breastWeightController, selectedUnit),
-              const SizedBox(height: 8),
-              _weightInputField('Back Weight', backWeightController, selectedUnit),
-              const SizedBox(height: 8),
-              _weightInputField('Gizzard Weight', gizzardWeightController, selectedUnit),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: isProcessing ? null : () => Navigator.pop(context), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: isProcessing ? null : () async {
-                final int birds = int.tryParse(qtyController.text) ?? 0;
-                if (birds <= 0) return;
-                
-                if (birds > wholeChicken.stockQuantity) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Not enough whole chickens in stock!')));
-                  return;
-                }
-
-                setState(() => isProcessing = true);
-                try {
-                  final notifier = ref.read(productsFutureProvider.notifier);
-                  final products = ref.read(productsFutureProvider).value ?? [];
-                  
-                  // 0. Extract Range Suffix (e.g. "(3.0 - 4.0 LB)")
-                  String rangeSuffix = '';
-                  if (wholeChicken.name.contains('(') && wholeChicken.name.contains(')')) {
-                    rangeSuffix = wholeChicken.name.substring(wholeChicken.name.lastIndexOf('('));
-                  }
-
-                  if (rangeSuffix.isEmpty) {
-                    throw Exception('Weight range suffix missing. Cannot portion bird without range.');
-                  }
-
-                  // 1. Update Whole Chicken
-                  await notifier.updateStock(wholeChicken.id, -birds.toDouble(), reason: 'PORTIONING_REDUCTION');
-
-                  // Helper to convert and update
-                  Future<void> updatePart(String partName, String enteredWeight) async {
-                    double weight = double.tryParse(enteredWeight) ?? 0.0;
-                    if (weight <= 0) return;
-
-                    // Convert to KG for database consistency if needed
-                    if (selectedUnit == WeightUnit.lb) {
-                      weight = WeightConverter.toKg(weight);
-                    }
-
-                    // Find the specific card that matches type (Soft/Hard), Part Name, and Range
-                    final part = products.where((p) => 
-                      p.name.contains(type) && 
-                      p.name.contains(partName) && 
-                      p.name.contains(rangeSuffix)
-                    ).firstOrNull;
-
-                    if (part != null) {
-                      await notifier.updateStock(part.id, weight, reason: 'PORTIONING_ADDITION_${rangeSuffix.replaceAll('(', '').replaceAll(')', '').replaceAll(' ', '')}');
-                    }
-                  }
-
-                  // 2. Update all parts
-                  await updatePart('Thigh', thighWeightController.text);
-                  await updatePart('Wings', wingWeightController.text);
-                  await updatePart('Drumsticks', drumWeightController.text);
-                  await updatePart('Breast', breastWeightController.text);
-                  await updatePart('Back', backWeightController.text);
-
-                  // 3. Update Gizzard (Single global card)
-                  double gizzardWeight = double.tryParse(gizzardWeightController.text) ?? 0.0;
-                  if (gizzardWeight > 0) {
-                    if (selectedUnit == WeightUnit.lb) gizzardWeight = WeightConverter.toKg(gizzardWeight);
-                    final gizzard = products.firstWhere((p) => p.name.toUpperCase() == 'GIZZARD');
-                    await notifier.updateStock(gizzard.id, gizzardWeight, reason: 'PORTIONING_GIZZARD_WEIGHT');
-                  }
-
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Portioned $birds chickens and updated part weights!'), backgroundColor: Colors.green)
-                    );
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
-                    setState(() => isProcessing = false);
-                  }
-                }
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
-              child: isProcessing 
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Text('Save Weights'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _weightInputField(String label, TextEditingController controller, WeightUnit unit, {bool enabled = true, Function(String)? onChanged}) {
-    return TextFormField(
-      controller: controller,
-      enabled: enabled,
-      onChanged: onChanged,
-      decoration: InputDecoration(
-        labelText: label,
-        suffixText: unit.name,
-        border: const OutlineInputBorder(),
-        isDense: true,
-        fillColor: enabled ? null : Colors.grey.shade100,
-        filled: !enabled,
-      ),
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-    );
-  }
 
   String _normalizeCategory(Product p) {
-    final cat = p.category.toUpperCase();
-    if (cat.contains('BEEF') || cat.contains('COW')) {
-      final n = p.name.toUpperCase();
-      if (n.contains('HEAD') || n.contains('FEET') || n.contains('OFFAL')) {
-        return 'Cow';
+    if (p.category.trim().isEmpty) return 'Other';
+    return p.category.trim();
+  }
+
+  Widget _buildProductImageWidget(String imageUrl, {BoxFit fit = BoxFit.cover, double? width, double? height}) {
+    if (imageUrl.isEmpty) {
+      return Container(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        child: const Center(child: Icon(Icons.image)),
+      );
+    }
+    if (imageUrl.startsWith('data:image') || imageUrl.contains(';base64,')) {
+      final bytes = getDecodedCardImage(imageUrl);
+      if (bytes == null) {
+        return Container(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: const Center(child: Icon(Icons.image)),
+        );
       }
-      return 'Beef';
+      return Image.memory(
+        bytes,
+        gaplessPlayback: true,
+        fit: fit,
+        width: width,
+        height: height,
+        errorBuilder: _buildImageError,
+      );
     }
-    if (cat.contains('HARD LAYER') || cat.contains('HARD CHICKEN')) return 'Hard Chicken (Layer)';
-    if (cat.contains('SOFT BROILER') || cat.contains('SOFT CHICKEN')) return 'Soft Chicken (Broiler)';
-    if (cat.contains('CHICKEN')) {
-      if (p.name.contains('Hard')) return 'Hard Chicken (Layer)';
-      if (p.name.contains('Soft')) return 'Soft Chicken (Broiler)';
-      return 'Hard Chicken (Layer)'; // Default
+    if (imageUrl.startsWith('assets/')) {
+      return Image.asset(
+        imageUrl,
+        gaplessPlayback: true,
+        fit: fit,
+        width: width,
+        height: height,
+        errorBuilder: _buildImageError,
+      );
     }
-    // Title case fallback
-    if (cat.isEmpty) return 'Other';
-    return cat[0].toUpperCase() + cat.substring(1).toLowerCase();
+    return Image.network(
+      imageUrl,
+      gaplessPlayback: true,
+      fit: fit,
+      width: width,
+      height: height,
+      errorBuilder: _buildImageError,
+    );
+  }
+
+  Widget _buildImageError(BuildContext c, Object e, StackTrace? s) {
+    return const Center(child: Icon(Icons.image));
   }
 }

@@ -7,6 +7,7 @@ import '../core/uuid_utils.dart';
 import '../models/product.dart';
 import 'supabase_product_service.dart';
 import 'user_provider.dart';
+import '../models/user_model.dart';
 import 'notification_service.dart';
 import 'audit_service.dart';
 import 'offline_sync_service.dart';
@@ -14,7 +15,7 @@ import '../models/system_models.dart';
 import '../core/supabase_config.dart';
 
 abstract class ProductService {
-  Future<List<Product>> getProducts(String branchCode);
+  Future<List<Product>> getProducts(String? branchCode);
   Future<Product> getProductById(String id);
   Future<void> addProduct(Product product);
   Future<void> updateProduct(Product product);
@@ -22,7 +23,7 @@ abstract class ProductService {
   Future<void> updateStock(String id, double newQuantity);
   Future<void> applyPromotion(String id, double percentage, DateTime? start, DateTime? end, PromoTarget target, PromoCustomerTarget customerTarget);
   Future<String?> uploadProductImage(Uint8List bytes, String fileName);
-  Stream<List<Product>> watchProducts(String branchCode);
+  Stream<List<Product>> watchProducts(String? branchCode);
 }
 
 final productServiceProvider = Provider<ProductService>((ref) {
@@ -96,22 +97,31 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
   void _startSubscription() {
     _subscription?.cancel();
     final user = ref.read(currentUserProvider);
-    if (user != null && user.branchCode != null) {
-      _subscription = _service.watchProducts(user.branchCode!).listen(
-        (products) {
-          state = AsyncValue.data(products);
-          _saveToCache(products); // Persist for next offline session
-          _checkStockAlerts(products);
-        },
-        onError: (e, st) {
-          debugPrint('Product Stream Connection Error (Resuming?): $e');
-          // If we already have data, don't trigger error state (avoids red screen)
-          if (!state.hasValue) {
-             state = AsyncValue.error(e, st);
-          }
-        },
-        cancelOnError: false,
-      );
+    if (user != null) {
+      final roles = user.activeRoles;
+      final bool canSeeAll = roles.contains(UserRole.admin) || roles.contains(UserRole.superAdmin);
+      
+      // If user is Admin/SuperAdmin, they can view even without a specific branch code
+      // If not admin, they MUST have a branch code assigned.
+      if (canSeeAll || user.branchCode != null) {
+        _subscription = _service.watchProducts(user.branchCode).listen(
+          (products) {
+            state = AsyncValue.data(products);
+            _saveToCache(products); // Persist for next offline session
+            _checkStockAlerts(products);
+          },
+          onError: (e, st) {
+            debugPrint('Product Stream Connection Error (Resuming?): $e');
+            // If we already have data, don't trigger error state (avoids red screen)
+            if (!state.hasValue) {
+               state = AsyncValue.error(e, st);
+            }
+          },
+          cancelOnError: false,
+        );
+      } else {
+        state = const AsyncValue.data([]);
+      }
     } else {
       state = const AsyncValue.data([]);
     }
@@ -155,26 +165,29 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
     final user = ref.read(currentUserProvider);
     final productWithBranch = product.copyWith(branchCode: user?.branchCode);
     
+    // Instantly update local Riverpod state and Hive cache for 0ms UI latency
+    state.whenData((products) {
+      final newList = [...products.where((p) => p.id != productWithBranch.id), productWithBranch];
+      state = AsyncValue.data(newList);
+      _saveToCache(newList);
+    });
+
     try {
       final connectivity = await Connectivity().checkConnectivity();
       if (!connectivity.contains(ConnectivityResult.none)) {
         await _service.addProduct(productWithBranch);
       } else {
-        throw Exception('Offline');
+        await OfflineSyncService.addToQueue(
+          actionType: 'UPDATE_PRODUCT',
+          data: productWithBranch.toJson(),
+        );
       }
     } catch (e) {
-      // Use Offline Queue
+      debugPrint('Error adding product to backend: $e');
       await OfflineSyncService.addToQueue(
         actionType: 'UPDATE_PRODUCT',
         data: productWithBranch.toJson(),
       );
-      
-      // Update local state immediately for responsiveness
-      state.whenData((products) {
-        final newList = [...products, productWithBranch];
-        state = AsyncValue.data(newList);
-        _saveToCache(newList);
-      });
     }
   }
 
@@ -192,45 +205,55 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
         newData: updatedProduct.toJson(),
       );
 
-      final connectivity = await Connectivity().checkConnectivity();
-      if (!connectivity.contains(ConnectivityResult.none)) {
-        await _service.updateProduct(updatedProduct);
-      } else {
-        throw Exception('Offline');
-      }
-    } catch (e) {
-      await OfflineSyncService.addToQueue(
-        actionType: 'UPDATE_PRODUCT',
-        data: updatedProduct.toJson(),
-      );
-
+      // Instantly update local Riverpod state and Hive cache so UI (cards/grids) reflects changes immediately
       state.whenData((products) {
         final newList = products.map((p) => p.id == updatedProduct.id ? updatedProduct : p).toList();
         state = AsyncValue.data(newList);
         _saveToCache(newList);
       });
+
+      final connectivity = await Connectivity().checkConnectivity();
+      if (!connectivity.contains(ConnectivityResult.none)) {
+        await _service.updateProduct(updatedProduct);
+      } else {
+        await OfflineSyncService.addToQueue(
+          actionType: 'UPDATE_PRODUCT',
+          data: updatedProduct.toJson(),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error updating product on backend: $e');
+      await OfflineSyncService.addToQueue(
+        actionType: 'UPDATE_PRODUCT',
+        data: updatedProduct.toJson(),
+      );
     }
   }
 
   Future<void> deleteProduct(String id) async {
+    // Instantly remove from local Riverpod state and Hive cache
+    state.whenData((products) {
+      final newList = products.where((p) => p.id != id).toList();
+      state = AsyncValue.data(newList);
+      _saveToCache(newList);
+    });
+
     try {
       final connectivity = await Connectivity().checkConnectivity();
       if (!connectivity.contains(ConnectivityResult.none)) {
         await _service.deleteProduct(id);
       } else {
-        throw Exception('Offline');
+        await OfflineSyncService.addToQueue(
+          actionType: 'DELETE_PRODUCT',
+          data: {'id': id},
+        );
       }
     } catch (e) {
+      debugPrint('Error deleting product on backend: $e');
       await OfflineSyncService.addToQueue(
         actionType: 'DELETE_PRODUCT',
         data: {'id': id},
       );
-
-      state.whenData((products) {
-        final newList = products.where((p) => p.id != id).toList();
-        state = AsyncValue.data(newList);
-        _saveToCache(newList);
-      });
     }
   }
 

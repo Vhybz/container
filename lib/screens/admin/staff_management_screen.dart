@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../core/constants.dart';
+import '../../core/uuid_utils.dart';
 import '../../services/user_provider.dart';
 import '../../models/user_model.dart';
 import '../../widgets/main_app_bar.dart';
@@ -26,6 +27,7 @@ class StaffManagementScreen extends ConsumerStatefulWidget {
 class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  String _selectedBranchFilter = 'ALL';
 
   @override
   void initState() {
@@ -49,12 +51,25 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     final isLoading = ref.watch(userLoadingProvider);
     final branchesAsync = ref.watch(branchesProvider);
     
+    final branches = branchesAsync.value ?? [];
+    
     // Filtering logic
     final filteredUsers = users.where((u) {
       final query = _searchQuery.toLowerCase();
-      return u.name.toLowerCase().contains(query) || 
+      final matchesQuery = query.isEmpty ||
+             u.name.toLowerCase().contains(query) || 
              u.email.toLowerCase().contains(query) || 
              (u.phone?.contains(query) ?? false);
+
+      if (!matchesQuery) return false;
+
+      if (_selectedBranchFilter != 'ALL') {
+        if (u.status != AccountStatus.pending && u.branchCode != _selectedBranchFilter) {
+          return false;
+        }
+      }
+
+      return true;
     }).toList();
 
     final pendingUsers = filteredUsers.where((u) => u.status == AccountStatus.pending).toList();
@@ -103,7 +118,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                           delegate: SliverChildListDelegate([
                             _buildHeader(context, ref),
                             const SizedBox(height: AppSpacing.m),
-                            _buildSearchBar(context),
+                            _buildSearchBar(context, branches),
                             const SizedBox(height: AppSpacing.m),
                             _buildSummaryInfo(context, users, pendingUsers),
                             const SizedBox(height: AppSpacing.l),
@@ -195,26 +210,57 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     );
   }
 
-  Widget _buildSearchBar(BuildContext context) {
+  Widget _buildSearchBar(BuildContext context, List<Branch> branches) {
     final theme = Theme.of(context);
-    return TextField(
-      controller: _searchController,
-      decoration: InputDecoration(
-        hintText: 'Search by name, email or phone...',
-        prefixIcon: const Icon(Icons.search),
-        suffixIcon: _searchQuery.isNotEmpty 
-          ? IconButton(
-              icon: const Icon(Icons.clear), 
-              onPressed: () {
-                _searchController.clear();
-                setState(() => _searchQuery = '');
-              }) 
-          : null,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.m)),
-        filled: true,
-        fillColor: theme.cardTheme.color,
-      ),
-      onChanged: (value) => setState(() => _searchQuery = value),
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Search by name, email or phone...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchQuery.isNotEmpty 
+                ? IconButton(
+                    icon: const Icon(Icons.clear), 
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _searchQuery = '');
+                    }) 
+                : null,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.m)),
+              filled: true,
+              fillColor: theme.cardTheme.color,
+            ),
+            onChanged: (value) => setState(() => _searchQuery = value),
+          ),
+        ),
+        if (branches.isNotEmpty) ...[
+          const SizedBox(width: AppSpacing.m),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: theme.cardTheme.color,
+              borderRadius: BorderRadius.circular(AppRadius.m),
+              border: Border.all(color: theme.dividerColor),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _selectedBranchFilter,
+                icon: const Icon(Icons.filter_list_rounded),
+                items: [
+                  const DropdownMenuItem(value: 'ALL', child: Text('All Branches', style: TextStyle(fontSize: 13))),
+                  ...branches.map((b) => DropdownMenuItem(
+                    value: b.code,
+                    child: Text(b.name, style: const TextStyle(fontSize: 13)),
+                  )),
+                ],
+                onChanged: (v) => setState(() => _selectedBranchFilter = v ?? 'ALL'),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -528,22 +574,54 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
   }
 
   void _confirmApproval(BuildContext context, WidgetRef ref, UserAccount user) {
+    final currentUser = ref.read(currentUserProvider);
+    final branchesAsync = ref.watch(branchesProvider);
+    final branches = branchesAsync.value ?? [];
+    String? selectedBranch = user.branchCode ?? currentUser?.branchCode;
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Approve Staff?'),
-        content: Text('Approve ${user.name} as ${user.role.name}?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              ref.read(userProvider.notifier).approveUser(user.id);
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-            child: const Text('Approve'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Approve Staff Account'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Approve ${user.name} (${user.email}) as ${user.role.name.toUpperCase()}?'),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                initialValue: selectedBranch,
+                decoration: const InputDecoration(
+                  labelText: 'Assign Working Branch',
+                  prefixIcon: Icon(Icons.storefront_outlined),
+                ),
+                items: branches.map((b) => DropdownMenuItem(
+                  value: b.code,
+                  child: Text('${b.name} (${b.location})'),
+                )).toList(),
+                onChanged: (v) => setState(() => selectedBranch = v),
+              ),
+            ],
           ),
-        ],
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () async {
+                if (selectedBranch != null && selectedBranch != user.branchCode) {
+                  await ref.read(userProvider.notifier).updateProfile(
+                    user.id,
+                    branchCode: selectedBranch,
+                  );
+                }
+                await ref.read(userProvider.notifier).approveUser(user.id);
+                if (context.mounted) Navigator.pop(context);
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+              child: const Text('Approve'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -942,10 +1020,26 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   ),
                   DropdownButtonFormField<UserRole>(
                     initialValue: selectedRole,
-                    items: [UserRole.admin, UserRole.pharmacist, UserRole.secretary]
-                        .map((r) => DropdownMenuItem(
+                    items: [
+                      UserRole.admin,
+                      UserRole.barber,
+                      UserRole.phoneSalesGuy,
+                      UserRole.secretary,
+                      UserRole.pharmacist,
+                      UserRole.cashier,
+                      UserRole.butcher,
+                    ].map((r) => DropdownMenuItem(
                           value: r, 
-                          child: Text(r == UserRole.secretary ? 'SECRETARY (BARBERSHOP & TECH)' : r.display.toUpperCase()),
+                          child: Text(
+                            r == UserRole.barber 
+                              ? 'BARBER / STYLIST' 
+                              : (r == UserRole.phoneSalesGuy || r == UserRole.phoneSales 
+                                  ? 'PHONE REPAIRER / TECH REP' 
+                                  : (r == UserRole.secretary 
+                                      ? 'SECRETARY (BARBERSHOP & TECH)' 
+                                      : r.display.toUpperCase())),
+                            style: const TextStyle(fontSize: 12),
+                          ),
                         )).toList(),
                     onChanged: (v) => setState(() => selectedRole = v!),
                     decoration: const InputDecoration(labelText: 'Role'),
@@ -970,7 +1064,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                 if (formKey.currentState!.validate()) {
                   setState(() => isSaving = true);
                   final newUser = UserAccount(
-                    id: 'temp-${DateTime.now().millisecondsSinceEpoch}',
+                    id: UuidUtils.generate(),
                     firstName: firstNameController.text.trim(),
                     surname: surnameController.text.trim(),
                     email: emailController.text.trim(),

@@ -528,7 +528,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
                     ),
                   ),
                   Text(
-                    'Unforgettable Taste from Mi~Corazon',
+                    'Multi-Business Management System',
                     style: TextStyle(
                       color: Colors.white70,
                       fontSize: isMobile ? 12 : 16,
@@ -1235,16 +1235,36 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
       return now.subtract(Duration(days: 6 - index));
     });
 
-    final dailyRevenue = last7Days.map((date) {
-      final total = sales
-          .where((s) => s.timestamp.year == date.year && 
-                        s.timestamp.month == date.month && 
-                        s.timestamp.day == date.day)
-          .fold(0.0, (sum, s) => sum + s.totalAmount);
-      return total;
+    final dailyBreakdowns = last7Days.map((date) {
+      final daySales = sales.where((s) => 
+        s.timestamp.year == date.year && 
+        s.timestamp.month == date.month && 
+        s.timestamp.day == date.day &&
+        s.isActive
+      );
+
+      double pharmacy = 0.0;
+      double phones = 0.0;
+      double barbershop = 0.0;
+
+      for (var sale in daySales) {
+        for (var item in sale.items) {
+          final cat = item.product.category.toUpperCase();
+          final amount = item.total;
+          if (item.product.requiresImei || cat.contains('PHONE') || cat.contains('SMART') || cat.contains('CHARGER') || cat.contains('CASE') || cat.contains('ACCESSOR') || cat.contains('AUDIO') || cat.contains('WEARABLE') || cat.contains('MOUNT') || cat.contains('REPAIR')) {
+            phones += amount;
+          } else if (item.product.isService || cat.contains('BARBER') || cat.contains('HAIR') || cat.contains('BEARD') || cat.contains('GROOM')) {
+            barbershop += amount;
+          } else {
+            pharmacy += amount;
+          }
+        }
+      }
+      return {'pharmacy': pharmacy, 'phones': phones, 'barbershop': barbershop, 'total': pharmacy + phones + barbershop};
     }).toList();
 
-    final maxRevenue = dailyRevenue.reduce((a, b) => a > b ? a : b);
+    final maxTotals = dailyBreakdowns.map((b) => b['total'] ?? 0.0).toList();
+    final maxRevenue = maxTotals.isEmpty ? 0.0 : maxTotals.reduce((a, b) => a > b ? a : b);
     final double chartMax = maxRevenue == 0 ? 1000 : maxRevenue * 1.2;
 
     // Top Selling Category Logic
@@ -1279,12 +1299,12 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('System Analytics', 
+                    Text('System Revenue Analytics', 
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: theme.colorScheme.onSurface),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    Text('Real-time revenue & category performance', 
+                    Text('Stacked breakdown by shop sector (7-day trend)', 
                       style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1312,15 +1332,34 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.xl),
+          const SizedBox(height: AppSpacing.m),
+          // Color Legend Row
+          Wrap(
+            spacing: 12,
+            children: [
+              _legendDot('Pharmacy', const Color(0xFF2E7D32)),
+              _legendDot('Phones & Tech', const Color(0xFFE65100)),
+              _legendDot('Barbershop', const Color(0xFF1565C0)),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.l),
           Expanded(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
-              children: List.generate(dailyRevenue.length, (index) {
-                final amount = dailyRevenue[index];
+              children: List.generate(dailyBreakdowns.length, (index) {
+                final breakdown = dailyBreakdowns[index];
                 final date = last7Days[index];
-                final double barHeight = amount == 0 ? 5 : (amount / chartMax) * 230;
+                final p = breakdown['pharmacy'] ?? 0.0;
+                final ph = breakdown['phones'] ?? 0.0;
+                final b = breakdown['barbershop'] ?? 0.0;
+                final total = breakdown['total'] ?? 0.0;
+
+                final double totalBarHeight = total == 0 ? 6 : (total / chartMax) * 220;
                 final isToday = index == 6;
+
+                final pHeight = total > 0 ? (p / total) * totalBarHeight : 0.0;
+                final phHeight = total > 0 ? (ph / total) * totalBarHeight : 0.0;
+                final bHeight = total > 0 ? (b / total) * totalBarHeight : 0.0;
 
                 return Expanded(
                   child: Column(
@@ -1329,7 +1368,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
                       FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Text(
-                          amount > 0 ? '₵${amount.toStringAsFixed(0)}' : '',
+                          total > 0 ? '₵${total.toStringAsFixed(0)}' : '',
                           style: TextStyle(
                             fontSize: 10, 
                             fontWeight: FontWeight.bold, 
@@ -1337,25 +1376,36 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       Tooltip(
-                        message: '₵${amount.toStringAsFixed(2)} on ${DateFormat('MMM dd').format(date)}',
+                        message: '${DateFormat('EEE, MMM dd').format(date)}\nTotal: ₵${total.toStringAsFixed(2)}\n🟢 Pharm: ₵${p.toStringAsFixed(0)}\n🟠 Tech: ₵${ph.toStringAsFixed(0)}\n🔵 Barber: ₵${b.toStringAsFixed(0)}',
                         child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 8),
-                          height: barHeight,
+                          margin: const EdgeInsets.symmetric(horizontal: 10),
+                          width: double.infinity,
+                          height: totalBarHeight,
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: isToday 
-                                ? [theme.colorScheme.primary, theme.colorScheme.primary.withValues(alpha: 0.7)]
-                                : [Colors.blue.shade400, Colors.blue.shade200],
-                            ),
+                            color: total == 0 ? theme.colorScheme.surfaceContainerHighest : Colors.transparent,
                             borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                if (bHeight > 0)
+                                  Container(height: bHeight, color: const Color(0xFF1565C0)),
+                                if (phHeight > 0)
+                                  Container(height: phHeight, color: const Color(0xFFE65100)),
+                                if (pHeight > 0)
+                                  Container(height: pHeight, color: const Color(0xFF2E7D32)),
+                                if (total == 0)
+                                  Expanded(child: Container(color: theme.colorScheme.surfaceContainerHighest)),
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       Text(
                         DateFormat('E').format(date).substring(0, 1),
                         style: TextStyle(
@@ -1375,6 +1425,17 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
     );
   }
 
+  Widget _legendDot(String label, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+      ],
+    );
+  }
+
   Widget _buildCriticalAlerts(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -1389,6 +1450,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
     
     final now = DateTime.now();
     final users = ref.watch(userProvider);
+    final pendingStaffApprovals = users.where((u) => !u.isDeleted && u.status == AccountStatus.pending).toList();
     final pendingSalaries = users.where((u) {
       if (u.isDeleted || u.status != AccountStatus.approved) return false;
       if (u.salaryAmount == null || u.salaryDay == null) return false;
@@ -1398,6 +1460,8 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
       }
       return false;
     }).toList();
+
+    final totalAlerts = lowStockItems.length + pendingCorrections.length + unreadButcherReports.length + pendingSalaries.length + pendingStaffApprovals.length;
 
     return Container(
       height: 400,
@@ -1421,12 +1485,12 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
                 child: Text('System Alerts', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: theme.colorScheme.onSurface), overflow: TextOverflow.ellipsis),
               ),
               const SizedBox(width: 8),
-              if (lowStockItems.length + pendingCorrections.length + unreadButcherReports.length + pendingSalaries.length > 0)
+              if (totalAlerts > 0)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(10)),
                   child: Text(
-                    '${lowStockItems.length + pendingCorrections.length + unreadButcherReports.length + pendingSalaries.length}',
+                    '$totalAlerts',
                     style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -1434,7 +1498,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
           ),
           const SizedBox(height: AppSpacing.l),
           Expanded(
-            child: (lowStockItems.isEmpty && pendingCorrections.isEmpty && unreadButcherReports.isEmpty && pendingSalaries.isEmpty)
+            child: (totalAlerts == 0)
                 ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -1447,6 +1511,15 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
                   )
                 : ListView(
                     children: [
+                      if (pendingStaffApprovals.isNotEmpty)
+                        _alertTile(
+                          context,
+                          'Pending Staff Approvals', 
+                          '${pendingStaffApprovals.length} account application(s) awaiting approval.', 
+                          Colors.orange, 
+                          Icons.person_add_rounded,
+                          onTap: () => Navigator.pushNamed(context, '/admin/staff'),
+                        ),
                       if (pendingSalaries.isNotEmpty)
                         _alertTile(
                           context,

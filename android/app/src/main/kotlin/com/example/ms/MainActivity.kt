@@ -1,5 +1,1 @@
-package com.example.ms
-
-import io.flutter.embedding.android.FlutterActivity
-
-class MainActivity : FlutterActivity()
+// Moved to com/example/multibusiness2/MainActivity.kt

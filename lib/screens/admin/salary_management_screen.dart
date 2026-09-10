@@ -124,7 +124,7 @@ class SalaryManagementScreen extends ConsumerWidget {
                         runSpacing: 12,
                         children: [
                           ElevatedButton.icon(
-                            onPressed: () => ReceiptService.printSalaryReport(users),
+                            onPressed: () async => await ReceiptService.printSalaryReport(users),
                             icon: const Icon(Icons.print_rounded, size: 18),
                             label: const Text('Print Payroll List'),
                             style: ElevatedButton.styleFrom(

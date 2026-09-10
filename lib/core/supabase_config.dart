@@ -36,18 +36,18 @@ class SupabaseConfig {
 
       // Priority 3: Hardcoded Fallback
       if (url.isEmpty) {
-        url = 'https://rdlwqnnzbtxwyasdebkj.supabase.co'; 
+        url = 'https://wdqnwpwuuaqipeedmxws.supabase.co'; 
       }
       
       if (anonKey.isEmpty) {
-        anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJkbHdxbm56YnR4d3lhc2RlYmtqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExMDkwMzMsImV4cCI6MjA5NjY4NTAzM30.IJwhUmZ1xiGMCCHUGDbD5M1zcKbqXOtuPg-xGISluOQ';
+        anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkcW53cHd1dWFxaXBlZWRteHdzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3ODI2ODksImV4cCI6MjEwNDM1ODY4OX0.YWFy6XMlh6KtmHof29Yz5EZFvDPZaGDj6PfikmwDr5c';
       }
       
       final cleanUrl = url.trim();
       final cleanKey = anonKey.trim();
 
-      if (serviceKey.isEmpty && cleanUrl.contains('rdlwqnnzbtxwyasdebkj')) {
-        serviceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJkbHdxbm56YnR4d3lhc2RlYmtqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MTEwOTAzMywiZXhwIjoyMDk2Njg1MDMzfQ.werb0ZSuepQ6-MPf6Z5ahXexw61KsRZdV3iMQQ2dLVU';
+      if (serviceKey.isEmpty && cleanUrl.contains('wdqnwpwuuaqipeedmxws')) {
+        serviceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkcW53cHd1dWFxaXBlZWRteHdzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODc4MjY4OSwiZXhwIjoyMTA0MzU4Njg5fQ.-IEj_2Be2f1IwuuVamZ3qTI6fFvzLRJOLGLHL054nN8';
       }
 
       final cleanServiceKey = serviceKey.trim();

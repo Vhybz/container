@@ -285,15 +285,15 @@ class _DebtManagementScreenState extends ConsumerState<DebtManagementScreen> {
               ),
               if (!isMobile)
                 ElevatedButton.icon(
-                  onPressed: () {
+                  onPressed: () async {
                     if (_showPaidInvoices) {
                       final clearedDebts = salesHistory.where((s) => 
                         s.balance <= 0.01 && 
                         (s.payments.length > 1 || s.payments.any((p) => p.reference?.contains('Collection') ?? false))
                       ).toList();
-                      ReceiptService.printPaidInvoicesReport(clearedDebts);
+                      await ReceiptService.printPaidInvoicesReport(clearedDebts);
                     } else {
-                      ReceiptService.printDebtReport(salesHistory.where((s) => s.balance > 0).toList());
+                      await ReceiptService.printDebtReport(salesHistory.where((s) => s.balance > 0).toList());
                     }
                   },
                   icon: const Icon(Icons.picture_as_pdf),

@@ -168,7 +168,7 @@ class _SystemSettingsScreenState extends ConsumerState<SystemSettingsScreen> {
             style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
           ),
           Text(
-            'Configure global parameters, branding, and theme for Mi~Corazon.',
+            'Configure global parameters, branding, and theme for Multi-Business Manager.',
             style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 13),
           ),
         ],
@@ -425,7 +425,7 @@ class _SystemSettingsScreenState extends ConsumerState<SystemSettingsScreen> {
           ),
           const SizedBox(height: 12),
           Text(
-            'Mi~Corazon Freshmeat Butchery Management',
+            'Multi-Business Store Management',
             style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.bold, fontSize: 14),
           ),
           Text(

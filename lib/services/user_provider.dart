@@ -26,14 +26,7 @@ class UserNotifier extends StateNotifier<List<UserAccount>> {
     _subscription?.cancel();
     _subscription = service.watchUsers().listen(
       (users) {
-        final currentUser = ref.read(sessionUserProfileProvider);
-        List<UserAccount> filteredUsers = users;
-        
-        if (currentUser?.role != UserRole.superAdmin && currentUser?.branchCode != null) {
-          filteredUsers = users.where((u) => u.branchCode == currentUser!.branchCode).toList();
-        }
-        
-        state = filteredUsers;
+        state = users;
         
         // Update session profile if current user is in the list
         final currentId = ref.read(currentUserIdProvider);
@@ -122,16 +115,7 @@ class UserNotifier extends StateNotifier<List<UserAccount>> {
       }
 
       final allUsers = await service.getUsers();
-      List<UserAccount> filteredUsers = allUsers;
-      
-      if (currentUser?.role != UserRole.superAdmin && currentUser?.branchCode != null) {
-        filteredUsers = allUsers.where((u) => u.branchCode == currentUser!.branchCode).toList();
-      }
-      
-      // Update state if the list is different. 
-      // We use reference equality check for simplicity, or we could do a better check.
-      // Simply assigning it will trigger listeners.
-      state = filteredUsers;
+      state = allUsers;
     } catch (e) {
       debugPrint('Load Users Error: $e');
     } finally {

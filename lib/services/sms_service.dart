@@ -19,7 +19,7 @@ class SmsService {
   
   static String get _senderId {
     if (_defineSenderId.isNotEmpty) return _defineSenderId;
-    return dotenv.env['ARKESEL_SENDER_ID'] ?? 'MiCorazon';
+    return dotenv.env['ARKESEL_SENDER_ID'] ?? 'Container';
   }
 
   static String get _adminPhone {
@@ -27,9 +27,16 @@ class SmsService {
     return dotenv.env['ADMIN_PHONE'] ?? '0209276200';
   }
 
-  static Future<bool> _sendSms(String to, String message) async {
+  static Future<bool> _sendSms(String to, String message, {String? customSenderId}) async {
     final apiKey = _apiKey.trim();
-    final senderId = _senderId.trim();
+    String senderId = (customSenderId != null && customSenderId.trim().isNotEmpty)
+        ? customSenderId.trim()
+        : _senderId.trim();
+
+    // Enforce 11 character max limit for SMS Sender ID per telecom standards
+    if (senderId.length > 11) {
+      senderId = senderId.substring(0, 11);
+    }
 
     if (apiKey.isEmpty) {
       debugPrint('SMS Error: API Key is missing');
@@ -103,7 +110,11 @@ class SmsService {
       debugPrint('Arkesel V1 Failed (Status ${response.statusCode}): ${response.body}');
       return false;
     } catch (e) {
-      debugPrint('SMS V1 Exception: $e');
+      if (kIsWeb && e.toString().contains('Failed to fetch')) {
+        debugPrint('SMS Notice (Web Browser CORS): Chrome blocked direct cross-origin SMS fetch to Arkesel. (SMS functions natively on Android/iOS/Desktop).');
+      } else {
+        debugPrint('SMS V1 Exception: $e');
+      }
       return false;
     }
   }
@@ -125,7 +136,17 @@ class SmsService {
 
     final bool isDebt = sale.balance > 0.01;
     final String typeHeader = isDebt ? 'DEBT INVOICE' : 'RECEIPT';
-    final String shopName = branchName ?? 'Mi~Corazon Butchery';
+
+    final bool isPharm = sale.items.any((i) => 
+      i.product.requiresPrescription || 
+      i.product.category.toUpperCase().contains('PHARM') || 
+      i.product.category.toUpperCase().contains('DRUG') || 
+      i.product.category.toUpperCase().contains('MED') ||
+      i.product.category.toUpperCase().contains('ANTIBIOTIC')
+    );
+
+    final String shopName = branchName ?? (isPharm ? 'Emmanuel Chemist' : 'Container Stores');
+    final String senderId = isPharm ? 'EmmaChemist' : 'Container';
 
     // Format clean receipt ID
     final String receiptId = sale.id.startsWith('INV-')
@@ -157,9 +178,13 @@ class SmsService {
       message += '\nSaved: GHS ${discountAmount.toStringAsFixed(2)}';
     }
 
-    message += '\nThank you for shopping with us!';
+    if (isPharm) {
+      message += '\nThank you for trusting Emmanuel Chemist!';
+    } else {
+      message += '\nThank you for shopping with us!';
+    }
 
-    return await _sendSms(targetPhone, message);
+    return await _sendSms(targetPhone, message, customSenderId: senderId);
   }
 
   static Future<void> sendApprovalRequestSms(UserAccount applicant, List<UserAccount> admins) async {
@@ -187,7 +212,7 @@ class SmsService {
         ? 'Your account has been approved. You can now log in.' 
         : 'Your application is pending administrator approval. You will be notified once approved.';
 
-    String message = 'Hello ${user.firstName}, thank you for registering with Multi-Business Manager. $statusMessage';
+    String message = 'Hello ${user.firstName}, thank you for registering with Container Stores. $statusMessage';
     
     if (user.role == UserRole.admin && user.branchCode != null) {
       message += ' Your Shop Registration Code is: ${user.branchCode}. Please share this with your staff to link them to your branch.';
@@ -198,26 +223,26 @@ class SmsService {
 
   static Future<void> sendStaffOnboardingSms(UserAccount user) async {
     if (user.phone == null || user.phone!.isEmpty) return;
-    final String message = 'Welcome to the team, ${user.firstName}! Your account has been linked to your staff profile as a ${user.role.name.toUpperCase()} at Mi~Corazon. You can now log in and start working.';
+    final String message = 'Welcome to the team, ${user.firstName}! Your account has been linked to your staff profile as a ${user.role.name.toUpperCase()} at Container Stores. You can now log in and start working.';
     await _sendSms(user.phone!, message);
   }
 
   static Future<void> sendApprovalSms(UserAccount user) async {
     if (user.phone == null || user.phone!.isEmpty) return;
-    final String message = 'Congratulations ${user.firstName}! Your Mi~Corazon account has been approved. You can now log in instantly.';
+    final String message = 'Congratulations ${user.firstName}! Your Container Stores account has been approved. You can now log in instantly.';
     await _sendSms(user.phone!, message);
   }
 
   static Future<void> sendCustomerWelcomeSms(String name, String phone, String? branchName) async {
     if (phone.isEmpty) return;
     final String branchText = branchName != null ? '($branchName Branch)' : '';
-    final String message = 'Hello $name, thank you for being a valued customer at Multi-Business Manager $branchText.';
+    final String message = 'Hello $name, thank you for being a valued customer at Container Stores $branchText.';
     await _sendSms(phone, message);
   }
 
   static Future<void> sendDebtReminderSms(SaleRecord sale, {String? branchName}) async {
     if (sale.customerPhone == null || sale.customerPhone!.isEmpty) return;
-    final String shopName = branchName ?? 'Mi~Corazon Butchery';
+    final String shopName = branchName ?? 'Container Stores';
     final String message = 'DEBT REMINDER: Hello ${sale.customerName}, this is a reminder regarding your outstanding balance of GHC${sale.balance.toStringAsFixed(2)} for invoice ${sale.id} at $shopName. Please settle as soon as possible.';
     await _sendSms(sale.customerPhone!, message);
   }
@@ -231,7 +256,7 @@ class SmsService {
     String? branchName,
   }) async {
     if (phone.isEmpty) return false;
-    final String shopName = branchName ?? 'Mi~Corazon Butchery';
+    final String shopName = branchName ?? 'Container Stores';
     String message = 'Hello $name, we have received your payment of GHS ${amountPaid.toStringAsFixed(2)} for invoice $invoiceId at $shopName.';
     if (remainingBalance > 0.01) {
       message += ' Your remaining balance is GHS ${remainingBalance.toStringAsFixed(2)}.';
@@ -250,7 +275,7 @@ class SmsService {
   }) async {
     if (phone.isEmpty) return;
     final String locText = location != null && location.isNotEmpty ? ' to be delivered to $location' : '';
-    final String message = 'Hello $name, your order for ${weight.toStringAsFixed(1)}kg of $item is ready for dispatch from Mi~Corazon Butchery$locText.';
+    final String message = 'Hello $name, your order for ${weight.toStringAsFixed(1)}kg of $item is ready for dispatch from Container Stores$locText.';
     await _sendSms(phone, message);
   }
 
@@ -290,7 +315,7 @@ class SmsService {
     if (note != null && note.isNotEmpty) {
       message += ' Note: $note';
     }
-    message += ' - Mi~Corazon Management';
+    message += ' - Container Stores Management';
     return await _sendSms(phone, message);
   }
 
@@ -321,7 +346,7 @@ class SmsService {
     final String message = 'DAILY SUMMARY ($date):\n'
         '• Today\'s Sales: GHS ${dailySales.toStringAsFixed(2)}\n'
         '• Cash at Shop: GHS ${tillBalance.toStringAsFixed(2)}\n\n'
-        'Please log in to Close Sales now or tomorrow morning. - Mi~Corazon System';
+        'Please log in to Close Sales now or tomorrow morning. - Container Stores System';
 
     bool allSent = true;
     for (final phone in adminPhones) {
@@ -338,13 +363,26 @@ class SmsService {
 
   static Future<bool> sendVerificationCodeSms(String phone, String code) async {
     if (phone.isEmpty) return false;
-    final String message = 'Your Mi~Corazon password reset code is: $code. Valid for 5 minutes.';
+    final String message = 'Your Container Stores password reset code is: $code. Valid for 5 minutes.';
     return await _sendSms(phone, message);
   }
 
   static Future<bool> sendPasscodeSms(String phone, String name, String passcode) async {
     if (phone.isEmpty) return false;
-    final String message = 'Hello $name, your new Mi~Corazon security passcode is: $passcode. Use this to access sensitive system areas.';
+    final String message = 'Hello $name, your new Container Stores security passcode is: $passcode. Use this to access sensitive system areas.';
     return await _sendSms(phone, message);
+  }
+
+  static Future<bool> sendPostHaircutSms({
+    required String name,
+    required String phone,
+    required String serviceName,
+    required String barberName,
+    String? shopName,
+  }) async {
+    if (phone.trim().isEmpty) return false;
+    final String store = shopName ?? 'Container Barbershop';
+    final String message = 'Hello $name, thank you for visiting $store for your $serviceName with $barberName! We hope you love your fresh look. Keep looking sharp & see you next time!';
+    return await _sendSms(phone.trim(), message);
   }
 }

@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../core/constants.dart';
+import '../models/user_model.dart';
+import '../services/sale_provider.dart';
+import '../services/product_service.dart';
+import '../services/user_provider.dart';
 
 class MultiBusinessAccordion extends ConsumerStatefulWidget {
   final Function(String route)? onNavigate;
@@ -22,6 +26,66 @@ class _MultiBusinessAccordionState extends ConsumerState<MultiBusinessAccordion>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final sales = ref.watch(saleHistoryProvider);
+    final productsAsync = ref.watch(productsFutureProvider);
+    final users = ref.watch(userProvider);
+
+    final products = productsAsync.value ?? [];
+    final now = DateTime.now();
+
+    // 1. Pharmacy Live Metrics
+    final todayPharmSales = sales.where((s) {
+      final isToday = s.timestamp.year == now.year && s.timestamp.month == now.month && s.timestamp.day == now.day && s.isActive;
+      final isPharm = s.items.any((item) {
+        final cat = item.product.category.toUpperCase();
+        return item.product.requiresPrescription || cat.contains('PHARM') || cat.contains('DRUG') || cat.contains('MED') || cat.contains('ANTIBIOTIC') || cat.contains('SUPPLEMENT') || cat.contains('ANALGESIC') || cat.contains('NSAID') || cat.contains('ANTIMALARIAL') || cat.contains('COUGH') || cat.contains('COLD') || cat.contains('CARDIOVASCULAR') || cat.contains('GASTRO') || cat.contains('CONTRACEPTIVE') || cat.contains('TOPICAL') || cat.contains('SEDATIVE');
+      });
+      return isToday && isPharm;
+    });
+    final double todayPharmRevenue = todayPharmSales.fold(0.0, (sum, s) => sum + s.totalAmount);
+
+    final expiringCount = products.where((p) => 
+      !p.isDeleted && 
+      p.batchExpiryDate != null && 
+      !p.batchExpiryDate!.isBefore(now) &&
+      p.batchExpiryDate!.difference(now).inDays <= 60
+    ).length;
+
+    // 2. Barbershop Live Metrics
+    final todayBarberSales = sales.where((s) {
+      final isToday = s.timestamp.year == now.year && s.timestamp.month == now.month && s.timestamp.day == now.day && s.isActive;
+      final isBarber = s.items.any((item) {
+        final cat = item.product.category.toUpperCase();
+        return item.product.isService || cat.contains('BARBER') || cat.contains('HAIR') || cat.contains('BEARD') || cat.contains('GROOM');
+      });
+      return isToday && isBarber;
+    });
+    final double todayBarberRevenue = todayBarberSales.fold(0.0, (sum, s) => sum + s.totalAmount);
+    final barberServicesCount = products.where((p) => 
+      !p.isDeleted && (p.isService || p.category.toUpperCase().contains('BARBER') || p.category.toUpperCase().contains('HAIR') || p.category.toUpperCase().contains('BEARD') || p.category.toUpperCase().contains('GROOM'))
+    ).length;
+
+    // 3. Tech Shop Live Metrics
+    final devicesInStock = products
+        .where((p) => !p.isDeleted && p.requiresImei)
+        .fold(0.0, (sum, p) => sum + p.stockQuantity)
+        .toInt();
+
+    final todayTechSales = sales.where((s) {
+      final isToday = s.timestamp.year == now.year && s.timestamp.month == now.month && s.timestamp.day == now.day && s.isActive;
+      final isTech = s.items.any((item) {
+        final cat = item.product.category.toUpperCase();
+        return item.product.requiresImei || cat.contains('PHONE') || cat.contains('SMART') || cat.contains('CHARGER') || cat.contains('CASE') || cat.contains('ACCESSOR') || cat.contains('AUDIO') || cat.contains('WEARABLE') || cat.contains('MOUNT') || cat.contains('REPAIR');
+      });
+      return isToday && isTech;
+    });
+    final double todayTechRevenue = todayTechSales.fold(0.0, (sum, s) => sum + s.totalAmount);
+
+    // 4. Admin Governance Live Metrics
+    final activeStaffCount = users.where((u) => !u.isDeleted && u.status == AccountStatus.approved).length;
+    final double totalTodayCrossRevenue = sales
+        .where((s) => s.timestamp.year == now.year && s.timestamp.month == now.month && s.timestamp.day == now.day && s.isActive)
+        .fold(0.0, (sum, s) => sum + s.totalAmount);
 
     return SingleChildScrollView(
       child: Column(
@@ -44,9 +108,9 @@ class _MultiBusinessAccordionState extends ConsumerState<MultiBusinessAccordion>
                   subtitle: 'Prescriptions, Lot Expiry, & Drug Inventory',
                   icon: Icons.local_pharmacy_rounded,
                   color: const Color(0xFF2E7D32),
-                  badgeText: '3 Expiry Alerts',
+                  badgeText: expiringCount > 0 ? '$expiringCount Expiry Alerts' : 'Stock Normal',
                 ),
-                body: _buildPharmacyBody(theme),
+                body: _buildPharmacyBody(theme, todayPharmRevenue, expiringCount),
               ),
 
               // 2. Barbershop Sector Panel
@@ -57,9 +121,9 @@ class _MultiBusinessAccordionState extends ConsumerState<MultiBusinessAccordion>
                   subtitle: 'Grooming Queue, Appointments, & Stylist Commissions',
                   icon: Icons.content_cut_rounded,
                   color: const Color(0xFF1565C0),
-                  badgeText: '3 Clients Waiting',
+                  badgeText: '$barberServicesCount Services Listed',
                 ),
-                body: _buildBarbershopBody(theme),
+                body: _buildBarbershopBody(theme, todayBarberRevenue, barberServicesCount),
               ),
 
               // 3. Tech & Phone Shop Panel
@@ -70,9 +134,9 @@ class _MultiBusinessAccordionState extends ConsumerState<MultiBusinessAccordion>
                   subtitle: 'IMEI Tracking, Repair Tickets, & Warranty Generation',
                   icon: Icons.phone_android_rounded,
                   color: const Color(0xFFE65100),
-                  badgeText: '28 Devices in Stock',
+                  badgeText: '$devicesInStock Devices in Stock',
                 ),
-                body: _buildTechShopBody(theme),
+                body: _buildTechShopBody(theme, todayTechRevenue, devicesInStock),
               ),
 
               // 4. Admin Governance & Cross-Analytics
@@ -84,7 +148,7 @@ class _MultiBusinessAccordionState extends ConsumerState<MultiBusinessAccordion>
                   icon: Icons.admin_panel_settings_rounded,
                   color: Colors.purple,
                 ),
-                body: _buildAdminBody(theme),
+                body: _buildAdminBody(theme, totalTodayCrossRevenue, activeStaffCount),
               ),
             ],
           ),
@@ -126,16 +190,16 @@ class _MultiBusinessAccordionState extends ConsumerState<MultiBusinessAccordion>
     );
   }
 
-  Widget _buildPharmacyBody(ThemeData theme) {
+  Widget _buildPharmacyBody(ThemeData theme, double todayPharmRevenue, int expiringCount) {
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.m),
       child: Column(
         children: [
           Row(
             children: [
-              Expanded(child: _buildMetricTile('Today\'s Rx Sales', currencyFormat.format(2450.0), Icons.payments, const Color(0xFF2E7D32))),
+              Expanded(child: _buildMetricTile('Today\'s Rx Sales', currencyFormat.format(todayPharmRevenue), Icons.payments, const Color(0xFF2E7D32))),
               const SizedBox(width: AppSpacing.m),
-              Expanded(child: _buildMetricTile('Expiring Batches', '3 Batches', Icons.warning_amber, Colors.orange)),
+              Expanded(child: _buildMetricTile('Expiring Batches', '$expiringCount Batches', Icons.warning_amber, expiringCount > 0 ? Colors.orange : Colors.green)),
             ],
           ),
           const SizedBox(height: AppSpacing.m),
@@ -161,16 +225,16 @@ class _MultiBusinessAccordionState extends ConsumerState<MultiBusinessAccordion>
     );
   }
 
-  Widget _buildBarbershopBody(ThemeData theme) {
+  Widget _buildBarbershopBody(ThemeData theme, double todayBarberRevenue, int barberServicesCount) {
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.m),
       child: Column(
         children: [
           Row(
             children: [
-              Expanded(child: _buildMetricTile('Active Queue', '3 Clients Waiting', Icons.people, const Color(0xFF1565C0))),
+              Expanded(child: _buildMetricTile('Gross Cut Sales', currencyFormat.format(todayBarberRevenue), Icons.cut, const Color(0xFF1565C0))),
               const SizedBox(width: AppSpacing.m),
-              Expanded(child: _buildMetricTile('Gross Cut Sales', currencyFormat.format(1510.0), Icons.cut, Colors.teal)),
+              Expanded(child: _buildMetricTile('Services Active', '$barberServicesCount Services', Icons.content_cut, Colors.teal)),
             ],
           ),
           const SizedBox(height: AppSpacing.m),
@@ -196,16 +260,16 @@ class _MultiBusinessAccordionState extends ConsumerState<MultiBusinessAccordion>
     );
   }
 
-  Widget _buildTechShopBody(ThemeData theme) {
+  Widget _buildTechShopBody(ThemeData theme, double todayTechRevenue, int devicesInStock) {
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.m),
       child: Column(
         children: [
           Row(
             children: [
-              Expanded(child: _buildMetricTile('IMEI Devices in Stock', '28 Units', Icons.qr_code, const Color(0xFFE65100))),
+              Expanded(child: _buildMetricTile('IMEI Devices in Stock', '$devicesInStock Units', Icons.qr_code, const Color(0xFFE65100))),
               const SizedBox(width: AppSpacing.m),
-              Expanded(child: _buildMetricTile('Active Repairs', '3 Work Orders', Icons.build, Colors.blue)),
+              Expanded(child: _buildMetricTile('Today\'s Tech Revenue', currencyFormat.format(todayTechRevenue), Icons.smartphone, Colors.blue)),
             ],
           ),
           const SizedBox(height: AppSpacing.m),
@@ -231,16 +295,16 @@ class _MultiBusinessAccordionState extends ConsumerState<MultiBusinessAccordion>
     );
   }
 
-  Widget _buildAdminBody(ThemeData theme) {
+  Widget _buildAdminBody(ThemeData theme, double totalTodayCrossRevenue, int activeStaffCount) {
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.m),
       child: Column(
         children: [
           Row(
             children: [
-              Expanded(child: _buildMetricTile('Staff On Duty', '12 Active Staff', Icons.people_outline, Colors.purple)),
+              Expanded(child: _buildMetricTile('Staff On Duty', '$activeStaffCount Active Staff', Icons.people_outline, Colors.purple)),
               const SizedBox(width: AppSpacing.m),
-              Expanded(child: _buildMetricTile('Total Cross-Revenue', currencyFormat.format(33660.0), Icons.monetization_on, Colors.green)),
+              Expanded(child: _buildMetricTile('Today\'s Cross-Revenue', currencyFormat.format(totalTodayCrossRevenue), Icons.monetization_on, Colors.green)),
             ],
           ),
           const SizedBox(height: AppSpacing.m),

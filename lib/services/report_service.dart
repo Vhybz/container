@@ -532,7 +532,7 @@ class ReportService {
             pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.Text('Mi~CORAZON FRESHMEAT BUTCHERY', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 18, color: _primaryMaroon)),
+                pw.Text('MULTI-BUSINESS MANAGER', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 18, color: _primaryMaroon)),
                 pw.Text('Quality Meat Service • Ghana', style: const pw.TextStyle(fontSize: 10)),
               ],
             ),

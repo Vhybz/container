@@ -55,7 +55,7 @@ class BirthdayDialog extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'The Mi~Corazon team wishes you a day filled with joy, laughter, and uncompromising happiness. Thank you for being part of our family!',
+                  'The Multi-Business Manager team wishes you a day filled with joy, laughter, and uncompromising happiness. Thank you for being part of our family!',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 14,

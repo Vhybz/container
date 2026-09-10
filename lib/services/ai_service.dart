@@ -91,7 +91,7 @@ class AiService {
     }
 
     return """
-    You are the Mi~Corazon AI Assistant for a modern butchery in Sunyani, Ghana.
+    You are the Multi-Business AI Assistant for a modern store management system.
     User: $name ($roleName).
     
     RULES:

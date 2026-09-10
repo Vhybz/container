@@ -62,6 +62,11 @@ class Product {
   final bool isService;
   final bool requiresPrescription;
   final bool requiresImei;
+  final double? piecesPerPack;
+  final double? packPrice;
+  final double? numberOfBoxes;
+  final double? packsPerBox;
+  final double? boxPrice;
 
   Product({
     required this.id,
@@ -92,7 +97,16 @@ class Product {
     this.isService = false,
     this.requiresPrescription = false,
     this.requiresImei = false,
+    this.piecesPerPack,
+    this.packPrice,
+    this.numberOfBoxes,
+    this.packsPerBox,
+    this.boxPrice,
   });
+
+  double get effectivePiecesPerPack => (piecesPerPack != null && piecesPerPack! > 0) ? piecesPerPack! : 1.0;
+  double get effectivePackPrice => (packPrice != null && packPrice! > retailPrice) ? packPrice! : (retailPrice * effectivePiecesPerPack);
+  double get effectiveBoxPrice => (boxPrice != null && boxPrice! > effectivePackPrice) ? boxPrice! : (effectivePackPrice * (packsPerBox ?? 10.0));
 
   /// Logic to check if promotion is currently scheduled correctly by date
   bool get isPromoScheduled {
@@ -164,6 +178,11 @@ class Product {
     double? lowStockThreshold,
     double? dailyStockAdded,
     DateTime? lastStockUpdate,
+    double? piecesPerPack,
+    double? packPrice,
+    double? numberOfBoxes,
+    double? packsPerBox,
+    double? boxPrice,
   }) {
     return Product(
       id: id,
@@ -188,6 +207,17 @@ class Product {
       lowStockThreshold: lowStockThreshold ?? this.lowStockThreshold,
       dailyStockAdded: dailyStockAdded ?? this.dailyStockAdded,
       lastStockUpdate: lastStockUpdate ?? this.lastStockUpdate,
+      imeiList: imeiList,
+      batchExpiryDate: batchExpiryDate,
+      batchNumber: batchNumber,
+      isService: isService,
+      requiresPrescription: requiresPrescription,
+      requiresImei: requiresImei,
+      piecesPerPack: piecesPerPack ?? this.piecesPerPack,
+      packPrice: packPrice ?? this.packPrice,
+      numberOfBoxes: numberOfBoxes ?? this.numberOfBoxes,
+      packsPerBox: packsPerBox ?? this.packsPerBox,
+      boxPrice: boxPrice ?? this.boxPrice,
     );
   }
 
@@ -226,6 +256,11 @@ class Product {
       isService: map['is_service'] ?? false,
       requiresPrescription: map['requires_prescription'] ?? false,
       requiresImei: map['requires_imei'] ?? false,
+      piecesPerPack: (map['pieces_per_pack'] as num?)?.toDouble(),
+      packPrice: (map['pack_price'] as num?)?.toDouble(),
+      numberOfBoxes: (map['number_of_boxes'] as num?)?.toDouble(),
+      packsPerBox: (map['packs_per_box'] as num?)?.toDouble(),
+      boxPrice: (map['box_price'] as num?)?.toDouble(),
     );
   }
 
@@ -258,6 +293,11 @@ class Product {
         'is_service': isService,
         'requires_prescription': requiresPrescription,
         'requires_imei': requiresImei,
+        'pieces_per_pack': piecesPerPack,
+        'pack_price': packPrice,
+        'number_of_boxes': numberOfBoxes,
+        'packs_per_box': packsPerBox,
+        'box_price': boxPrice,
       };
 }
 

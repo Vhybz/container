@@ -433,25 +433,10 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
                     .where((p) {
                       final mappedCat = _getMappedCategory(p);
                       
-                      // STAGE 2: Visibility Logic
-                      // If the category is one of the "standard" ones, we apply a name whitelist.
-                      // If it's a custom category OR if the product name was custom-added by admin, we show it.
-                      if (allowedCatalog.containsKey(mappedCat)) {
-                        final bool isAllowedName = allowedCatalog[mappedCat]!.any((allowedName) => 
-                          p.name.toUpperCase().contains(allowedName.toUpperCase())
-                        );
-                        
-                        // If it's not in the standard list, it might be a custom admin entry.
-                        // We allow it if the category matches but the name is unique.
-                        if (!isAllowedName) {
-                          // Check if this was a custom admin entry (not in the seeder defaults for this cat)
-                          // For now, we'll allow all admin-added products to show up.
-                        }
-                      }
-
-                      // STAGE 3: UI Search & Category Filters
+                      // Filter based on UI Category Selection and Search Query
                       final matchesCategory = _selectedCategory == 'All' || mappedCat == _selectedCategory;
-                      final matchesSearch = p.name.toLowerCase().contains(_productSearchQuery.toLowerCase());
+                      final matchesSearch = p.name.toLowerCase().contains(_productSearchQuery.toLowerCase()) || 
+                                           p.category.toLowerCase().contains(_productSearchQuery.toLowerCase());
                       
                       return matchesCategory && matchesSearch;
                     })
@@ -522,7 +507,10 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
                       promoLabel: hasPromo ? '${product.name} - ${product.discountPercentage % 1 == 0 ? product.discountPercentage.toInt() : product.discountPercentage}% OFF' : null,
                       imageUrl: product.imageUrl,
                       isInTransit: productInTransit,
-                      onTap: isPriced ? () => _showWeightInputDialog(product) : () {
+                      requiresPrescription: product.requiresPrescription,
+                      requiresImei: product.requiresImei,
+                      isService: product.isService,
+                      onTap: isPriced ? () => _handleProductTap(product, isWholesale, currentPrice) : () {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('This product is not yet priced. Please contact Admin.')),
                         );
@@ -684,6 +672,26 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
     );
   }
 
+  void _handleProductTap(Product product, bool isWholesale, double currentPrice) {
+    final String u = product.unit.toLowerCase();
+    final bool isPiece = u == 'pcs' || u == 'unit' || u == 'service' || u == 'box' || u == 'bottle' || product.isService;
+    
+    if (isPiece) {
+      final originalPrice = isWholesale ? product.wholesalePrice : product.retailPrice;
+      ref.read(cartProvider.notifier).addItemWithCustomPrice(product, 1.0, currentPrice, originalPrice);
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${product.name} added to cart'),
+          duration: const Duration(milliseconds: 900),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else {
+      _showWeightInputDialog(product);
+    }
+  }
+
   void _showWeightInputDialog(Product product) {
     showDialog(
       context: context,
@@ -777,10 +785,12 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
                     return CartItemTile(
                       category: item.product.category,
                       name: item.product.name,
-                      qty: '1',
+                      qty: item.quantity % 1 == 0 ? item.quantity.toInt().toString() : item.quantity.toStringAsFixed(1),
                       weight: WeightConverter.formatShort(item.quantity, unit: item.product.unit),
                       amount: '₵${item.total.toStringAsFixed(2)}',
                       onDelete: () => notifier.removeItem(index),
+                      onIncrement: () => notifier.updateQuantity(index, item.quantity + 1),
+                      onDecrement: () => notifier.updateQuantity(index, item.quantity - 1),
                     );
                   },
                 ),
@@ -1121,23 +1131,19 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Pharmacy Verification Required'),
+          title: const Text('Prescription / Patient Details (Optional)'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(controller: patientController, decoration: const InputDecoration(labelText: 'Patient Name *')),
-              TextField(controller: rxNoController, decoration: const InputDecoration(labelText: 'Rx Serial Number *')),
+              TextField(controller: patientController, decoration: const InputDecoration(labelText: 'Patient Name (Optional)')),
+              TextField(controller: rxNoController, decoration: const InputDecoration(labelText: 'Rx Serial Number (Optional)')),
             ],
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL')),
             ElevatedButton(
-              onPressed: () {
-                if (patientController.text.trim().isNotEmpty && rxNoController.text.trim().isNotEmpty) {
-                  Navigator.pop(ctx, true);
-                }
-              },
-              child: const Text('CONFIRM RX'),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('PROCEED'),
             ),
           ],
         ),

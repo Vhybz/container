@@ -289,14 +289,23 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                               decoration: const InputDecoration(labelText: 'Applying For Role', prefixIcon: Icon(Icons.work_outline)),
                               items: [
                                 UserRole.admin,
-                                UserRole.pharmacist,
+                                UserRole.barber,
+                                UserRole.phoneSalesGuy,
                                 UserRole.secretary,
+                                UserRole.pharmacist,
+                                UserRole.cashier,
+                                UserRole.butcher,
                               ].map((r) => DropdownMenuItem(
                                 value: r, 
                                 child: Text(
-                                  r == UserRole.secretary 
-                                      ? 'SECRETARY (BARBERSHOP & TECH)' 
-                                      : r.display.toUpperCase()
+                                  r == UserRole.barber 
+                                    ? 'BARBER / STYLIST' 
+                                    : (r == UserRole.phoneSalesGuy || r == UserRole.phoneSales 
+                                        ? 'PHONE REPAIRER / TECH REP' 
+                                        : (r == UserRole.secretary 
+                                            ? 'SECRETARY (BARBERSHOP & TECH)' 
+                                            : r.display.toUpperCase())),
+                                  style: const TextStyle(fontSize: 12),
                                 ),
                               )).toList(),
                               onChanged: (v) {
@@ -576,6 +585,11 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
               }
             } catch (smsErr) {
               debugPrint('Signup SMS Error: $smsErr');
+            }
+
+            // For accounts awaiting admin approval, sign out immediately so session does not stay active
+            if (newUser.status == AccountStatus.pending) {
+              await GlobalLogout.perform(ref);
             }
 
             if (mounted) {

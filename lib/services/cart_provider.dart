@@ -21,6 +21,27 @@ class CartNotifier extends StateNotifier<List<CartItem>> {
     ];
   }
 
+  void updateQuantity(int index, double newQuantity) {
+    if (index < 0 || index >= state.length) return;
+    if (newQuantity <= 0) {
+      removeItem(index);
+      return;
+    }
+    final current = state[index];
+    state = [
+      for (int i = 0; i < state.length; i++)
+        if (i == index)
+          CartItem(
+            product: current.product,
+            quantity: newQuantity,
+            priceAtSale: current.priceAtSale,
+            originalPrice: current.originalPrice,
+          )
+        else
+          state[i]
+    ];
+  }
+
   void clear() {
     state = [];
   }

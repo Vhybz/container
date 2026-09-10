@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -9,20 +9,49 @@ import '../models/salary_model.dart';
 import '../core/utils.dart';
 
 class ReceiptService {
-  static Future<pw.Document> generateReceiptDocument(SaleRecord sale) async {
-    final doc = pw.Document();
-    
+  static Future<Map<String, pw.Font>> _loadFonts() async {
     pw.Font font;
     pw.Font boldFont;
-
     try {
-      font = await PdfGoogleFonts.notoSansRegular();
-      boldFont = await PdfGoogleFonts.notoSansBold();
+      font = await PdfGoogleFonts.notoSansRegular().timeout(const Duration(seconds: 2));
+      boldFont = await PdfGoogleFonts.notoSansBold().timeout(const Duration(seconds: 2));
     } catch (e) {
-      debugPrint('Font loading failed, falling back to standard fonts: $e');
+      debugPrint('Font loading failed or timed out, falling back to standard fonts: $e');
       font = pw.Font.helvetica();
       boldFont = pw.Font.helveticaBold();
     }
+    return {'font': font, 'boldFont': boldFont};
+  }
+
+  static Future<pw.Document> generateReceiptDocument(SaleRecord sale) async {
+    final doc = pw.Document();
+    
+    final fonts = await _loadFonts();
+    final font = fonts['font']!;
+    final boldFont = fonts['boldFont']!;
+
+    final isPharmacySale = sale.items.any((i) => 
+      i.product.requiresPrescription || 
+      i.product.category.toUpperCase().contains('PHARM') || 
+      i.product.category.toUpperCase().contains('DRUG') || 
+      i.product.category.toUpperCase().contains('MED') ||
+      i.product.category.toUpperCase().contains('ANTIBIOTIC') ||
+      i.product.category.toUpperCase().contains('SUPPLEMENT') ||
+      i.product.category.toUpperCase().contains('ANALGESIC') ||
+      i.product.category.toUpperCase().contains('NSAID')
+    );
+
+    final String storeTitle = isPharmacySale ? 'EMMANUEL CHEMIST' : 'CONTAINER STORES';
+    final String storeSubtitle = isPharmacySale ? 'Pharmacy & Dispensing Services' : 'Multi-Business Store';
+    final String storeLocation = isPharmacySale 
+        ? 'Location: Opposite Kaabere Main Clinic' 
+        : 'Location: New Town, Road linking From Water works Ltd. to Atronie Road';
+    final String storeContact = isPharmacySale 
+        ? 'GPS: BJ 0003-5661 | Email: ea0005917@gmail.com' 
+        : 'GPS: BS-0006-1566 | Tel: 0209276200';
+    final String thankYouMsg = isPharmacySale 
+        ? 'Thank you for trusting Emmanuel Chemist!\nKeep all medications out of reach of children.' 
+        : 'Thank you for shopping with Container Stores!';
 
     doc.addPage(
       pw.Page(
@@ -34,13 +63,12 @@ class ReceiptService {
               pw.Center(
                 child: pw.Column(
                   children: [
-                    pw.Text('Mi~CORAZON', style: pw.TextStyle(font: boldFont, fontSize: 18)),
-                    pw.Text('MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: font)),
-                    pw.Text('Location: New Town, Road linking From Water works Ltd. to Atronie Road', 
-                      style: pw.TextStyle(font: font, fontSize: 7), textAlign: pw.TextAlign.center),
-                    pw.Text('GPS: BS-0006-1566 | Tel: 0209276200', 
-                      style: pw.TextStyle(font: font, fontSize: 7)),
-                    pw.SizedBox(height: 10),
+                    pw.Text(storeTitle, style: pw.TextStyle(font: boldFont, fontSize: 16)),
+                    pw.Text(storeSubtitle, style: pw.TextStyle(font: boldFont, fontSize: 8, color: PdfColors.grey700)),
+                    pw.SizedBox(height: 2),
+                    pw.Text(storeLocation, style: pw.TextStyle(font: font, fontSize: 7), textAlign: pw.TextAlign.center),
+                    pw.Text(storeContact, style: pw.TextStyle(font: font, fontSize: 7), textAlign: pw.TextAlign.center),
+                    pw.SizedBox(height: 8),
                   ],
                 ),
               ),
@@ -204,7 +232,7 @@ class ReceiptService {
               pw.Center(
                 child: pw.Column(
                   children: [
-                    pw.Text('Thank you!', style: pw.TextStyle(font: boldFont, fontSize: 8)),
+                    pw.Text(thankYouMsg, style: pw.TextStyle(font: boldFont, fontSize: 7), textAlign: pw.TextAlign.center),
                   ],
                 ),
               ),
@@ -217,29 +245,47 @@ class ReceiptService {
     return doc;
   }
 
-  static Future<void> printReceipt(SaleRecord sale) async {
+  static Future<bool> printReceipt(SaleRecord sale, {BuildContext? context}) async {
     try {
       final doc = await generateReceiptDocument(sale);
-      await Printing.layoutPdf(
+      final result = await Printing.layoutPdf(
         onLayout: (PdfPageFormat format) async => doc.save(),
         name: 'Receipt_${sale.id}',
       );
+      return result;
     } catch (e) {
       debugPrint('Printing Error: $e');
+      if (context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Printing failed: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return false;
     }
   }
 
-  static Future<void> printInvoices(List<SaleRecord> sales) async {
+  static Future<void> printInvoices(List<SaleRecord> sales, {BuildContext? context}) async {
     try {
       for (var sale in sales) {
-        await printReceipt(sale);
+        await printReceipt(sale, context: context);
       }
     } catch (e) {
       debugPrint('Batch Printing Error: $e');
+      if (context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Batch printing error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
-  static Future<void> shareReceipt(SaleRecord sale) async {
+  static Future<void> shareReceipt(SaleRecord sale, {BuildContext? context}) async {
     try {
       final doc = await generateReceiptDocument(sale);
       final bytes = await doc.save();
@@ -249,6 +295,14 @@ class ReceiptService {
       );
     } catch (e) {
       debugPrint('Sharing Error: $e');
+      if (context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Receipt sharing failed: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 static String _generateQRData(SaleRecord sale) {
@@ -299,16 +353,9 @@ static String _generateQRData(SaleRecord sale) {
       final totalRevenue = sales.where((s) => s.isActive).fold(0.0, (sum, s) => sum + s.totalAmount);
       final netProfit = totalRevenue - totalExpenses;
       
-      pw.Font font;
-      pw.Font boldFont;
-
-      try {
-        font = await PdfGoogleFonts.notoSansRegular();
-        boldFont = await PdfGoogleFonts.notoSansBold();
-      } catch (e) {
-        font = pw.Font.helvetica();
-        boldFont = pw.Font.helveticaBold();
-      }
+      final fonts = await _loadFonts();
+      final font = fonts['font']!;
+      final boldFont = fonts['boldFont']!;
 
       doc.addPage(
         pw.MultiPage(
@@ -320,7 +367,7 @@ static String _generateQRData(SaleRecord sale) {
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('Mi~CORAZON MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont)),
+                    pw.Text('MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont)),
                     pw.Text(DateFormat('yyyy-MM-dd').format(DateTime.now()), style: pw.TextStyle(font: font)),
                   ],
                 ),
@@ -399,16 +446,9 @@ static String _generateQRData(SaleRecord sale) {
         if (s.balance > maxDebt) maxDebt = s.balance;
       }
 
-      pw.Font font;
-      pw.Font boldFont;
-
-      try {
-        font = await PdfGoogleFonts.notoSansRegular();
-        boldFont = await PdfGoogleFonts.notoSansBold();
-      } catch (e) {
-        font = pw.Font.helvetica();
-        boldFont = pw.Font.helveticaBold();
-      }
+      final fonts = await _loadFonts();
+      final font = fonts['font']!;
+      final boldFont = fonts['boldFont']!;
 
       doc.addPage(
         pw.MultiPage(
@@ -420,7 +460,7 @@ static String _generateQRData(SaleRecord sale) {
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('Mi~CORAZON MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont)),
+                    pw.Text('MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont)),
                     pw.Text(DateFormat('yyyy-MM-dd').format(DateTime.now()), style: pw.TextStyle(font: font)),
                   ],
                 ),
@@ -504,7 +544,7 @@ static String _generateQRData(SaleRecord sale) {
               ),
               pw.SizedBox(height: 40),
               pw.Center(
-                child: pw.Text('Report Generated by Mi~Corazon Management System', style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey)),
+                child: pw.Text('Report Generated by Multi-Business Management System', style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey)),
               ),
             ];
           },
@@ -545,16 +585,9 @@ static String _generateQRData(SaleRecord sale) {
         if (s.amountPaid > maxPaid) maxPaid = s.amountPaid;
       }
 
-      pw.Font font;
-      pw.Font boldFont;
-
-      try {
-        font = await PdfGoogleFonts.notoSansRegular();
-        boldFont = await PdfGoogleFonts.notoSansBold();
-      } catch (e) {
-        font = pw.Font.helvetica();
-        boldFont = pw.Font.helveticaBold();
-      }
+      final fonts = await _loadFonts();
+      final font = fonts['font']!;
+      final boldFont = fonts['boldFont']!;
 
       doc.addPage(
         pw.MultiPage(
@@ -566,7 +599,7 @@ static String _generateQRData(SaleRecord sale) {
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('Mi~CORAZON MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont)),
+                    pw.Text('MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont)),
                     pw.Text(DateFormat('yyyy-MM-dd').format(DateTime.now()), style: pw.TextStyle(font: font)),
                   ],
                 ),
@@ -648,7 +681,7 @@ static String _generateQRData(SaleRecord sale) {
               ),
               pw.SizedBox(height: 40),
               pw.Center(
-                child: pw.Text('Report Generated by Mi~Corazon Management System', style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey)),
+                child: pw.Text('Report Generated by Multi-Business Management System', style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey)),
               ),
             ];
           },
@@ -669,16 +702,9 @@ static String _generateQRData(SaleRecord sale) {
       final doc = pw.Document();
       final totalPayroll = users.fold(0.0, (sum, u) => sum + (u.salaryAmount ?? 0.0));
       
-      pw.Font font;
-      pw.Font boldFont;
-
-      try {
-        font = await PdfGoogleFonts.notoSansRegular();
-        boldFont = await PdfGoogleFonts.notoSansBold();
-      } catch (e) {
-        font = pw.Font.helvetica();
-        boldFont = pw.Font.helveticaBold();
-      }
+      final fonts = await _loadFonts();
+      final font = fonts['font']!;
+      final boldFont = fonts['boldFont']!;
 
       doc.addPage(
         pw.MultiPage(
@@ -690,7 +716,7 @@ static String _generateQRData(SaleRecord sale) {
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('Mi~CORAZON MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont)),
+                    pw.Text('MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont)),
                     pw.Text(DateFormat('yyyy-MM-dd').format(DateTime.now()), style: pw.TextStyle(font: font)),
                   ],
                 ),
@@ -787,16 +813,9 @@ static String _generateQRData(SaleRecord sale) {
       }
       final sortedProducts = productQtyMap.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
 
-      pw.Font font;
-      pw.Font boldFont;
-
-      try {
-        font = await PdfGoogleFonts.notoSansRegular();
-        boldFont = await PdfGoogleFonts.notoSansBold();
-      } catch (e) {
-        font = pw.Font.helvetica();
-        boldFont = pw.Font.helveticaBold();
-      }
+      final fonts = await _loadFonts();
+      final font = fonts['font']!;
+      final boldFont = fonts['boldFont']!;
 
       doc.addPage(
         pw.MultiPage(
@@ -808,7 +827,7 @@ static String _generateQRData(SaleRecord sale) {
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('Mi~CORAZON MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont)),
+                    pw.Text('MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont)),
                     pw.Text(DateFormat('yyyy-MM-dd').format(DateTime.now()), style: pw.TextStyle(font: font)),
                   ],
                 ),
@@ -896,16 +915,9 @@ static String _generateQRData(SaleRecord sale) {
       final doc = pw.Document();
       final totalPaid = history.fold(0.0, (sum, r) => sum + r.amount);
 
-      pw.Font font;
-      pw.Font boldFont;
-
-      try {
-        font = await PdfGoogleFonts.notoSansRegular();
-        boldFont = await PdfGoogleFonts.notoSansBold();
-      } catch (e) {
-        font = pw.Font.helvetica();
-        boldFont = pw.Font.helveticaBold();
-      }
+      final fonts = await _loadFonts();
+      final font = fonts['font']!;
+      final boldFont = fonts['boldFont']!;
 
       doc.addPage(
         pw.MultiPage(
@@ -917,7 +929,7 @@ static String _generateQRData(SaleRecord sale) {
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('Mi~CORAZON MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont)),
+                    pw.Text('MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont)),
                     pw.Text(DateFormat('yyyy-MM-dd').format(DateTime.now()), style: pw.TextStyle(font: font)),
                   ],
                 ),
@@ -988,7 +1000,7 @@ static String _generateQRData(SaleRecord sale) {
               ),
               pw.SizedBox(height: 40),
               pw.Center(
-                child: pw.Text('Verified by Mi~Corazon Management System', style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey)),
+                child: pw.Text('Verified by Multi-Business Management System', style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey)),
               ),
             ];
           },
@@ -1009,16 +1021,9 @@ static String _generateQRData(SaleRecord sale) {
       final isExternal = user.id == 'EXTERNAL';
       final doc = pw.Document();
       
-      pw.Font font;
-      pw.Font boldFont;
-
-      try {
-        font = await PdfGoogleFonts.notoSansRegular();
-        boldFont = await PdfGoogleFonts.notoSansBold();
-      } catch (e) {
-        font = pw.Font.helvetica();
-        boldFont = pw.Font.helveticaBold();
-      }
+      final fonts = await _loadFonts();
+      final font = fonts['font']!;
+      final boldFont = fonts['boldFont']!;
 
       doc.addPage(
         pw.Page(
@@ -1030,7 +1035,7 @@ static String _generateQRData(SaleRecord sale) {
                 pw.Center(
                   child: pw.Column(
                     children: [
-                      pw.Text('Mi~CORAZON', style: pw.TextStyle(font: boldFont, fontSize: 16)),
+                      pw.Text('MULTI-BUSINESS MANAGER', style: pw.TextStyle(font: boldFont, fontSize: 14)),
                       pw.Text(isExternal ? 'EXTERNAL PAYSLIP' : 'STAFF PAYSLIP', style: pw.TextStyle(font: font, fontSize: 10)),
                       pw.Divider(),
                     ],

@@ -97,8 +97,12 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
     final user = ref.read(currentUserProvider);
     final saleWithBranch = sale.copyWith(branchCode: user?.branchCode);
 
+    // 1. Optimistic Local Update (Riverpod State & Hive DB Cache)
+    state = [saleWithBranch, ...state.where((s) => s.id != saleWithBranch.id)];
+    _saveToCache(state);
+
     try {
-      // 1. Audit Log (Source of truth tracking)
+      // 2. Audit Log (Source of truth tracking)
       await AuditService.log(
         ref: ref,
         action: 'SALE_CREATED',
@@ -107,33 +111,38 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
         newData: saleWithBranch.toJson(),
       );
 
-      // 2. Try Supabase First
+      // 3. Sync to Supabase Backend
       final connectivity = await Connectivity().checkConnectivity();
       if (!connectivity.contains(ConnectivityResult.none)) {
         await _service.saveSale(saleWithBranch);
       } else {
-        throw Exception('Offline');
+        await OfflineSyncService.addToQueue(
+          actionType: 'SALE', 
+          data: saleWithBranch.toJson(),
+        );
       }
     } catch (e) {
-      // 3. Fallback to Hive Queue
+      debugPrint('Save Sale Error (Queued Offline): $e');
       await OfflineSyncService.addToQueue(
         actionType: 'SALE', 
         data: saleWithBranch.toJson(),
       );
-      // Optimistic local update
-      state = [saleWithBranch, ...state];
     }
 
-    // 4. Auto-Register Debtor as Customer if missing
+    // 4. Auto-Register Client as Customer if phone is provided
     _ensureCustomerRegistered(saleWithBranch);
 
     // 5. Update stock if verified
     if (saleWithBranch.isVerified) {
       for (final item in saleWithBranch.items) {
         if (!item.product.isUnlimited) {
+          final double deductionQty = (item.product.unit.toLowerCase() == 'pack' || item.product.unit.toLowerCase() == 'box')
+              ? item.quantity * item.product.effectivePiecesPerPack
+              : item.quantity;
+
           await ref.read(productsFutureProvider.notifier).updateStock(
             item.product.id, 
-            -item.quantity, 
+            -deductionQty, 
             reason: 'SALE', 
             referenceId: saleWithBranch.id,
           );
@@ -270,20 +279,20 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
   }
 
   void _ensureCustomerRegistered(SaleRecord sale) {
-    if (sale.balance > 0.01 && sale.customerPhone != null) {
+    if (sale.customerPhone != null && sale.customerPhone!.trim().isNotEmpty) {
+      final phone = sale.customerPhone!.trim();
       final customers = ref.read(customerProvider);
-      final exists = customers.any((c) => c.phone == sale.customerPhone);
+      final exists = customers.any((c) => c.phone == phone);
       
-      if (!exists) {
+      if (!exists && sale.customerName != null && sale.customerName!.trim().isNotEmpty && !sale.customerName!.contains('Walk-In')) {
         final newCustomer = Customer(
           id: UuidUtils.generate(),
           branchCode: sale.branchCode,
-          name: sale.customerName ?? 'Walk-in Debtor',
-          phone: sale.customerPhone!,
+          name: sale.customerName!,
+          phone: phone,
           phone2: null,
-          location: 'Auto-added from Debt Sale',
+          location: 'Registered from POS Sale',
         );
-        // addCustomer is optimistic and non-blocking
         ref.read(customerProvider.notifier).addCustomer(newCustomer);
       }
     }
