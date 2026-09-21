@@ -3,9 +3,9 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../core/constants.dart';
-import '../../../core/supabase_config.dart';
-import '../../../services/sms_service.dart';
+import '../../core/constants.dart';
+import '../../core/supabase_config.dart';
+import '../../services/sms_service.dart';
 
 class PasswordRecoveryScreen extends ConsumerStatefulWidget {
   const PasswordRecoveryScreen({super.key});

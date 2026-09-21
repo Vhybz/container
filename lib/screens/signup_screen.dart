@@ -289,22 +289,14 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                               decoration: const InputDecoration(labelText: 'Applying For Role', prefixIcon: Icon(Icons.work_outline)),
                               items: [
                                 UserRole.admin,
-                                UserRole.barber,
-                                UserRole.phoneSalesGuy,
                                 UserRole.secretary,
                                 UserRole.pharmacist,
-                                UserRole.cashier,
-                                UserRole.butcher,
                               ].map((r) => DropdownMenuItem(
                                 value: r, 
                                 child: Text(
-                                  r == UserRole.barber 
-                                    ? 'BARBER / STYLIST' 
-                                    : (r == UserRole.phoneSalesGuy || r == UserRole.phoneSales 
-                                        ? 'PHONE REPAIRER / TECH REP' 
-                                        : (r == UserRole.secretary 
-                                            ? 'SECRETARY (BARBERSHOP & TECH)' 
-                                            : r.display.toUpperCase())),
+                                  r == UserRole.secretary 
+                                    ? 'SECRETARY (BARBERSHOP & TECH)' 
+                                    : r.display.toUpperCase(),
                                   style: const TextStyle(fontSize: 12),
                                 ),
                               )).toList(),

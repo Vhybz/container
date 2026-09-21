@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/services.dart';
 import '../../core/constants.dart';
 import '../../core/uuid_utils.dart';
 import '../../models/customer_model.dart';
 import '../../models/product.dart';
 import '../../models/sale_model.dart';
+import '../../models/pharmacy_models.dart';
 import '../../services/cart_provider.dart';
 import '../../services/customer_provider.dart';
 import '../../services/menu_service.dart';
@@ -13,6 +15,8 @@ import '../../services/product_service.dart';
 import '../../services/receipt_service.dart';
 import '../../services/sale_provider.dart';
 import '../../services/user_provider.dart';
+import '../../services/sms_service.dart';
+import '../../services/pharmacy_service.dart';
 import '../../widgets/app_sidebar.dart';
 import '../../widgets/cart_item_tile.dart';
 import '../../widgets/main_app_bar.dart';
@@ -32,84 +36,64 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
   final currencyFormat = NumberFormat.currency(symbol: 'GHS ', decimalDigits: 2);
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _patientController = TextEditingController();
+  final TextEditingController _patientPhoneController = TextEditingController();
   final TextEditingController _doctorController = TextEditingController();
   final TextEditingController _rxNumberController = TextEditingController();
+  final TextEditingController _prescriptionController = TextEditingController();
 
   String _selectedCategory = 'All';
   String _paymentMethod = 'Cash';
   Customer? _selectedCustomer;
   int _currentTab = 0; // 0 = New Sale, 1 = History
+  bool _prescriptionExpanded = false;
+  bool _sendPrescriptionSms = true;
+  bool _includePrescriptionOnReceipt = true;
 
-  final List<Product> _fallbackMeds = [
-    Product(
-      id: 'M1',
-      name: 'Amoxicillin 500mg',
-      category: 'Antibiotic',
-      retailPrice: 25.0,
-      wholesalePrice: 20.0,
-      imageUrl: '',
-      unit: 'pcs',
-      stockQuantity: 45,
-      requiresPrescription: true,
-      batchNumber: 'BAT-2024-001',
-    ),
-    Product(
-      id: 'M2',
-      name: 'Paracetamol Extra 500mg',
-      category: 'Analgesic',
-      retailPrice: 10.0,
-      wholesalePrice: 8.0,
-      imageUrl: '',
-      unit: 'pcs',
-      stockQuantity: 120,
-      requiresPrescription: false,
-      batchNumber: 'BAT-2024-088',
-    ),
-    Product(
-      id: 'M3',
-      name: 'Ibuprofen 400mg',
-      category: 'NSAID',
-      retailPrice: 15.0,
-      wholesalePrice: 12.0,
-      imageUrl: '',
-      unit: 'pcs',
-      stockQuantity: 80,
-      requiresPrescription: false,
-      batchNumber: 'BAT-2024-012',
-    ),
-    Product(
-      id: 'M4',
-      name: 'Metformin 850mg',
-      category: 'Antidiabetic',
-      retailPrice: 35.0,
-      wholesalePrice: 30.0,
-      imageUrl: '',
-      unit: 'pcs',
-      stockQuantity: 60,
-      requiresPrescription: true,
-      batchNumber: 'BAT-2024-105',
-    ),
-    Product(
-      id: 'M5',
-      name: 'Vitamin C 1000mg Chewable',
-      category: 'Supplement',
-      retailPrice: 18.0,
-      wholesalePrice: 15.0,
-      imageUrl: '',
-      unit: 'pcs',
-      stockQuantity: 200,
-      requiresPrescription: false,
-      batchNumber: 'BAT-2024-200',
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(cartProvider.notifier).registerPos('/pharmacy/pos');
+      }
+    });
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
     _patientController.dispose();
+    _patientPhoneController.dispose();
     _doctorController.dispose();
     _rxNumberController.dispose();
+    _prescriptionController.dispose();
     super.dispose();
+  }
+
+  String _formatUnit(String unit, {double count = 1.0}) {
+    final u = unit.trim().toLowerCase();
+    if (u.isEmpty || u == 'pcs' || u == 'pc' || u == 'piece' || u == 'pieces') {
+      return 'pcs';
+    }
+    if (u == 'tablet' || u == 'tablets') {
+      return count == 1 ? 'tablet' : 'tablets';
+    }
+    if (u == 'capsule' || u == 'capsules') {
+      return count == 1 ? 'capsule' : 'capsules';
+    }
+    if (u == 'bottle' || u == 'bottles') {
+      return count == 1 ? 'bottle' : 'bottles';
+    }
+    if (u == 'pack' || u == 'packs') {
+      return count == 1 ? 'pack' : 'packs';
+    }
+    if (u == 'box' || u == 'boxes') {
+      return count == 1 ? 'box' : 'boxes';
+    }
+    if (u == 'mil' || u == 'mils' || u == 'ml') {
+      return 'ml';
+    }
+    return u;
   }
 
   void _addToCart(Product product, bool isWholesale) {
@@ -117,117 +101,532 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
     final packPrice = product.effectivePackPrice;
     final packsPerBox = product.packsPerBox ?? 10.0;
     final boxPrice = product.boxPrice ?? (packPrice * packsPerBox);
-    final unitName = product.unit.isNotEmpty ? product.unit : 'tablet';
+    final hasMultiTier = pcsPerPack > 1 || (packsPerBox > 1 && pcsPerPack > 1);
+
+    double currentQty = 1.0;
     final customQtyController = TextEditingController(text: '1');
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          final double customQty = double.tryParse(customQtyController.text) ?? 1.0;
+          final double customQty = double.tryParse(customQtyController.text) ?? currentQty;
           final double totalPiecePrice = customQty * product.retailPrice;
+          final String unitStr = _formatUnit(product.unit, count: customQty);
+          final bool isLowStock = product.stockQuantity <= product.lowStockThreshold && !product.isUnlimited;
+          final bool isOutOfStock = product.stockQuantity <= 0 && !product.isUnlimited;
 
-          return AlertDialog(
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('Dispense: ${product.name}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                const SizedBox(height: 2),
-                Text('Unit Price: ₵${product.retailPrice.toStringAsFixed(2)} / $unitName', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('1. Dispense Individual $unitName(s):', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: customQtyController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: InputDecoration(
-                          labelText: '$unitName Count',
-                          suffixText: unitName,
-                          isDense: true,
-                        ),
-                        onChanged: (v) => setDialogState(() {}),
+          void updateQty(double newQty) {
+            if (newQty < 0.1) return;
+            if (!product.isUnlimited && newQty > product.stockQuantity && product.stockQuantity > 0) {
+              newQty = product.stockQuantity;
+            }
+            setDialogState(() {
+              currentQty = newQty;
+              customQtyController.text = newQty % 1 == 0 ? newQty.toInt().toString() : newQty.toStringAsFixed(1);
+            });
+          }
+
+          return Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            elevation: 10,
+            backgroundColor: Colors.white,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Header Row
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF047857).withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(Icons.medication_rounded, color: Color(0xFF047857), size: 26),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  product.name,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Color(0xFF0F172A)),
+                                ),
+                                const SizedBox(height: 5),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF1F5F9),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        '₵${product.retailPrice.toStringAsFixed(2)} / ${_formatUnit(product.unit, count: 1)}',
+                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                                      ),
+                                    ),
+                                    if (!product.isUnlimited)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: isOutOfStock
+                                              ? Colors.red.shade50
+                                              : (isLowStock ? Colors.amber.shade50 : const Color(0xFFECFDF5)),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(
+                                            color: isOutOfStock
+                                                ? Colors.red.shade200
+                                                : (isLowStock ? Colors.amber.shade300 : const Color(0xFFA7F3D0)),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          isOutOfStock
+                                              ? 'Out of Stock'
+                                              : 'Stock: ${product.stockQuantity.toInt()} ${_formatUnit(product.unit, count: product.stockQuantity)}',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: isOutOfStock
+                                                ? Colors.red.shade700
+                                                : (isLowStock ? Colors.amber.shade900 : const Color(0xFF047857)),
+                                          ),
+                                        ),
+                                      ),
+                                    if (product.requiresPrescription)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: Colors.purple.shade50,
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: Colors.purple.shade200),
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.receipt_long_rounded, size: 12, color: Colors.purple),
+                                            SizedBox(width: 3),
+                                            Text('Rx Required', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.purple)),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            icon: const Icon(Icons.close_rounded, color: Colors.grey, size: 20),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            splashRadius: 18,
+                            tooltip: 'Close',
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        _addItemToCart(product, customQty, product.retailPrice);
-                      },
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), foregroundColor: Colors.white),
-                      child: Text('Add ${customQty % 1 == 0 ? customQty.toInt() : customQty} $unitName(s) (₵${totalPiecePrice.toStringAsFixed(2)})', style: const TextStyle(fontSize: 11)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  children: [1, 2, 3, 5, 10].map((count) {
-                    return ActionChip(
-                      label: Text('$count $unitName${count > 1 ? "s" : ""}', style: const TextStyle(fontSize: 10)),
-                      onPressed: () {
-                        setDialogState(() {
-                          customQtyController.text = count.toString();
-                        });
-                      },
-                    );
-                  }).toList(),
-                ),
-                if (pcsPerPack > 1) ...[
-                  const Divider(height: 24),
-                  Text('2. Dispense Full Pack (${pcsPerPack.toInt()} $unitName(s)):', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                  const SizedBox(height: 6),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const CircleAvatar(backgroundColor: Colors.blue, child: Icon(Icons.inventory_2_outlined, color: Colors.white)),
-                    title: Text('Full Pack (${pcsPerPack.toInt()} $unitName(s))', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                    subtitle: Text('₵${packPrice.toStringAsFixed(2)} per pack'),
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      final packProduct = product.copyWith(
-                        name: '${product.name} (Pack)',
-                        unit: 'pack',
-                      );
-                      _addItemToCart(packProduct, 1.0, packPrice);
-                    },
+                      const SizedBox(height: 18),
+
+                      // Section Title
+                      Text(
+                        hasMultiTier ? '1. Dispense Individual ${_formatUnit(product.unit, count: 2)}:' : 'Select Quantity to Dispense:',
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF334155)),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Quantity Stepper Container
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          children: [
+                            // Minus Button
+                            Material(
+                              color: customQty > 1 ? Colors.white : Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(8),
+                              elevation: customQty > 1 ? 1 : 0,
+                              child: InkWell(
+                                onTap: customQty > 1 ? () => updateQty(customQty - 1) : null,
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  width: 40,
+                                  height: 40,
+                                  alignment: Alignment.center,
+                                  child: Icon(
+                                    Icons.remove_rounded,
+                                    size: 20,
+                                    color: customQty > 1 ? const Color(0xFF0F172A) : Colors.grey.shade400,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // Editable Quantity Display
+                            Expanded(
+                              child: Center(
+                                child: IntrinsicWidth(
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      SizedBox(
+                                        width: 60,
+                                        child: TextField(
+                                          controller: customQtyController,
+                                          textAlign: TextAlign.center,
+                                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                          style: const TextStyle(
+                                            fontSize: 24,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF0F172A),
+                                          ),
+                                          decoration: const InputDecoration(
+                                            isDense: true,
+                                            border: InputBorder.none,
+                                            contentPadding: EdgeInsets.zero,
+                                          ),
+                                          onChanged: (v) => setDialogState(() {}),
+                                        ),
+                                      ),
+                                      Text(
+                                        unitStr,
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF64748B),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // Plus Button
+                            Material(
+                              color: const Color(0xFF047857),
+                              borderRadius: BorderRadius.circular(8),
+                              elevation: 1,
+                              child: InkWell(
+                                onTap: () => updateQty(customQty + 1),
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  width: 40,
+                                  height: 40,
+                                  alignment: Alignment.center,
+                                  child: const Icon(Icons.add_rounded, size: 20, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Quick Preset Selection Chips
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            for (final preset in [1, 2, 3, 5, 10])
+                              Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: ActionChip(
+                                  label: Text(
+                                    customQty == preset ? '$preset $unitStr ✓' : '+$preset',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: customQty == preset ? Colors.white : const Color(0xFF334155),
+                                    ),
+                                  ),
+                                  backgroundColor: customQty == preset ? const Color(0xFF047857) : const Color(0xFFF1F5F9),
+                                  side: BorderSide(
+                                    color: customQty == preset ? const Color(0xFF047857) : const Color(0xFFE2E8F0),
+                                  ),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  visualDensity: VisualDensity.compact,
+                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  onPressed: () => updateQty(preset.toDouble()),
+                                ),
+                              ),
+                            if (!product.isUnlimited && product.stockQuantity > 0)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: ActionChip(
+                                  label: Text(
+                                    'Max (${product.stockQuantity.toInt()})',
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF047857)),
+                                  ),
+                                  backgroundColor: const Color(0xFFECFDF5),
+                                  side: const BorderSide(color: Color(0xFFA7F3D0)),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  visualDensity: VisualDensity.compact,
+                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  onPressed: () => updateQty(product.stockQuantity),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Live Calculation Summary Card
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Total Amount',
+                                  style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '₵${product.retailPrice.toStringAsFixed(2)} × ${customQty % 1 == 0 ? customQty.toInt() : customQty} $unitStr',
+                                  style: const TextStyle(fontSize: 12, color: Color(0xFF334155), fontWeight: FontWeight.w600),
+                                ),
+                              ],
+                            ),
+                            Text(
+                              '₵${totalPiecePrice.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF047857),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Add to Cart Button
+                      ElevatedButton.icon(
+                        onPressed: isOutOfStock
+                            ? null
+                            : () {
+                                Navigator.pop(ctx);
+                                _addItemToCart(product, customQty, product.retailPrice);
+                              },
+                        icon: const Icon(Icons.add_shopping_cart_rounded, size: 18),
+                        label: Text(
+                          isOutOfStock ? 'Item Out of Stock' : 'Add $unitStr to Cart (₵${totalPiecePrice.toStringAsFixed(2)})',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF047857),
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: Colors.grey.shade300,
+                          elevation: 1,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+
+                      // Multi-Tier Options (Full Pack / Full Box)
+                      if (pcsPerPack > 1) ...[
+                        const SizedBox(height: 16),
+                        const Row(
+                          children: [
+                            Expanded(child: Divider(color: Color(0xFFE2E8F0))),
+                            Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              child: Text('OR BULK TIERS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                            ),
+                            Expanded(child: Divider(color: Color(0xFFE2E8F0))),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Material(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              final packProduct = product.copyWith(
+                                name: '${product.name} (Pack)',
+                                unit: 'pack',
+                              );
+                              _addItemToCart(packProduct, 1.0, packPrice);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFFCBD5E1)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.shade50,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Icon(Icons.inventory_2_outlined, color: Colors.blue, size: 22),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            const Text('Full Pack', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A))),
+                                            const SizedBox(width: 6),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.blue.shade50,
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                '${pcsPerPack.toInt()} ${_formatUnit(product.unit, count: pcsPerPack)} inside',
+                                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.blue.shade800),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text('₵${packPrice.toStringAsFixed(2)} per pack', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                                      ],
+                                    ),
+                                  ),
+                                  ElevatedButton(
+                                    onPressed: () {
+                                      Navigator.pop(ctx);
+                                      final packProduct = product.copyWith(
+                                        name: '${product.name} (Pack)',
+                                        unit: 'pack',
+                                      );
+                                      _addItemToCart(packProduct, 1.0, packPrice);
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.blue.shade700,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      elevation: 0,
+                                    ),
+                                    child: const Text('Add Pack', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (packsPerBox > 1 && pcsPerPack > 1) ...[
+                        const SizedBox(height: 10),
+                        Material(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              final boxProduct = product.copyWith(
+                                name: '${product.name} (Box)',
+                                unit: 'box',
+                              );
+                              _addItemToCart(boxProduct, 1.0, boxPrice);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFFCBD5E1)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.indigo.shade50,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Icon(Icons.archive_outlined, color: Colors.indigo, size: 22),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            const Text('Full Box', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A))),
+                                            const SizedBox(width: 6),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.indigo.shade50,
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                '${packsPerBox.toInt()} packs inside',
+                                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.indigo.shade800),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text('₵${boxPrice.toStringAsFixed(2)} per box', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                                      ],
+                                    ),
+                                  ),
+                                  ElevatedButton(
+                                    onPressed: () {
+                                      Navigator.pop(ctx);
+                                      final boxProduct = product.copyWith(
+                                        name: '${product.name} (Box)',
+                                        unit: 'box',
+                                      );
+                                      _addItemToCart(boxProduct, 1.0, boxPrice);
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.indigo.shade700,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      elevation: 0,
+                                    ),
+                                    child: const Text('Add Box', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                ],
-                if (packsPerBox > 1 && pcsPerPack > 1) ...[
-                  const Divider(height: 24),
-                  Text('3. Dispense Full Box (${packsPerBox.toInt()} packs):', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                  const SizedBox(height: 6),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const CircleAvatar(backgroundColor: Colors.indigo, child: Icon(Icons.archive_outlined, color: Colors.white)),
-                    title: Text('Full Box (${packsPerBox.toInt()} packs / ${(packsPerBox * pcsPerPack).toInt()} $unitName(s))', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                    subtitle: Text('₵${boxPrice.toStringAsFixed(2)} per box'),
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      final boxProduct = product.copyWith(
-                        name: '${product.name} (Box)',
-                        unit: 'box',
-                      );
-                      _addItemToCart(boxProduct, 1.0, boxPrice);
-                    },
-                  ),
-                ],
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cancel'),
+                ),
               ),
-            ],
+            ),
           );
         },
       ),
@@ -258,6 +657,24 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
       return;
     }
 
+    final prescriptionText = _prescriptionController.text.trim();
+    final hasPrescription = prescriptionText.isNotEmpty;
+    final patientPhone = _patientPhoneController.text.trim().isNotEmpty 
+        ? _patientPhoneController.text.trim() 
+        : (_selectedCustomer?.phone.trim() ?? '');
+
+    // If pharmacist chose to send SMS for prescription, ensure a recipient phone is present
+    if (hasPrescription && _sendPrescriptionSms && patientPhone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please provide the patient phone number to send prescription via SMS, or untick "Send via SMS".'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      setState(() => _prescriptionExpanded = true);
+      return;
+    }
+
     final currentUser = ref.read(currentUserProvider);
     final String cashierName = currentUser != null ? '${currentUser.firstName} ${currentUser.surname}' : 'Pharmacist';
     final subtotal = ref.read(cartProvider.notifier).subtotal;
@@ -275,8 +692,15 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
         ? PaymentMethod.mobileMoney 
         : (_paymentMethod == 'Card' ? PaymentMethod.bankDeposit : PaymentMethod.cash);
 
+    final patientName = _patientController.text.trim().isNotEmpty 
+        ? _patientController.text.trim() 
+        : (_selectedCustomer?.name ?? 'Walk-In Patient');
+    final doctorName = _doctorController.text.trim().isNotEmpty ? _doctorController.text.trim() : null;
+    final rxNum = _rxNumberController.text.trim().isNotEmpty ? _rxNumberController.text.trim() : null;
+
     final sale = SaleRecord(
       id: 'INV-${DateTime.now().millisecondsSinceEpoch}',
+      branchCode: currentUser?.branchCode ?? 'MAIN',
       items: saleItems,
       totalAmount: subtotal,
       totalDiscount: 0.0,
@@ -285,17 +709,67 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
       timestamp: DateTime.now(),
       cashierName: cashierName,
       cashierId: currentUser?.id ?? 'N/A',
-      customerName: _selectedCustomer?.name ?? (_patientController.text.trim().isNotEmpty ? _patientController.text.trim() : null),
-      customerPhone: _selectedCustomer?.phone,
+      customerName: _selectedCustomer?.name ?? (patientName != 'Walk-In Patient' ? patientName : null),
+      customerPhone: patientPhone.isNotEmpty ? patientPhone : null,
       status: SaleStatus.completed,
       isVerified: true,
+      prescription: hasPrescription ? prescriptionText : null,
+      includePrescriptionOnReceipt: _includePrescriptionOnReceipt,
+      sendPrescriptionSms: _sendPrescriptionSms,
+      patientName: patientName,
+      doctorName: doctorName,
+      rxNumber: rxNum,
     );
 
-    // Trigger printing dialog
-    ReceiptService.printReceipt(sale, context: null);
+    // If print on receipt is true (or general receipt), trigger printing dialog
+    if (_includePrescriptionOnReceipt || !hasPrescription) {
+      ReceiptService.printReceipt(sale, context: null);
+    }
 
     // Save sale to state
     await ref.read(saleHistoryProvider.notifier).addSale(sale);
+
+    // Send prescription via SMS if selected
+    bool smsSentSuccess = false;
+    if (hasPrescription && _sendPrescriptionSms && patientPhone.isNotEmpty) {
+      smsSentSuccess = await SmsService.sendPrescriptionSms(
+        phone: patientPhone,
+        patientName: patientName,
+        prescription: prescriptionText,
+        rxNumber: rxNum,
+        doctorName: doctorName,
+        pharmacistName: cashierName,
+        branchName: currentUser?.branchCode != null ? 'Emmanuel Chemist (${currentUser!.branchCode})' : 'Emmanuel Chemist',
+      );
+    }
+
+    // Record prescription in prescription history provider
+    if (hasPrescription) {
+      ref.read(prescriptionsProvider.notifier).recordPrescription(
+        PrescriptionRecord(
+          id: 'RX-${DateTime.now().millisecondsSinceEpoch}',
+          rxNumber: rxNum ?? 'RX-${sale.id}',
+          patientName: patientName,
+          doctorName: doctorName,
+          medications: [prescriptionText],
+          dispensedAt: DateTime.now(),
+          status: 'Dispensed',
+        ),
+      );
+    }
+
+    // Clean cart and checkout state immediately after sale
+    ref.read(cartProvider.notifier).clear();
+    setState(() {
+      _selectedCustomer = null;
+      _patientController.clear();
+      _patientPhoneController.clear();
+      _doctorController.clear();
+      _rxNumberController.clear();
+      _prescriptionController.clear();
+      _prescriptionExpanded = false;
+      _paymentMethod = 'Cash';
+    });
 
     if (!mounted) return;
 
@@ -309,39 +783,135 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
             Text('Dispense Successful'),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Invoice: ${sale.id}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-            Text('Total Paid: ${currencyFormat.format(subtotal)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            Text('Payment Method: $_paymentMethod'),
-            if (_hasRxRequired(cartItems) && (_patientController.text.isNotEmpty || _rxNumberController.text.isNotEmpty)) ...[
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Invoice: ${sale.id}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              Text('Total Paid: ${currencyFormat.format(subtotal)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              Text('Payment Method: $_paymentMethod'),
+              if (hasPrescription) ...[
+                const Divider(),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.teal.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.teal.shade300),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.medication_liquid, size: 16, color: Colors.teal),
+                          SizedBox(width: 4),
+                          Text('Prescription Prescribed (Rx)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.teal)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text('Patient: $patientName', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                      if (doctorName != null) Text('Doctor: $doctorName', style: const TextStyle(fontSize: 11)),
+                      if (rxNum != null) Text('Rx No: $rxNum', style: const TextStyle(fontSize: 11)),
+                      const SizedBox(height: 2),
+                      Text(prescriptionText, style: const TextStyle(fontSize: 11)),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          if (_includePrescriptionOnReceipt)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(color: Colors.teal.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(4)),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.receipt_long, size: 12, color: Colors.teal),
+                                  SizedBox(width: 3),
+                                  Text('Printed on Receipt', style: TextStyle(fontSize: 10, color: Colors.teal, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                            ),
+                          if (_sendPrescriptionSms)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(color: Colors.blue.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(4)),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.sms, size: 12, color: Colors.blue),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    smsSentSuccess ? 'SMS Sent to $patientPhone' : 'SMS Queued for $patientPhone',
+                                    style: const TextStyle(fontSize: 10, color: Colors.blue, fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const Divider(),
-              if (_patientController.text.isNotEmpty) Text('Patient: ${_patientController.text}'),
-              if (_doctorController.text.isNotEmpty) Text('Doctor: ${_doctorController.text}'),
-              if (_rxNumberController.text.isNotEmpty) Text('Rx Number: ${_rxNumberController.text}'),
+              Text(
+                _includePrescriptionOnReceipt
+                    ? 'Receipt sent to printer & inventory updated.'
+                    : 'Inventory updated successfully.',
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+              ),
             ],
-            const Divider(),
-            const Text('Receipt sent to printer & inventory updated.'),
-          ],
+          ),
         ),
         actions: [
           OutlinedButton.icon(
             onPressed: () => ReceiptService.printReceipt(sale, context: context),
             icon: const Icon(Icons.print_outlined, size: 18),
-            label: const Text('RE-PRINT RECEIPT'),
+            label: const Text('PRINT RECEIPT'),
           ),
+          ElevatedButton.icon(
+            onPressed: () => ReceiptService.shareReceiptViaWhatsApp(
+              sale,
+              context: context,
+              customerPhone: patientPhone.isNotEmpty ? patientPhone : null,
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF25D366),
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.share, size: 18),
+            label: const Text('SHARE ON WHATSAPP'),
+          ),
+          if (hasPrescription && patientPhone.isNotEmpty)
+            TextButton.icon(
+              onPressed: () async {
+                final sent = await SmsService.sendPrescriptionSms(
+                  phone: patientPhone,
+                  patientName: patientName,
+                  prescription: prescriptionText,
+                  rxNumber: rxNum,
+                  doctorName: doctorName,
+                  pharmacistName: cashierName,
+                  branchName: currentUser?.branchCode != null ? 'Emmanuel Chemist (${currentUser!.branchCode})' : 'Emmanuel Chemist',
+                );
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(
+                      content: Text(sent ? 'Prescription SMS resent successfully!' : 'Failed to resend SMS.'),
+                      backgroundColor: sent ? Colors.green : Colors.red,
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(Icons.sms_outlined, size: 16),
+              label: const Text('RESEND RX SMS', style: TextStyle(fontSize: 11)),
+            ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              ref.read(cartProvider.notifier).clear();
-              setState(() {
-                _patientController.clear();
-                _doctorController.clear();
-                _rxNumberController.clear();
-              });
-            },
+            onPressed: () => Navigator.pop(ctx),
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), foregroundColor: Colors.white),
             child: const Text('OK / NEW SALE'),
           ),
@@ -359,8 +929,20 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
       if (_selectedCustomer == null) return;
     }
 
+    final prescriptionText = _prescriptionController.text.trim();
+    final hasPrescription = prescriptionText.isNotEmpty;
+    final patientPhone = _patientPhoneController.text.trim().isNotEmpty 
+        ? _patientPhoneController.text.trim() 
+        : _selectedCustomer!.phone.trim();
+    final patientName = _patientController.text.trim().isNotEmpty 
+        ? _patientController.text.trim() 
+        : _selectedCustomer!.name;
+    final doctorName = _doctorController.text.trim().isNotEmpty ? _doctorController.text.trim() : null;
+    final rxNum = _rxNumberController.text.trim().isNotEmpty ? _rxNumberController.text.trim() : null;
+
     final subtotal = ref.read(cartProvider.notifier).subtotal;
     final currentUser = ref.read(currentUserProvider);
+    final debtCustName = _selectedCustomer!.name;
 
     final saleItems = cartItems.map((item) => SaleItem(
       product: item.product,
@@ -371,6 +953,7 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
 
     final sale = SaleRecord(
       id: 'INV-${DateTime.now().millisecondsSinceEpoch}',
+      branchCode: currentUser?.branchCode ?? 'MAIN',
       items: saleItems,
       totalAmount: subtotal,
       totalDiscount: 0.0,
@@ -383,14 +966,65 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
       customerPhone: _selectedCustomer!.phone,
       status: SaleStatus.completed,
       isVerified: true,
+      prescription: hasPrescription ? prescriptionText : null,
+      includePrescriptionOnReceipt: _includePrescriptionOnReceipt,
+      sendPrescriptionSms: _sendPrescriptionSms,
+      patientName: patientName,
+      doctorName: doctorName,
+      rxNumber: rxNum,
     );
 
     await ref.read(saleHistoryProvider.notifier).addSale(sale);
+
+    // If print on receipt is enabled, print receipt
+    if (_includePrescriptionOnReceipt && hasPrescription) {
+      ReceiptService.printReceipt(sale, context: null);
+    }
+
+    // If send prescription SMS is selected and prescription exists
+    if (hasPrescription && _sendPrescriptionSms && patientPhone.isNotEmpty) {
+      SmsService.sendPrescriptionSms(
+        phone: patientPhone,
+        patientName: patientName,
+        prescription: prescriptionText,
+        rxNumber: rxNum,
+        doctorName: doctorName,
+        pharmacistName: currentUser?.name ?? 'Pharmacist',
+        branchName: currentUser?.branchCode != null ? 'Emmanuel Chemist (${currentUser!.branchCode})' : 'Emmanuel Chemist',
+      );
+    }
+
+    // Record in prescription history provider
+    if (hasPrescription) {
+      ref.read(prescriptionsProvider.notifier).recordPrescription(
+        PrescriptionRecord(
+          id: 'RX-${DateTime.now().millisecondsSinceEpoch}',
+          rxNumber: rxNum ?? 'RX-${sale.id}',
+          patientName: patientName,
+          doctorName: doctorName,
+          medications: [prescriptionText],
+          dispensedAt: DateTime.now(),
+          status: 'Dispensed',
+        ),
+      );
+    }
+
+    // Clean cart and checkout state immediately after debt sale
     ref.read(cartProvider.notifier).clear();
+    setState(() {
+      _selectedCustomer = null;
+      _patientController.clear();
+      _patientPhoneController.clear();
+      _doctorController.clear();
+      _rxNumberController.clear();
+      _prescriptionController.clear();
+      _prescriptionExpanded = false;
+      _paymentMethod = 'Cash';
+    });
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Sale saved as outstanding debt for ${_selectedCustomer!.name}')),
+      SnackBar(content: Text('Sale saved as outstanding debt for $debtCustName')),
     );
   }
 
@@ -465,10 +1099,18 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                                     leading: const CircleAvatar(child: Icon(Icons.person)),
                                     title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold)),
                                     subtitle: Text(c.phone),
-                                    onTap: () {
-                                      setState(() => _selectedCustomer = c);
-                                      Navigator.pop(ctx);
-                                    },
+                                     onTap: () {
+                                       setState(() {
+                                         _selectedCustomer = c;
+                                         if (_patientController.text.trim().isEmpty) {
+                                           _patientController.text = c.name;
+                                         }
+                                         if (_patientPhoneController.text.trim().isEmpty) {
+                                           _patientPhoneController.text = c.phone;
+                                         }
+                                       });
+                                       Navigator.pop(ctx);
+                                     },
                                   );
                                 },
                               ),
@@ -533,7 +1175,15 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                 location: 'POS Auto-Registration',
               );
               ref.read(customerProvider.notifier).addCustomer(newCust);
-              setState(() => _selectedCustomer = newCust);
+              setState(() {
+                _selectedCustomer = newCust;
+                if (_patientController.text.trim().isEmpty) {
+                  _patientController.text = newCust.name;
+                }
+                if (_patientPhoneController.text.trim().isEmpty) {
+                  _patientPhoneController.text = newCust.phone;
+                }
+              });
               Navigator.pop(ctx);
               if (parentContext.mounted) Navigator.pop(parentContext);
               ScaffoldMessenger.of(context).showSnackBar(
@@ -562,7 +1212,6 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
 
     // Prioritize database products if they exist
     List<Product> productsList = [];
-    bool usingFallback = false;
 
     if (productsAsync.hasValue) {
       final dbProducts = productsAsync.value!
@@ -589,17 +1238,8 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
           })
           .toList();
       
-      if (dbProducts.isNotEmpty) {
-        productsList = dbProducts;
-      } else if (productsAsync.value!.isEmpty) {
-        // Only use fallbacks if the database is literally empty (new installation)
-        productsList = _fallbackMeds;
-        usingFallback = true;
-      }
-    } else {
-      // Show fallbacks during initial load for UI responsiveness
-      productsList = _fallbackMeds;
-      usingFallback = true;
+      final activeProds = productsAsync.value!.where((p) => !p.isDeleted).toList();
+      productsList = dbProducts.isNotEmpty ? dbProducts : activeProds;
     }
 
     final categories = ['All', ...{...productsList.map((p) => p.category.toUpperCase())}];
@@ -618,8 +1258,14 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
         child: Scaffold(
           backgroundColor: theme.scaffoldBackgroundColor,
           appBar: MainAppBar(
-            title: 'Pharmacy POS (${isWholesale ? "Wholesale" : "Retail"})',
-            actions: const [],
+            title: 'Pharmacy POS',
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.alarm_on_rounded),
+                tooltip: 'Medication Refill Reminders',
+                onPressed: () => Navigator.pushNamed(context, '/pharmacy/refills'),
+              ),
+            ],
           ),
           drawer: isDesktop ? null : Drawer(
             child: AppSidebar(
@@ -689,32 +1335,25 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                           ],
                         ),
                       ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white70),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        ),
+                        onPressed: () => Navigator.pushNamed(context, '/pharmacy/refills'),
+                        icon: const Icon(Icons.alarm_on_rounded, size: 16),
+                        label: const Text('REFILL ALERTS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                      ),
                     ],
                   ),
                 ),
-                // Top controls: Retail vs Wholesale & Category Dropdown
+                // Category & Search
                 Row(
                   children: [
-                    Expanded(
-                      child: Container(
-                        height: 45,
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surface,
-                          borderRadius: BorderRadius.circular(AppRadius.m),
-                          border: Border.all(color: theme.dividerColor),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(child: _modeButton('Retail', !isWholesale)),
-                            Expanded(child: _modeButton('Wholesale', isWholesale)),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.m),
                     SizedBox(
-                      width: isMobile ? 130 : 200,
+                      width: isMobile ? 140 : 220,
                       child: DropdownButtonFormField<String>(
                         initialValue: categories.contains(_selectedCategory) ? _selectedCategory : 'All',
                         isExpanded: true,
@@ -723,24 +1362,25 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                         onChanged: (v) => setState(() => _selectedCategory = v!),
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.m),
-                // Search Field
-                SizedBox(
-                  height: 45,
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: (v) => setState(() {}),
-                    decoration: InputDecoration(
-                      hintText: 'Search medication or category...',
-                      prefixIcon: const Icon(Icons.search, size: 20),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.m)),
-                      filled: true,
-                      fillColor: theme.colorScheme.surface,
+                    const SizedBox(width: AppSpacing.m),
+                    Expanded(
+                      child: SizedBox(
+                        height: 45,
+                        child: TextField(
+                          controller: _searchController,
+                          onChanged: (v) => setState(() {}),
+                          decoration: InputDecoration(
+                            hintText: 'Search medication or category...',
+                            prefixIcon: const Icon(Icons.search, size: 20),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.m)),
+                            filled: true,
+                            fillColor: theme.colorScheme.surface,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
                 const SizedBox(height: AppSpacing.m),
                 // Product Cards Grid
@@ -757,21 +1397,21 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                           itemCount: products.length,
                           itemBuilder: (context, index) {
                             final product = products[index];
-                            final hasPromo = product.isPromoActiveFor(isWholesale, _selectedCustomer);
-                            final currentPrice = product.getPrice(isWholesale, customer: _selectedCustomer);
+                            final hasPromo = product.isPromoActiveFor(false, _selectedCustomer);
+                            final currentPrice = product.getPrice(false, customer: _selectedCustomer);
 
                             return ProductCard(
                               name: product.name,
                               category: product.category,
                               price: '₵${currentPrice.toStringAsFixed(2)}/${product.unit}',
-                              originalPrice: hasPromo ? '₵${(isWholesale ? product.wholesalePrice : product.retailPrice).toStringAsFixed(2)}' : null,
+                              originalPrice: hasPromo ? '₵${product.retailPrice.toStringAsFixed(2)}' : null,
                               stockQuantity: product.stockQuantity,
                               isUnlimited: product.isUnlimited,
                               unit: product.unit,
                               promoLabel: hasPromo ? '${product.discountPercentage.toInt()}% OFF' : null,
                               imageUrl: product.imageUrl,
                               requiresPrescription: product.requiresPrescription,
-                              onTap: () => _addToCart(product, isWholesale),
+                              onTap: () => _addToCart(product, false),
                             );
                           },
                         ),
@@ -795,31 +1435,7 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
     );
   }
 
-  Widget _modeButton(String label, bool isSelected) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: () {
-        final newMode = label == 'Wholesale';
-        ref.read(isWholesaleProvider.notifier).state = newMode;
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? theme.colorScheme.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(AppRadius.m - 4),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : theme.colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.bold,
-            fontSize: 12,
-          ),
-        ),
-      ),
-    );
-  }
+
 
   Widget _buildCartSection() {
     final theme = Theme.of(context);
@@ -893,25 +1509,7 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                   },
                 ),
         ),
-        if (_hasRxRequired(cartItems)) ...[
-          Divider(height: 1, color: theme.dividerColor),
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.s),
-            color: Colors.amber.withValues(alpha: 0.08),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Prescription Details (Optional)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.deepOrange)),
-                const SizedBox(height: 4),
-                TextField(controller: _patientController, decoration: const InputDecoration(labelText: 'Patient Name', isDense: true)),
-                const SizedBox(height: 4),
-                TextField(controller: _doctorController, decoration: const InputDecoration(labelText: 'Doctor Name', isDense: true)),
-                const SizedBox(height: 4),
-                TextField(controller: _rxNumberController, decoration: const InputDecoration(labelText: 'Rx Serial No', isDense: true)),
-              ],
-            ),
-          ),
-        ],
+        _buildPrescriptionSection(cartItems, theme),
         // Summary & Actions
         Container(
           padding: const EdgeInsets.all(AppSpacing.m),
@@ -1007,6 +1605,457 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
     );
   }
 
+  Widget _buildPrescriptionSection(List<CartItem> cartItems, ThemeData theme) {
+    if (cartItems.isEmpty) return const SizedBox.shrink();
+
+    final hasRx = _hasRxRequired(cartItems);
+    final isFilled = _prescriptionController.text.trim().isNotEmpty;
+    
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.s, vertical: 4),
+      decoration: BoxDecoration(
+        color: _prescriptionExpanded 
+            ? const Color(0xFF2E7D32).withValues(alpha: 0.05)
+            : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: _prescriptionExpanded || isFilled
+              ? const Color(0xFF2E7D32) 
+              : theme.dividerColor.withValues(alpha: 0.5),
+          width: isFilled ? 1.5 : 1.0,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Header / Toggle
+          InkWell(
+            onTap: () => setState(() => _prescriptionExpanded = !_prescriptionExpanded),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.medication_liquid_rounded, 
+                    size: 18, 
+                    color: (isFilled || _prescriptionExpanded) ? const Color(0xFF2E7D32) : theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Text(
+                              'Prescription & Dosage', 
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: hasRx ? Colors.deepOrange.withValues(alpha: 0.15) : Colors.grey.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                hasRx ? 'Rx Required' : 'Optional',
+                                style: TextStyle(
+                                  fontSize: 9, 
+                                  fontWeight: FontWeight.bold, 
+                                  color: hasRx ? Colors.deepOrange : theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                            if (isFilled && !_prescriptionExpanded) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text('Prescribed', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.green)),
+                              ),
+                            ],
+                          ],
+                        ),
+                        Text(
+                          _prescriptionExpanded 
+                              ? 'Configure dosage, receipt print & SMS delivery'
+                              : (isFilled ? _prescriptionController.text : 'Tap to prescribe medication or dosage instructions'),
+                          style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    _prescriptionExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                    size: 18,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Expanded Form
+          if (_prescriptionExpanded) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.s),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Quick helper row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Dosage Instructions:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                      InkWell(
+                        onTap: () {
+                          // Auto-fill cart products
+                          final lines = cartItems.map((ci) {
+                            final qty = ci.quantity % 1 == 0 ? ci.quantity.toInt().toString() : ci.quantity.toString();
+                            return '• ${ci.product.name} (x$qty): ';
+                          }).join('\n');
+                          setState(() {
+                            if (_prescriptionController.text.trim().isEmpty) {
+                              _prescriptionController.text = lines;
+                            } else {
+                              _prescriptionController.text += '\n$lines';
+                            }
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2E7D32).withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.playlist_add, size: 13, color: Color(0xFF2E7D32)),
+                              SizedBox(width: 3),
+                              Text('Load Cart Items', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF2E7D32))),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+
+                  // Prescription Text Field
+                  TextField(
+                    controller: _prescriptionController,
+                    minLines: 2,
+                    maxLines: 3,
+                    style: const TextStyle(fontSize: 11.5),
+                    decoration: InputDecoration(
+                      hintText: 'e.g. Take 2 tablets 3 times daily after meals for 5 days...',
+                      hintStyle: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.all(8),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+                    ),
+                    onChanged: (v) => setState(() {}),
+                  ),
+                  const SizedBox(height: 6),
+
+                  // Quick frequency chips
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _dosageChip('2 tabs 3x daily'),
+                        _dosageChip('1 tab 2x daily'),
+                        _dosageChip('1 cap daily'),
+                        _dosageChip('5ml 3x daily'),
+                        _dosageChip('After meals'),
+                        _dosageChip('Before bedtime'),
+                        _dosageChip('For 5 days'),
+                        _dosageChip('For 7 days'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Patient Name & Phone Row
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 6,
+                        child: TextField(
+                          controller: _patientController,
+                          style: const TextStyle(fontSize: 11),
+                          decoration: const InputDecoration(
+                            labelText: 'Patient Name',
+                            hintText: 'Customer / Patient',
+                            isDense: true,
+                            prefixIcon: Icon(Icons.person, size: 14),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        flex: 5,
+                        child: TextField(
+                          controller: _patientPhoneController,
+                          style: const TextStyle(fontSize: 11),
+                          keyboardType: TextInputType.phone,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(10),
+                          ],
+                          decoration: const InputDecoration(
+                            labelText: 'Patient Phone',
+                            hintText: '10 digits (SMS)',
+                            isDense: true,
+                            prefixIcon: Icon(Icons.phone, size: 14),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                          ),
+                          onChanged: (v) => setState(() {}),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+
+                  // Doctor Name & Rx Serial No Row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _doctorController,
+                          style: const TextStyle(fontSize: 11),
+                          decoration: const InputDecoration(
+                            labelText: 'Doctor / Prescriber (Optional)',
+                            hintText: 'Dr. Name',
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: TextField(
+                          controller: _rxNumberController,
+                          style: const TextStyle(fontSize: 11),
+                          decoration: const InputDecoration(
+                            labelText: 'Rx Serial No (Optional)',
+                            hintText: 'e.g. RX-2026-01',
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Delivery Options (SMS or Receipt or Both)
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: theme.dividerColor),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'PRESCRIPTION DELIVERY CHANNELS', 
+                          style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 0.3),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: InkWell(
+                                onTap: () => setState(() => _sendPrescriptionSms = !_sendPrescriptionSms),
+                                child: Row(
+                                  children: [
+                                    Checkbox(
+                                      value: _sendPrescriptionSms,
+                                      onChanged: (v) => setState(() => _sendPrescriptionSms = v ?? false),
+                                      visualDensity: VisualDensity.compact,
+                                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    const Icon(Icons.sms_outlined, size: 14, color: Colors.blue),
+                                    const SizedBox(width: 4),
+                                    const Expanded(
+                                      child: Text('Send via SMS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: InkWell(
+                                onTap: () => setState(() => _includePrescriptionOnReceipt = !_includePrescriptionOnReceipt),
+                                child: Row(
+                                  children: [
+                                    Checkbox(
+                                      value: _includePrescriptionOnReceipt,
+                                      onChanged: (v) => setState(() => _includePrescriptionOnReceipt = v ?? false),
+                                      visualDensity: VisualDensity.compact,
+                                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    const Icon(Icons.receipt_long_outlined, size: 14, color: Colors.teal),
+                                    const SizedBox(width: 4),
+                                    const Expanded(
+                                      child: Text('Print on Receipt', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        _buildDeliveryStatusBadge(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _dosageChip(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            if (_prescriptionController.text.trim().isEmpty) {
+              _prescriptionController.text = text;
+            } else {
+              _prescriptionController.text += ' $text';
+            }
+          });
+        },
+        borderRadius: BorderRadius.circular(4),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          decoration: BoxDecoration(
+            color: Colors.grey.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(text, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w500)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeliveryStatusBadge() {
+    if (_sendPrescriptionSms && _includePrescriptionOnReceipt) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.green.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.check_circle_outline, size: 12, color: Colors.green),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                _patientPhoneController.text.isNotEmpty
+                    ? 'Delivery: SMS to ${_patientPhoneController.text} + Printed on Receipt'
+                    : 'Delivery: SMS (enter phone) + Printed on Receipt',
+                style: const TextStyle(fontSize: 9.5, color: Colors.green, fontWeight: FontWeight.bold),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      );
+    } else if (_sendPrescriptionSms) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.blue.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.sms_outlined, size: 12, color: Colors.blue),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                _patientPhoneController.text.isNotEmpty
+                    ? 'Delivery: SMS only (to ${_patientPhoneController.text})'
+                    : 'Delivery: SMS only (enter phone above)',
+                style: const TextStyle(fontSize: 9.5, color: Colors.blue, fontWeight: FontWeight.bold),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      );
+    } else if (_includePrescriptionOnReceipt) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.teal.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.receipt_long_outlined, size: 12, color: Colors.teal),
+            SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                'Delivery: Printed on Receipt only (No SMS)',
+                style: TextStyle(fontSize: 9.5, color: Colors.teal, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.grey.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.archive_outlined, size: 12, color: Colors.grey),
+            SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                'Delivery: Pharmacy Record only (No SMS or Receipt print)',
+                style: TextStyle(fontSize: 9.5, color: Colors.grey),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
   Widget _buildHistoryLayout() {
     final salesHistory = ref.watch(saleHistoryProvider);
 
@@ -1025,11 +2074,58 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                     separatorBuilder: (context, sepIndex) => Divider(key: ValueKey('div_$sepIndex')),
                     itemBuilder: (context, index) {
                       final sale = salesHistory[index];
+                      final hasPrescription = sale.prescription != null && sale.prescription!.trim().isNotEmpty;
                       return ListTile(
-                        leading: const CircleAvatar(backgroundColor: Color(0xFF2E7D32), child: Icon(Icons.receipt, color: Colors.white)),
-                        title: Text('Invoice ${sale.id}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('${DateFormat('MMM dd, yyyy HH:mm').format(sale.timestamp)} • Patient: ${sale.customerName ?? "Walk-In"}'),
-                        trailing: Text('GHS ${sale.totalAmount.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF2E7D32))),
+                        leading: CircleAvatar(
+                          backgroundColor: hasPrescription ? Colors.teal : const Color(0xFF2E7D32),
+                          child: Icon(hasPrescription ? Icons.medication_rounded : Icons.receipt, color: Colors.white),
+                        ),
+                        title: Row(
+                          children: [
+                            Text('Invoice ${sale.id}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                            if (hasPrescription) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: Colors.teal.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text('Rx Prescribed', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.teal)),
+                              ),
+                            ],
+                          ],
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('${DateFormat('MMM dd, yyyy HH:mm').format(sale.timestamp)} • Patient: ${sale.customerName ?? "Walk-In"}'),
+                            if (hasPrescription)
+                              Text(
+                                'Rx: ${sale.prescription}',
+                                style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.teal.shade700),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                          ],
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('GHS ${sale.totalAmount.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF2E7D32))),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.share, size: 18, color: Color(0xFF25D366)),
+                              tooltip: 'Share WhatsApp Receipt',
+                              onPressed: () => ReceiptService.shareReceiptViaWhatsApp(sale, context: context, customerPhone: sale.customerPhone),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.print_outlined, size: 18),
+                              tooltip: 'Print Receipt',
+                              onPressed: () => ReceiptService.printReceipt(sale, context: context),
+                            ),
+                          ],
+                        ),
                         onTap: () => ReceiptService.printReceipt(sale, context: context),
                       );
                     },

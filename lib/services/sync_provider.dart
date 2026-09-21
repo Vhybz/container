@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'transfer_provider.dart';
 import 'customer_provider.dart';
 import 'expense_provider.dart';
 import 'user_provider.dart';
@@ -22,6 +21,8 @@ class SyncNotifier extends StateNotifier<DateTime> with WidgetsBindingObserver {
     // Initial sync on startup
     _syncAll();
   }
+
+  Future<void> syncAll() => _syncAll();
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -46,15 +47,15 @@ class SyncNotifier extends StateNotifier<DateTime> with WidgetsBindingObserver {
       if (user == null) return;
 
       _isSyncing = true;
+      ref.read(isSyncingProvider.notifier).state = true;
       
-      // 1. Process offline queue first
+      // 1. Process offline queue first (Now enabled on all platforms)
       await OfflineSyncService.processQueue();
       
       // 2. Refresh key data sets to ensure cache is hot and Supabase is source of truth
       // Note: Realtime streams also handle this, but manual refresh ensures Req 3 is met.
       await Future.wait([
         _safeRefresh(productsFutureProvider.notifier, (n) => n.loadProducts()),
-        _safeRefresh(transferProvider.notifier, (n) => n.loadTransfers()),
         _safeRefresh(customerProvider.notifier, (n) => n.loadCustomers()),
         _safeRefresh(saleHistoryProvider.notifier, (n) => n.loadSales()),
         _safeRefresh(expenseProvider.notifier, (n) => n.loadExpenses()),
@@ -68,6 +69,7 @@ class SyncNotifier extends StateNotifier<DateTime> with WidgetsBindingObserver {
       debugPrint('Sync Heartbeat Warning: $e');
     } finally {
       _isSyncing = false;
+      ref.read(isSyncingProvider.notifier).state = false;
     }
   }
 
@@ -91,6 +93,8 @@ class SyncNotifier extends StateNotifier<DateTime> with WidgetsBindingObserver {
 final syncProvider = StateNotifierProvider<SyncNotifier, DateTime>((ref) {
   return SyncNotifier(ref);
 });
+
+final isSyncingProvider = StateProvider<bool>((ref) => false);
 
 final connectivityStatusProvider = StreamProvider<List<ConnectivityResult>>((ref) async* {
   // Yield initial state

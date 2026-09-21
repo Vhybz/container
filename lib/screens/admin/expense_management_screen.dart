@@ -121,7 +121,10 @@ class ExpenseManagementScreen extends ConsumerWidget {
     final isMobile = ResponsiveLayout.isMobile(context);
     final now = DateTime.now();
     final thisMonthExpenses = expenses
-        .where((e) => e.date.month == now.month && e.date.year == now.year)
+        .where((e) => 
+            e.date.month == now.month && 
+            e.date.year == now.year &&
+            !ExpenseNotifier.nonExpenseCategories.contains(e.category))
         .fold(0.0, (sum, e) => sum + e.amount);
 
     return Container(
@@ -156,20 +159,24 @@ class ExpenseManagementScreen extends ConsumerWidget {
 
   Widget _buildExpenseList(BuildContext context, WidgetRef ref, List<ExpenseRecord> expenses) {
     final theme = Theme.of(context);
+    final filteredExpenses = expenses
+        .where((e) => !ExpenseNotifier.nonExpenseCategories.contains(e.category))
+        .toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Recent Records', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface)),
         const SizedBox(height: AppSpacing.m),
-        if (expenses.isEmpty)
+        if (filteredExpenses.isEmpty)
           Center(child: Padding(padding: const EdgeInsets.all(40), child: Text('No expenses recorded yet.', style: TextStyle(color: theme.colorScheme.onSurfaceVariant))))
         else
           ListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: expenses.length,
+            itemCount: filteredExpenses.length,
             itemBuilder: (context, index) {
-              final exp = expenses[index];
+              final exp = filteredExpenses[index];
               return Card(
                 margin: const EdgeInsets.only(bottom: 12),
                 child: ListTile(

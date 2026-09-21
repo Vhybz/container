@@ -196,7 +196,11 @@ class _RecentsScreenState extends ConsumerState<RecentsScreen> {
     List<dynamic> combined = [];
     
     if (_activeFilter == 'All' || _activeFilter == 'Sales') combined.addAll(sales);
-    if (_activeFilter == 'All' || _activeFilter == 'Expenses') combined.addAll(expenses);
+    if (_activeFilter == 'All') {
+      combined.addAll(expenses);
+    } else if (_activeFilter == 'Expenses') {
+      combined.addAll(expenses.where((e) => !ExpenseNotifier.nonExpenseCategories.contains(e.category)));
+    }
 
     // Filter by Search Query
     if (_searchQuery.isNotEmpty) {

@@ -7,6 +7,9 @@ import '../models/sale_model.dart';
 import '../models/user_model.dart';
 import '../models/salary_model.dart';
 import '../core/utils.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/supabase_config.dart';
 
 class ReceiptService {
   static Future<Map<String, pw.Font>> _loadFonts() async {
@@ -78,6 +81,46 @@ class ReceiptService {
               if (sale.customerName != null)
                 pw.Text('Customer: ${sale.customerName} ${sale.customerPhone != null ? "(${sale.customerPhone})" : ""}', 
                   style: pw.TextStyle(font: font, fontSize: 9)),
+
+              if (sale.prescription != null && sale.prescription!.trim().isNotEmpty && sale.includePrescriptionOnReceipt)
+                pw.Container(
+                  width: double.infinity,
+                  margin: const pw.EdgeInsets.symmetric(vertical: 4),
+                  padding: const pw.EdgeInsets.all(6),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.teal50,
+                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                    border: pw.Border.all(color: PdfColors.teal700, width: 1),
+                  ),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text('PRESCRIPTION & DOSAGE (Rx)', 
+                            style: pw.TextStyle(font: boldFont, fontSize: 8.5, color: PdfColors.teal900)),
+                          if (sale.rxNumber != null && sale.rxNumber!.isNotEmpty)
+                            pw.Text('Rx: ${sale.rxNumber}', 
+                              style: pw.TextStyle(font: boldFont, fontSize: 7.5, color: PdfColors.teal900)),
+                        ],
+                      ),
+                      pw.SizedBox(height: 3),
+                      if (sale.patientName != null && sale.patientName!.isNotEmpty)
+                        pw.Text('Patient: ${sale.patientName}', 
+                          style: pw.TextStyle(font: boldFont, fontSize: 7.5, color: PdfColors.grey800)),
+                      if (sale.doctorName != null && sale.doctorName!.isNotEmpty)
+                        pw.Text('Prescriber: ${sale.doctorName}', 
+                          style: pw.TextStyle(font: font, fontSize: 7.5, color: PdfColors.grey800)),
+                      pw.SizedBox(height: 2),
+                      pw.Text(sale.prescription!.trim(), 
+                        style: pw.TextStyle(font: font, fontSize: 8)),
+                      pw.SizedBox(height: 2),
+                      pw.Text('*Adhere strictly to prescribed dosage and instructions.', 
+                        style: pw.TextStyle(font: font, fontSize: 6.5, color: PdfColors.grey700)),
+                    ],
+                  ),
+                ),
 
               if (sale.balance > 0.01 && sale.status != SaleStatus.awaitingDeposit)
                 pw.Container(
@@ -167,7 +210,7 @@ class ReceiptService {
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
                         pw.Expanded(
-                          child: pw.Text('[${item.product.category.toUpperCase()}] ${item.product.name} (${WeightConverter.formatShort(item.quantity, unit: item.product.unit)})', 
+                          child: pw.Text('[${item.product.category.toUpperCase()}] ${item.product.name} (${WeightConverter.formatShort(item.quantity, unit: item.product.unit, productName: item.product.name, category: item.product.category)})', 
                             style: pw.TextStyle(font: font, fontSize: 8)),
                         ),
                         pw.Text(item.total.toStringAsFixed(2), style: pw.TextStyle(font: font, fontSize: 8)),
@@ -305,6 +348,64 @@ class ReceiptService {
       }
     }
   }
+
+  static Future<void> shareReceiptViaWhatsApp(
+    SaleRecord sale, {
+    BuildContext? context,
+    String? overridePhone,
+    String? customerPhone,
+  }) async {
+    try {
+      final doc = await generateReceiptDocument(sale);
+      final bytes = await doc.save();
+
+      // 1. Upload to Supabase public receipts storage bucket
+      String? publicPdfUrl;
+      try {
+        final String path = 'Receipt_${sale.id}.pdf';
+        await SupabaseConfig.client.storage.from('receipts').uploadBinary(
+          path,
+          bytes,
+          fileOptions: const FileOptions(upsert: true, contentType: 'application/pdf'),
+        );
+        publicPdfUrl = SupabaseConfig.client.storage.from('receipts').getPublicUrl(path);
+      } catch (uploadError) {
+        debugPrint('Receipt Supabase upload notice: $uploadError');
+      }
+
+      // 2. Format WhatsApp message
+      final String clientName = sale.customerName?.trim().isNotEmpty == true ? sale.customerName!.trim() : 'Valued Customer';
+      final String targetPhone = customerPhone ?? overridePhone ?? (sale.customerPhone ?? '');
+      
+      final String linkText = publicPdfUrl != null ? '\n\n📄 Download Official PDF Receipt:\n$publicPdfUrl' : '';
+      final String message = '''
+*CONTAINER STORE RECEIPT*
+Hello $clientName, thank you for your purchase!
+
+🧾 *Invoice #:* ${sale.id}
+📅 *Date:* ${DateFormat('dd MMM yyyy, hh:mm a').format(sale.timestamp)}
+💰 *Total Paid:* GHS ${sale.totalAmount.toStringAsFixed(2)}$linkText
+
+_Thank you for choosing Container Stores! Have a wonderful day._
+'''.trim();
+
+      if (targetPhone.trim().isNotEmpty) {
+        String cleanPhone = targetPhone.replaceAll(RegExp(r'[^0-9]'), '');
+        if (cleanPhone.startsWith('0')) cleanPhone = '233${cleanPhone.substring(1)}';
+        final Uri url = Uri.parse('https://wa.me/$cleanPhone?text=${Uri.encodeComponent(message)}');
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        await Printing.sharePdf(bytes: bytes, filename: 'Receipt_${sale.id}.pdf');
+      }
+    } catch (e) {
+      debugPrint('WhatsApp share error: $e');
+      if (context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not share via WhatsApp: $e')),
+        );
+      }
+    }
+  }
 static String _generateQRData(SaleRecord sale) {
     final buffer = StringBuffer();
     buffer.writeln('MULTI-BUSINESS MANAGER');
@@ -316,7 +417,7 @@ static String _generateQRData(SaleRecord sale) {
     }
     buffer.writeln('Items:');
     for (var item in sale.items) {
-      buffer.writeln('- [${item.product.category.toUpperCase()}] ${item.product.name} (${WeightConverter.formatShort(item.quantity, unit: item.product.unit)}): ₵${item.total.toStringAsFixed(2)}');
+      buffer.writeln('- [${item.product.category.toUpperCase()}] ${item.product.name} (${WeightConverter.formatShort(item.quantity, unit: item.product.unit, productName: item.product.name, category: item.product.category)}): ₵${item.total.toStringAsFixed(2)}');
     }
     buffer.writeln('Total: ₵${sale.totalAmount.toStringAsFixed(2)}');
     buffer.writeln('Paid: ₵${sale.amountPaid.toStringAsFixed(2)}');

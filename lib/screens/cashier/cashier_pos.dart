@@ -13,14 +13,12 @@ import '../../widgets/main_app_bar.dart';
 import '../../widgets/app_sidebar.dart';
 import '../../services/cart_provider.dart';
 import '../../services/product_service.dart';
-import '../../services/transfer_provider.dart';
 import '../../services/sale_provider.dart';
 import '../../services/customer_provider.dart';
 import '../../services/menu_service.dart';
 import '../../services/user_provider.dart';
 import '../../services/expense_provider.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../models/transfer_models.dart';
 import '../../models/sale_model.dart';
 import '../../models/product.dart';
 import '../../models/customer_model.dart';
@@ -78,9 +76,10 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
   @override
   void initState() {
     super.initState();
-    // Force a fresh sync of transfers when the POS opens
-    Future.microtask(() {
-      ref.read(transferProvider.notifier).loadTransfers();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(cartProvider.notifier).registerPos('/cashier');
+      }
     });
   }
 
@@ -110,7 +109,7 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
     final theme = Theme.of(context);
     final isDesktop = ResponsiveLayout.isDesktop(context);
     final isMobile = ResponsiveLayout.isMobile(context);
-    final isWholesale = ref.watch(isWholesaleProvider);
+
     final menuItems = ref.watch(menuItemsProvider);
 
     // Safety: Reset selected category if it no longer exists after deletions
@@ -151,7 +150,7 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
             backgroundColor: theme.scaffoldBackgroundColor,
             appBar: MainAppBar(
               title: _currentView == POSView.sales 
-                  ? 'POS System (${isWholesale ? "Wholesale" : "Retail"})' 
+                  ? 'POS System' 
                   : 'Sales History',
               actions: [],
             ),
@@ -412,7 +411,6 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
     final user = ref.watch(currentUserProvider);
     final productsAsync = ref.watch(productsFutureProvider);
     final isWholesale = ref.watch(isWholesaleProvider);
-    final transfers = ref.watch(transferProvider);
 
     if (user == null) return const SizedBox.shrink();
     int crossAxisCount = ResponsiveLayout.isMobile(context) ? 2 : (ResponsiveLayout.isTablet(context) ? 3 : 4);
@@ -475,42 +473,25 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
                   itemBuilder: (context, index) {
                     final product = filtered[index];
                     final mappedCat = _getMappedCategory(product);
-                    final hasPromo = product.isPromoActiveFor(isWholesale, _selectedCustomer);
-                    final currentPrice = product.getPrice(isWholesale, customer: _selectedCustomer);
+                    final hasPromo = product.isPromoActiveFor(false, _selectedCustomer);
+                    final currentPrice = product.getPrice(false, customer: _selectedCustomer);
                     final isPriced = currentPrice > 0.01;
                     
-                    // NEW: Check if this specific product is currently being transferred to this branch
-                    final bool productInTransit = transfers.any((t) {
-                      if (t.status != TransferStatus.pending || t.destination != user.branchCode) return false;
-                      
-                      final mType = t.meatType.toLowerCase();
-                      final pName = product.name.toLowerCase();
-                      
-                      // Try to split "Animal - Cut"
-                      String cutToMatch = mType;
-                      if (mType.contains(' - ')) {
-                        cutToMatch = mType.split(' - ').last.trim();
-                      }
-
-                      return pName == cutToMatch || mType.contains(pName) || pName.contains(cutToMatch);
-                    });
-
                     return ProductCard(
                       name: product.name,
                       category: mappedCat,
                       price: isPriced ? '₵${currentPrice.toStringAsFixed(2)}/${product.unit}' : 'UNPRICED',
-                      originalPrice: hasPromo ? '₵${(isWholesale ? product.wholesalePrice : product.retailPrice).toStringAsFixed(2)}' : null,
+                      originalPrice: hasPromo ? '₵${product.retailPrice.toStringAsFixed(2)}' : null,
                       stockQuantity: product.stockQuantity,
                       isUnlimited: product.isUnlimited,
                       lowStockThreshold: product.lowStockThreshold,
                       unit: product.unit,
                       promoLabel: hasPromo ? '${product.name} - ${product.discountPercentage % 1 == 0 ? product.discountPercentage.toInt() : product.discountPercentage}% OFF' : null,
                       imageUrl: product.imageUrl,
-                      isInTransit: productInTransit,
                       requiresPrescription: product.requiresPrescription,
                       requiresImei: product.requiresImei,
                       isService: product.isService,
-                      onTap: isPriced ? () => _handleProductTap(product, isWholesale, currentPrice) : () {
+                      onTap: isPriced ? () => _handleProductTap(product, false, currentPrice) : () {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('This product is not yet priced. Please contact Admin.')),
                         );
@@ -529,41 +510,21 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
   }
 
   Widget _buildPOSControls(List<String> categories) {
-    final isWholesale = ref.watch(isWholesaleProvider);
     final theme = Theme.of(context);
     final isMobile = ResponsiveLayout.isMobile(context);
     
     return Column(
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Container(
-                height: 45,
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
-                  borderRadius: BorderRadius.circular(AppRadius.m),
-                  border: Border.all(color: theme.dividerColor),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(child: _modeButton('Retail', !isWholesale)),
-                    Expanded(child: _modeButton('Wholesale', isWholesale)),
-                  ],
-                ),
-              ),
-            ),
-            if (!isMobile) ...[
-              const SizedBox(width: AppSpacing.m),
-              SizedBox(
-                width: 200,
+        if (!isMobile) ...[
+          Row(
+            children: [
+              Expanded(
                 child: _buildCategoryDropdown(categories),
               ),
             ],
-          ],
-        ),
-        const SizedBox(height: AppSpacing.m),
+          ),
+          const SizedBox(height: AppSpacing.m),
+        ],
         Row(
           children: [
             Expanded(
@@ -616,59 +577,6 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
         _selectedCategory = v!;
         _productSearchQuery = ''; 
       }),
-    );
-  }
-
-  Widget _modeButton(String label, bool isSelected) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: () {
-        final newMode = label == 'Wholesale';
-        if (ref.read(cartProvider).isNotEmpty) {
-          _confirmModeChange(newMode);
-        } else {
-          ref.read(isWholesaleProvider.notifier).state = newMode;
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: BoxDecoration(
-          color: isSelected ? theme.colorScheme.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(AppRadius.m - 4),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : theme.colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.bold,
-            fontSize: 12,
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _confirmModeChange(bool newMode) {
-    final theme = Theme.of(context);
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Change Sale Mode?'),
-        content: const Text('Changing the mode (Retail/Wholesale) will CLEAR your current cart because prices vary. Continue?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              ref.read(cartProvider.notifier).clear();
-              ref.read(isWholesaleProvider.notifier).state = newMode;
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: theme.colorScheme.primary, foregroundColor: Colors.white),
-            child: const Text('Clear Cart & Change'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -786,7 +694,7 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
                       category: item.product.category,
                       name: item.product.name,
                       qty: item.quantity % 1 == 0 ? item.quantity.toInt().toString() : item.quantity.toStringAsFixed(1),
-                      weight: WeightConverter.formatShort(item.quantity, unit: item.product.unit),
+                      weight: WeightConverter.formatShort(item.quantity, unit: item.product.unit, productName: item.product.name, category: item.product.category),
                       amount: '₵${item.total.toStringAsFixed(2)}',
                       onDelete: () => notifier.removeItem(index),
                       onIncrement: () => notifier.updateQuantity(index, item.quantity + 1),
@@ -868,8 +776,8 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('${targetWholesale ? "Wholesaler" : "Retailer"} Detected'),
-        content: Text('This customer is registered as a ${targetWholesale ? "Wholesaler" : "Retailer"}. Would you like to switch the sale mode? \n\n(This will CLEAR your current cart)'),
+        title: Text('${targetWholesale ? "Wholesale Account" : "Standard Account"} Detected'),
+        content: Text('This customer has a ${targetWholesale ? "wholesale" : "standard"} account profile. Would you like to switch pricing mode? \n\n(This will CLEAR your current cart)'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('KEEP CURRENT')),
           ElevatedButton(
@@ -1229,6 +1137,7 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
 
     final sale = SaleRecord(
       id: 'INV-${DateTime.now().millisecondsSinceEpoch}',
+      branchCode: currentUser?.branchCode ?? 'MAIN',
       items: cartItems.map((item) => SaleItem(
         product: item.product,
         quantity: item.quantity,
@@ -1264,6 +1173,7 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
     setState(() {
       _selectedCustomer = null;
       _uploadedReceiptUrl = null;
+      _productSearchQuery = '';
     });
 
     _showPrintConfirmation(sale);
@@ -1336,9 +1246,6 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
 
   Widget _buildFooter() {
     final theme = Theme.of(context);
-    final isMobile = ResponsiveLayout.isMobile(context);
-    final pendingCount = ref.watch(pendingIncomingTransfersProvider).length;
-
     return Container(
       height: 65,
       decoration: BoxDecoration(
@@ -1349,14 +1256,6 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           _footerAction(Icons.point_of_sale, 'New Sale', _currentView == POSView.sales, () => setState(() => _currentView = POSView.sales)),
-          if (isMobile)
-            _footerAction(
-              Icons.qr_code_scanner_rounded, 
-              'Incoming Stock', 
-              false, 
-              () => Navigator.pushNamed(context, '/cashier/verify-stock'),
-              badge: pendingCount > 0 ? pendingCount : null,
-            ),
           _footerAction(Icons.history, 'Transaction History', _currentView == POSView.history, () => setState(() => _currentView = POSView.history)),
         ],
       ),
@@ -2126,7 +2025,7 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                       ),
-                                      Text('${WeightConverter.formatShort(item.quantity, unit: item.product.unit)} x ₵${item.priceAtSale.toStringAsFixed(2)}', 
+                                      Text('${WeightConverter.formatShort(item.quantity, unit: item.product.unit, productName: item.product.name, category: item.product.category)} x ₵${item.priceAtSale.toStringAsFixed(2)}', 
                                         style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant),
                                       ),
                                     ],
@@ -3060,7 +2959,7 @@ class _CustomerSelectionDialogState extends ConsumerState<CustomerSelectionDialo
                             ),
                             title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                             subtitle: Text(
-                              '${c.isWholesaler ? "WHOLESALER" : "RETAILER"} • ${c.phone}${c.location != null ? " • ${c.location}" : ""}', 
+                              '${c.isWholesaler ? "WHOLESALER • " : ""}${c.phone}${c.location != null ? " • ${c.location}" : ""}', 
                               style: TextStyle(fontSize: 10, color: c.isWholesaler ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant, fontWeight: c.isWholesaler ? FontWeight.bold : FontWeight.normal)
                             ),
                             onTap: () {
@@ -3104,30 +3003,14 @@ class _CustomerSelectionDialogState extends ConsumerState<CustomerSelectionDialo
                             decoration: const InputDecoration(labelText: 'Location / Area', prefixIcon: Icon(Icons.location_on_outlined)),
                             validator: (v) => v!.isEmpty ? 'Required' : null,
                           ),
-                          const SizedBox(height: 16),
-                          const Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text('Customer Category', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ChoiceChip(
-                                  label: const Center(child: Text('RETAILER')),
-                                  selected: !_isWholesaler,
-                                  onSelected: (v) => setState(() => _isWholesaler = false),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: ChoiceChip(
-                                  label: const Center(child: Text('WHOLESALER')),
-                                  selected: _isWholesaler,
-                                  onSelected: (v) => setState(() => _isWholesaler = true),
-                                ),
-                              ),
-                            ],
+                          const SizedBox(height: 8),
+                          SwitchListTile(
+                            title: const Text('Wholesale Account', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                            subtitle: const Text('Enable wholesale pricing tiers', style: TextStyle(fontSize: 11)),
+                            value: _isWholesaler,
+                            onChanged: (v) => setState(() => _isWholesaler = v),
+                            contentPadding: EdgeInsets.zero,
+                            activeThumbColor: theme.colorScheme.primary,
                           ),
                           const SizedBox(height: 32),
                           SizedBox(

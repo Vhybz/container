@@ -1,8 +1,42 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/product.dart';
 
 class CartNotifier extends StateNotifier<List<CartItem>> {
-  CartNotifier() : super([]);
+  final Ref? _ref;
+  CartNotifier([this._ref]) : super([]);
+
+  String? _activePos;
+  String? get activePos => _activePos;
+
+  /// Normalizes a route or identifier to canonical POS string:
+  /// 'cashier', 'pharmacy', 'barbershop', 'tech'
+  static String? normalizePosId(String? routeOrId) {
+    if (routeOrId == null) return null;
+    final clean = routeOrId.split('?').first.trim().toLowerCase();
+    if (clean == '/cashier' || clean == 'cashier') return 'cashier';
+    if (clean == '/pharmacy/pos' || clean == 'pharmacy' || clean == 'pharmacist') return 'pharmacy';
+    if (clean == '/barbershop/pos' || clean == 'barbershop' || clean == 'barber') return 'barbershop';
+    if (clean == '/tech/pos' || clean == 'tech' || clean == 'tech_shop' || clean == 'techshop') return 'tech';
+    return null;
+  }
+
+  /// Registers which POS is active.
+  /// If switching to a DIFFERENT POS, automatically clears the cart
+  /// and resets wholesale mode.
+  void registerPos(String posRouteOrId) {
+    final normalized = normalizePosId(posRouteOrId);
+    if (normalized == null) return;
+
+    if (_activePos != null && _activePos != normalized) {
+      if (state.isNotEmpty) {
+        debugPrint('[CartNotifier] Switching POS from "$_activePos" to "$normalized": clearing ${state.length} cart items');
+        clear();
+      }
+      _ref?.read(isWholesaleProvider.notifier).state = false;
+    }
+    _activePos = normalized;
+  }
 
   void addItem(Product product, double quantity, bool isWholesale) {
     final price = product.getPrice(isWholesale);
@@ -50,7 +84,7 @@ class CartNotifier extends StateNotifier<List<CartItem>> {
 }
 
 final cartProvider = StateNotifierProvider<CartNotifier, List<CartItem>>((ref) {
-  return CartNotifier();
+  return CartNotifier(ref);
 });
 
 // Provider to track if we are in Wholesale mode

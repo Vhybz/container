@@ -85,11 +85,11 @@ class ProductSeeder {
       },
       {
         'BARBERSHOP': [
-          {'name': 'Executive Haircut', 'category': 'Haircut Services', 'price': 50.0, 'unit': 'service', 'isService': true},
-          {'name': 'Kids Haircut', 'category': 'Haircut Services', 'price': 30.0, 'unit': 'service', 'isService': true},
-          {'name': 'Beard Grooming & Oil', 'category': 'Grooming & Treatments', 'price': 30.0, 'unit': 'service', 'isService': true},
-          {'name': 'Hair Dye / Blackening', 'category': 'Grooming & Treatments', 'price': 45.0, 'unit': 'service', 'isService': true},
-          {'name': 'Facial Scrub & Steam', 'category': 'Grooming & Treatments', 'price': 60.0, 'unit': 'service', 'isService': true},
+          {'name': 'Executive Haircut', 'category': 'Haircut Services', 'price': 50.0, 'unit': 'service', 'isService': true, 'commission': 20.0},
+          {'name': 'Kids Haircut', 'category': 'Haircut Services', 'price': 30.0, 'unit': 'service', 'isService': true, 'commission': 12.0},
+          {'name': 'Beard Grooming & Oil', 'category': 'Grooming & Treatments', 'price': 30.0, 'unit': 'service', 'isService': true, 'commission': 12.0},
+          {'name': 'Hair Dye / Blackening', 'category': 'Grooming & Treatments', 'price': 45.0, 'unit': 'service', 'isService': true, 'commission': 15.0},
+          {'name': 'Facial Scrub & Steam', 'category': 'Grooming & Treatments', 'price': 60.0, 'unit': 'service', 'isService': true, 'commission': 25.0},
           {'name': 'Premium Hair Gel (150g)', 'category': 'Care Products', 'price': 25.0, 'unit': 'pcs', 'isService': false},
           {'name': 'Beard Growth Oil (50ml)', 'category': 'Care Products', 'price': 40.0, 'unit': 'pcs', 'isService': false},
         ]
@@ -174,7 +174,8 @@ class ProductSeeder {
           name: name,
           retailPrice: price,
           wholesalePrice: price,
-          costPrice: price * 0.7,
+          costPrice: isService ? ((item['commission'] as num?)?.toDouble() ?? (price * 0.4)) : (price * 0.7),
+          commissionAmount: isService ? ((item['commission'] as num?)?.toDouble() ?? (price * 0.4)) : null,
           imageUrl: '', 
           category: itemCategory,
           stockQuantity: initialStockQuantity,
@@ -190,12 +191,6 @@ class ProductSeeder {
         await service.addProduct(product);
       }
     }
-
-    // Ensure all existing drug stock quantities are set to zero as requested
-    await resetPharmacyStockToZero();
-
-    // Ensure tech accessories are set to 50pcs @ 0.0 GHS for admin pricing
-    await resetTechAccessoriesToUnpriced50pcs();
   }
 
   Future<void> resetPharmacyStockToZero() async {

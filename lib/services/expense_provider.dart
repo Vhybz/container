@@ -37,6 +37,14 @@ class ExpenseNotifier extends StateNotifier<ExpenseState> {
     _init();
   }
 
+  /// Categories that represent cash movements/withdrawals rather than operational expenses
+  static const List<String> nonExpenseCategories = [
+    'Daily Sales Closure',
+    'CEO Withdrawal',
+    'Bank Deposit',
+    'Till Opening Balance'
+  ];
+
   void _init() {
     _loadFromCache();
     
@@ -67,6 +75,8 @@ class ExpenseNotifier extends StateNotifier<ExpenseState> {
 
   void _saveToCache(List<ExpenseRecord> expenses) {
     try {
+      if (expenses.isEmpty && state.records.isNotEmpty) return;
+
       final box = Hive.box(OfflineSyncService.expensesBoxName);
       box.clear();
       for (var e in expenses) {
@@ -82,12 +92,73 @@ class ExpenseNotifier extends StateNotifier<ExpenseState> {
     if (user?.branchCode == null) return;
 
     _subscription?.cancel();
-    _subscription = _service.watchExpenses(user!.branchCode!).listen((expenses) {
-      state = state.copyWith(records: expenses);
+    
+    // 1. Initial Fresh Fetch (Prioritize Network)
+    _fetchFreshExpenses(user!.branchCode!);
+
+    // 2. Start Real-time Stream
+    _subscription = _service.watchExpenses(user.branchCode!).listen((expenses) {
+      _applyPendingAndSetState(expenses);
       _saveToCache(expenses);
     }, onError: (e) {
-      debugPrint('Expense Stream Error: $e');
+      if (kIsWeb) {
+        debugPrint('Expense Stream Error: $e');
+      } else {
+        debugPrint('Expense Stream Error (Offline?): Using cached data.');
+      }
     });
+  }
+
+  Future<void> _fetchFreshExpenses(String branchCode) async {
+    try {
+      final expenses = await _service.getExpenses(branchCode);
+      _applyPendingAndSetState(expenses);
+      _saveToCache(expenses);
+    } catch (e) {
+      if (kIsWeb) {
+        debugPrint('Expense Fetch Error (Web): $e');
+      } else {
+        debugPrint('Expense Fetch Error (Offline): $e');
+      }
+    }
+  }
+
+  void _applyPendingAndSetState(List<ExpenseRecord> remoteExpenses) {
+    final pendingExpenses = OfflineSyncService.getPendingItems('EXPENSE')
+        .map((json) => ExpenseRecord.fromJson(json))
+        .toList();
+        
+    final pendingDeletes = OfflineSyncService.getPendingItems('DELETE_EXPENSE')
+        .map((json) => json['id'] as String)
+        .toList();
+
+    final Map<String, ExpenseRecord> allMap = {};
+    
+    // 1. Current State
+    for (var e in state.records) {
+      if (!pendingDeletes.contains(e.id)) {
+        allMap[e.id] = e;
+      }
+    }
+    
+    // 2. Remote Cloud
+    for (var e in remoteExpenses) {
+      if (!pendingDeletes.contains(e.id)) {
+        allMap[e.id] = e;
+      }
+    }
+    
+    // 3. Local Queue
+    for (var e in pendingExpenses) {
+      if (!pendingDeletes.contains(e.id)) {
+        allMap[e.id] = e;
+      }
+    }
+
+    final finalRecords = allMap.values.toList();
+    finalRecords.sort((a, b) => b.date.compareTo(a.date));
+
+    state = state.copyWith(records: finalRecords.take(300).toList());
   }
 
   @override
@@ -97,7 +168,11 @@ class ExpenseNotifier extends StateNotifier<ExpenseState> {
   }
 
   Future<void> loadExpenses() async {
-    _startSubscription();
+    final user = ref.read(currentUserProvider);
+    if (user?.branchCode == null) return;
+    
+    // Heartbeat: Force a fresh fetch
+    await _fetchFreshExpenses(user!.branchCode!);
   }
 
   Future<void> addExpense(ExpenseRecord expense) async {
@@ -262,15 +337,19 @@ class ExpenseNotifier extends StateNotifier<ExpenseState> {
 
   Future<void> deleteExpense(String id) async {
     try {
-      final connectivity = await Connectivity().checkConnectivity();
-      if (!connectivity.contains(ConnectivityResult.none)) {
+      if (kIsWeb) {
         await _service.deleteExpense(id);
       } else {
-        await OfflineSyncService.addToQueue(
-          actionType: 'DELETE_EXPENSE',
-          data: {'id': id},
-        );
-        state = state.copyWith(records: state.records.where((e) => e.id != id).toList());
+        final connectivity = await Connectivity().checkConnectivity();
+        if (!connectivity.contains(ConnectivityResult.none)) {
+          await _service.deleteExpense(id);
+        } else {
+          await OfflineSyncService.addToQueue(
+            actionType: 'DELETE_EXPENSE',
+            data: {'id': id},
+          );
+          state = state.copyWith(records: state.records.where((e) => e.id != id).toList());
+        }
       }
     } catch (_) {}
   }
@@ -302,7 +381,10 @@ class ExpenseNotifier extends StateNotifier<ExpenseState> {
 
   double getTotalExpensesForMonth(int month, int year) {
     return state.records
-        .where((e) => e.date.month == month && e.date.year == year)
+        .where((e) => 
+            e.date.month == month && 
+            e.date.year == year && 
+            !nonExpenseCategories.contains(e.category))
         .fold(0.0, (sum, e) => sum + e.amount);
   }
 }

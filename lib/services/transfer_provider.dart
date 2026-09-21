@@ -45,6 +45,7 @@ class TransferNotifier extends StateNotifier<List<StockTransfer>> {
   }
 
   void _loadFromCache() {
+    if (kIsWeb) return;
     try {
       final box = Hive.box(OfflineSyncService.transfersBoxName);
       if (box.isNotEmpty) {
@@ -60,6 +61,7 @@ class TransferNotifier extends StateNotifier<List<StockTransfer>> {
   }
 
   void _saveToCache(List<StockTransfer> transfers) {
+    if (kIsWeb) return;
     try {
       final box = Hive.box(OfflineSyncService.transfersBoxName);
       box.clear();
@@ -74,6 +76,10 @@ class TransferNotifier extends StateNotifier<List<StockTransfer>> {
   void _startSubscription() {
     _subscription?.cancel();
     try {
+      // 1. Initial Fresh Fetch (Prioritize Network)
+      loadTransfers();
+
+      // 2. Start Real-time Stream
       _subscription = _service.watchTransfers().listen(
         (transfers) {
           debugPrint('Stock Transfer Stream: Syncing ${transfers.length} items from cloud.');
@@ -81,7 +87,11 @@ class TransferNotifier extends StateNotifier<List<StockTransfer>> {
           _applyOverridesAndSetState(transfers);
         }, 
         onError: (err) {
-          debugPrint('Stock Transfer Stream Connection Error (Resuming?): $err');
+          if (kIsWeb) {
+            debugPrint('Stock Transfer Stream Error: $err');
+          } else {
+            debugPrint('Stock Transfer Stream Connection Error (Resuming?): $err');
+          }
         },
         cancelOnError: false,
       );

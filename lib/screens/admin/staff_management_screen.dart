@@ -1022,22 +1022,14 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     initialValue: selectedRole,
                     items: [
                       UserRole.admin,
-                      UserRole.barber,
-                      UserRole.phoneSalesGuy,
                       UserRole.secretary,
                       UserRole.pharmacist,
-                      UserRole.cashier,
-                      UserRole.butcher,
                     ].map((r) => DropdownMenuItem(
                           value: r, 
                           child: Text(
-                            r == UserRole.barber 
-                              ? 'BARBER / STYLIST' 
-                              : (r == UserRole.phoneSalesGuy || r == UserRole.phoneSales 
-                                  ? 'PHONE REPAIRER / TECH REP' 
-                                  : (r == UserRole.secretary 
-                                      ? 'SECRETARY (BARBERSHOP & TECH)' 
-                                      : r.display.toUpperCase())),
+                            r == UserRole.secretary 
+                              ? 'SECRETARY (BARBERSHOP & TECH)' 
+                              : r.display.toUpperCase(),
                             style: const TextStyle(fontSize: 12),
                           ),
                         )).toList(),
@@ -1108,7 +1100,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                 const SizedBox(height: 8),
                 DropdownButtonFormField<UserRole>(
                   initialValue: selectedPrimary,
-                  items: UserRole.values.map((r) => DropdownMenuItem(value: r, child: Text(r.name.toUpperCase()))).toList(),
+                  items: [UserRole.admin, UserRole.secretary, UserRole.pharmacist].map((r) => DropdownMenuItem(value: r, child: Text(r.name.toUpperCase()))).toList(),
                   onChanged: (v) => setState(() => selectedPrimary = v!),
                   decoration: const InputDecoration(labelText: 'Primary Role', border: OutlineInputBorder()),
                 ),

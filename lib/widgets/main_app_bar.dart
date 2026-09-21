@@ -10,10 +10,11 @@ import '../models/user_model.dart';
 import '../models/system_models.dart';
 import 'calculator_dialog.dart';
 import 'ai_chatbot_sheet.dart';
-import '../services/transfer_provider.dart';
 import '../services/branch_provider.dart';
 import '../services/sync_provider.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
+import '../services/shift_provider.dart';
+import 'shift_handover_dialog.dart';
+import 'cloud_sync_indicator.dart';
 
 class MainAppBar extends ConsumerStatefulWidget implements PreferredSizeWidget {
   final String title;
@@ -71,7 +72,6 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
     final Color roleColor = _getRoleColor(role, isDark, theme);
     final List<SystemNotification> notifications = ref.watch(notificationProvider);
     final unreadCount = notifications.where((n) => !n.isRead).length;
-    final pendingTransfers = ref.watch(pendingIncomingTransfersProvider);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
@@ -83,16 +83,13 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
       child: Container(
         padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: isDark 
-              ? [const Color(0xFF2C2C2C), const Color(0xFF1E1E1E)]
-              : [roleColor, roleColor.withValues(alpha: 0.85)],
+          color: isDark ? const Color(0xFF0F172A) : roleColor,
+          border: Border(
+            bottom: BorderSide(
+              color: isDark ? const Color(0xFF1E293B) : Colors.black.withValues(alpha: 0.12),
+              width: 1,
+            ),
           ),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 4, offset: const Offset(0, 2)),
-          ],
         ),
         child: SizedBox(
           height: 60,
@@ -110,31 +107,12 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
                     iconSize: 24,
                   )
                 else if (widget.showMenuButton)
-                  Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      _buildRoundButton(
-                        context, 
-                        Icons.menu_rounded, 
-                        () => Scaffold.of(context).openDrawer(),
-                        size: 40,
-                        iconSize: 24,
-                      ),
-                      if (pendingTransfers.isNotEmpty)
-                        Positioned(
-                          right: 0,
-                          top: 0,
-                          child: Container(
-                            width: 12,
-                            height: 12,
-                            decoration: BoxDecoration(
-                              color: Colors.orangeAccent,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: roleColor, width: 1.5),
-                            ),
-                          ),
-                        ),
-                    ],
+                  _buildRoundButton(
+                    context, 
+                    Icons.menu_rounded, 
+                    () => Scaffold.of(context).openDrawer(),
+                    size: 40,
+                    iconSize: 24,
                   )
                 else
                   const SizedBox(width: 8),
@@ -178,6 +156,8 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
                   tooltip: 'Quick Calculator',
                 ),
                 const SizedBox(width: 4),
+                _buildShiftButton(context, ref, isMobile),
+                const SizedBox(width: 4),
                 if (widget.actions != null) ...widget.actions!,
                 const SizedBox(width: 4),
                 _buildNotificationButton(context, unreadCount, () => _showNotificationsDialog(context, ref, notifications), isMobile),
@@ -185,6 +165,84 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
                 _buildProfileAvatar(context, ref, roleColor, isMobile),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShiftButton(BuildContext context, WidgetRef ref, bool isMobile) {
+    final shift = ref.watch(shiftProvider);
+    final isShiftActive = shift != null;
+
+    if (isMobile) {
+      return IconButton(
+        tooltip: isShiftActive ? 'Active Shift (Tap to Handover)' : 'Start Shift',
+        icon: Stack(
+          children: [
+            Icon(
+              isShiftActive ? Icons.point_of_sale : Icons.lock_open,
+              size: 20,
+              color: isShiftActive ? Colors.greenAccent : Colors.white70,
+            ),
+            if (isShiftActive)
+              Positioned(
+                right: 0,
+                top: 0,
+                child: Container(
+                  width: 7,
+                  height: 7,
+                  decoration: const BoxDecoration(color: Colors.greenAccent, shape: BoxShape.circle),
+                ),
+              ),
+          ],
+        ),
+        onPressed: () {
+          if (isShiftActive) {
+            ShiftHandoverDialog.showCloseShiftDialog(context, ref);
+          } else {
+            ShiftHandoverDialog.showStartShiftDialog(context, ref);
+          }
+        },
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: InkWell(
+        onTap: () {
+          if (isShiftActive) {
+            ShiftHandoverDialog.showCloseShiftDialog(context, ref);
+          } else {
+            ShiftHandoverDialog.showStartShiftDialog(context, ref);
+          }
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: isShiftActive ? Colors.green.withValues(alpha: 0.25) : Colors.white12,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: isShiftActive ? Colors.greenAccent : Colors.white24),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isShiftActive ? Icons.point_of_sale : Icons.lock_open,
+                size: 16,
+                color: isShiftActive ? Colors.greenAccent : Colors.white,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                isShiftActive ? 'Shift Active' : 'Start Shift',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: isShiftActive ? Colors.greenAccent : Colors.white,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -218,8 +276,8 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            const SizedBox(width: 6),
-            _buildLiveIndicator(ref),
+            const SizedBox(width: 8),
+            const CloudSyncIndicator(),
           ],
         ),
         Text(
@@ -244,7 +302,7 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
         _buildToolIcon(Icons.refresh_rounded, () {
-          ref.read(transferProvider.notifier).loadTransfers();
+          ref.read(syncProvider.notifier).syncAll();
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Syncing Data...'), duration: Duration(milliseconds: 500)));
         }),
         const SizedBox(width: 12),
@@ -273,41 +331,6 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
     );
   }
 
-  Widget _buildLiveIndicator(WidgetRef ref) {
-    final connectivity = ref.watch(connectivityStatusProvider);
-    
-    return connectivity.when(
-      data: (results) {
-        final isOffline = results.every((result) => result == ConnectivityResult.none);
-        final color = isOffline ? Colors.red : Colors.green;
-        final text = isOffline ? 'OFFLINE' : 'LIVE';
-        final iconColor = isOffline ? Colors.red : Colors.green;
-
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color.withValues(alpha: 0.5)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 5,
-                height: 5,
-                decoration: BoxDecoration(color: iconColor, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 4),
-              Text(text, style: const TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.bold)),
-            ],
-          ),
-        );
-      },
-      loading: () => const SizedBox.shrink(),
-      error: (_, _) => const Icon(Icons.sync_problem, size: 12, color: Colors.white),
-    );
-  }
 
   Color _getRoleColor(UserRole? role, bool isDark, ThemeData theme) {
     if (isDark) return theme.appBarTheme.backgroundColor ?? const Color(0xFF1E1E1E);
@@ -498,11 +521,6 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
                         tileColor: Colors.orange.withValues(alpha: 0.02),
                         onTap: () {
                           ref.read(notificationProvider.notifier).markAsRead(n.id);
-                          final title = n.title.toUpperCase();
-                          if (title.contains('TRANSFER') || title.contains('DISPATCHED') || title.contains('STOCK')) {
-                            Navigator.pop(context); // Close notifications dialog
-                            Navigator.pushNamed(context, '/cashier/verify-stock');
-                          }
                         },
                       );
                     },

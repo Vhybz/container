@@ -178,6 +178,10 @@ class SmsService {
       message += '\nSaved: GHS ${discountAmount.toStringAsFixed(2)}';
     }
 
+    if (sale.prescription != null && sale.prescription!.trim().isNotEmpty && sale.includePrescriptionOnReceipt) {
+      message += '\nRx / Dosage: ${sale.prescription!.trim()}';
+    }
+
     if (isPharm) {
       message += '\nThank you for trusting Emmanuel Chemist!';
     } else {
@@ -185,6 +189,40 @@ class SmsService {
     }
 
     return await _sendSms(targetPhone, message, customSenderId: senderId);
+  }
+
+  static Future<bool> sendPrescriptionSms({
+    required String phone,
+    required String patientName,
+    required String prescription,
+    String? rxNumber,
+    String? doctorName,
+    String? pharmacistName,
+    String? branchName,
+  }) async {
+    if (phone.trim().isEmpty) {
+      debugPrint('sendPrescriptionSms: No recipient phone number provided.');
+      return false;
+    }
+
+    final String shopName = branchName ?? 'Emmanuel Chemist';
+    final String senderId = 'EmmaChemist';
+
+    String message = 'PRESCRIPTION (Rx) - $shopName\n';
+    message += 'Patient: $patientName\n';
+    message += 'Medication & Dosage:\n${prescription.trim()}\n';
+    if (doctorName != null && doctorName.trim().isNotEmpty) {
+      message += 'Prescriber: $doctorName\n';
+    }
+    if (rxNumber != null && rxNumber.trim().isNotEmpty) {
+      message += 'Rx No: $rxNumber\n';
+    }
+    if (pharmacistName != null && pharmacistName.trim().isNotEmpty) {
+      message += 'Dispensed by: $pharmacistName\n';
+    }
+    message += 'Please take medications as directed. Keep out of reach of children.\nTel: 0209276200';
+
+    return await _sendSms(phone, message, customSenderId: senderId);
   }
 
   static Future<void> sendApprovalRequestSms(UserAccount applicant, List<UserAccount> admins) async {
@@ -385,4 +423,112 @@ class SmsService {
     final String message = 'Hello $name, thank you for visiting $store for your $serviceName with $barberName! We hope you love your fresh look. Keep looking sharp & see you next time!';
     return await _sendSms(phone.trim(), message);
   }
+
+  static Future<bool> sendQueueConfirmationSms({
+    required String name,
+    required String phone,
+    required String serviceName,
+    required String barberName,
+    required int position,
+    String? shopName,
+    String? queueId,
+  }) async {
+    if (phone.trim().isEmpty) return false;
+    final String store = shopName ?? 'Container Barbershop';
+    final String trackLink = queueId != null ? ' Track live: https://container.app/#/track?id=$queueId' : '';
+    final String message = 'Hello $name, you have been added to the queue at $store for $serviceName with $barberName. You are #$position in line.$trackLink We\'ll be with you shortly!';
+    return await _sendSms(phone.trim(), message);
+  }
+
+  static Future<bool> sendKidHaircutSms({
+    required String childName,
+    required String parentPhone,
+    required String serviceName,
+    required String barberName,
+    String? shopName,
+  }) async {
+    if (parentPhone.trim().isEmpty) return false;
+    final String store = shopName ?? 'Container Barbershop';
+    final String message = 'Hello! Your little one $childName just had a fresh $serviceName at $store with $barberName! They look amazing. Thank you for trusting us with your child. See you next time!';
+    return await _sendSms(parentPhone.trim(), message);
+  }
+
+  static const String defaultBarberMomoNumber = '0552857861';
+  static const String defaultBarberMomoName = 'Emmanuel ADU Adjei';
+
+  static String formatMomoInstructions({String? momoNumber, String? momoName}) {
+    final num = (momoNumber != null && momoNumber.trim().isNotEmpty) ? momoNumber.trim() : defaultBarberMomoNumber;
+    final name = (momoName != null && momoName.trim().isNotEmpty) ? momoName.trim() : defaultBarberMomoName;
+    return 'MoMo Number: $num (Name: $name)';
+  }
+
+  static Future<bool> sendAppointmentBookingSms({
+    required String name,
+    required String phone,
+    required String serviceName,
+    required String barberName,
+    required DateTime appointmentTime,
+    String? appointmentId,
+    String? shopName,
+    double? price,
+    String? momoNumber,
+    String? momoName,
+  }) async {
+    if (phone.trim().isEmpty) return false;
+    final String store = shopName ?? 'Container Barbershop';
+    final dateStr = DateFormat('EEE, d MMM yyyy @ h:mm a').format(appointmentTime);
+    final String aptTag = appointmentId != null ? ' (Ref: $appointmentId)' : '';
+    final String feeStr = (price != null && price > 0) ? ' Fee: GHS ${price.toStringAsFixed(2)}.' : '';
+
+    // Always ensure the MoMo number and account name are explicitly included
+    final String activeMomoNumber = (momoNumber != null && momoNumber.trim().isNotEmpty)
+        ? momoNumber.trim()
+        : (dotenv.env['BARBER_MOMO_NUMBER']?.trim().isNotEmpty == true
+            ? dotenv.env['BARBER_MOMO_NUMBER']!.trim()
+            : defaultBarberMomoNumber);
+
+    final String activeMomoName = (momoName != null && momoName.trim().isNotEmpty)
+        ? momoName.trim()
+        : (dotenv.env['BARBER_MOMO_NAME']?.trim().isNotEmpty == true
+            ? dotenv.env['BARBER_MOMO_NAME']!.trim()
+            : defaultBarberMomoName);
+
+    final String message = 'Hello $name, your appointment$aptTag for $serviceName with $barberName is scheduled for $dateStr at $store.$feeStr Please make payment to MoMo Number: $activeMomoNumber (Name: $activeMomoName) to validate your appointment within 30 mins. Thank you!';
+    return await _sendSms(phone.trim(), message);
+  }
+
+  static Future<bool> sendAppointmentValidatedSms({
+    required String name,
+    required String phone,
+    required String serviceName,
+    required String barberName,
+    required DateTime appointmentTime,
+    String? appointmentId,
+    String? shopName,
+  }) async {
+    if (phone.trim().isEmpty) return false;
+    final String store = shopName ?? 'Container Barbershop';
+    final dateStr = DateFormat('EEE, d MMM yyyy @ h:mm a').format(appointmentTime);
+    final String aptTag = appointmentId != null ? ' (Ref: $appointmentId)' : '';
+    final String message = 'Hello $name, your appointment$aptTag for $serviceName with $barberName on $dateStr at $store has been VALIDATED and confirmed! Payment received. See you then!';
+    return await _sendSms(phone.trim(), message);
+  }
+
+  static Future<bool> sendAppointmentReminder30MinSms({
+    required String name,
+    required String phone,
+    required String serviceName,
+    required String barberName,
+    required DateTime appointmentTime,
+    String? shopName,
+    String? queueId,
+  }) async {
+    if (phone.trim().isEmpty) return false;
+    final String store = shopName ?? 'Container Barbershop';
+    final timeStr = DateFormat('h:mm a').format(appointmentTime);
+    final String queueTag = queueId != null ? ' (Queue ID: $queueId)' : '';
+    final String message = 'APPOINTMENT ALERT: Hello $name, your appointment for $serviceName with $barberName is in 30 minutes ($timeStr)! You have been placed in the priority live queue$queueTag at $store. Please head in shortly.';
+    return await _sendSms(phone.trim(), message);
+  }
 }
+

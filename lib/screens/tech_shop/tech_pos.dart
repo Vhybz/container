@@ -46,63 +46,15 @@ class _TechPosState extends ConsumerState<TechPos> {
     'Tech Rep Sam',
   ];
 
-  final List<Product> _fallbackTech = [
-    Product(
-      id: 'T1',
-      name: 'iPhone 15 Pro 128GB',
-      category: 'PHONE & ACCESSORIES',
-      retailPrice: 14500.0,
-      wholesalePrice: 14000.0,
-      imageUrl: '',
-      unit: 'unit',
-      stockQuantity: 10,
-      requiresImei: true,
-    ),
-    Product(
-      id: 'T2',
-      name: 'Samsung Galaxy S24 Ultra',
-      category: 'PHONE & ACCESSORIES',
-      retailPrice: 15200.0,
-      wholesalePrice: 14800.0,
-      imageUrl: '',
-      unit: 'unit',
-      stockQuantity: 8,
-      requiresImei: true,
-    ),
-    Product(
-      id: 'T3',
-      name: '20W USB-C Fast Charger',
-      category: 'PHONE & ACCESSORIES',
-      retailPrice: 180.0,
-      wholesalePrice: 150.0,
-      imageUrl: '',
-      unit: 'pcs',
-      stockQuantity: 50,
-      requiresImei: false,
-    ),
-    Product(
-      id: 'T4',
-      name: 'MagSafe Clear Case',
-      category: 'PHONE & ACCESSORIES',
-      retailPrice: 120.0,
-      wholesalePrice: 90.0,
-      imageUrl: '',
-      unit: 'pcs',
-      stockQuantity: 75,
-      requiresImei: false,
-    ),
-    Product(
-      id: 'T5',
-      name: 'iPhone Screen Repair (Labor + Part)',
-      category: 'PHONE & ACCESSORIES',
-      retailPrice: 1200.0,
-      wholesalePrice: 1100.0,
-      imageUrl: '',
-      unit: 'service',
-      isService: true,
-      isUnlimited: true,
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(cartProvider.notifier).registerPos('/tech/pos');
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -163,6 +115,7 @@ class _TechPosState extends ConsumerState<TechPos> {
 
     final sale = SaleRecord(
       id: 'INV-${DateTime.now().millisecondsSinceEpoch}',
+      branchCode: currentUser?.branchCode ?? 'MAIN',
       items: saleItems,
       totalAmount: subtotal,
       totalDiscount: 0.0,
@@ -177,11 +130,21 @@ class _TechPosState extends ConsumerState<TechPos> {
       isVerified: true,
     );
 
+    final registeredImei = _imeiController.text;
+
     // Trigger printing receipt
     ReceiptService.printReceipt(sale, context: null);
 
     // Save sale to state
     await ref.read(saleHistoryProvider.notifier).addSale(sale);
+
+    // Clean cart and checkout state immediately after sale
+    ref.read(cartProvider.notifier).clear();
+    setState(() {
+      _selectedCustomer = null;
+      _imeiController.clear();
+      _paymentMethod = 'Cash';
+    });
 
     if (!mounted) return;
 
@@ -202,9 +165,9 @@ class _TechPosState extends ConsumerState<TechPos> {
             Text('Invoice: ${sale.id}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
             Text('Total Paid: ${currencyFormat.format(subtotal)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             Text('Payment Method: $_paymentMethod'),
-            if (_hasImeiRequired(cartItems) && _imeiController.text.isNotEmpty) ...[
+            if (_hasImeiRequired(cartItems) && registeredImei.isNotEmpty) ...[
               const Divider(),
-              Text('Registered IMEI: ${_imeiController.text}', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE65100))),
+              Text('Registered IMEI: $registeredImei', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE65100))),
             ],
             const Divider(),
             const Text('12 Months Warranty Certificate Active.', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
@@ -217,13 +180,7 @@ class _TechPosState extends ConsumerState<TechPos> {
             label: const Text('RE-PRINT RECEIPT'),
           ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              ref.read(cartProvider.notifier).clear();
-              setState(() {
-                _imeiController.clear();
-              });
-            },
+            onPressed: () => Navigator.pop(ctx),
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE65100), foregroundColor: Colors.white),
             child: const Text('OK / NEW SALE'),
           ),
@@ -243,6 +200,7 @@ class _TechPosState extends ConsumerState<TechPos> {
 
     final subtotal = ref.read(cartProvider.notifier).subtotal;
     final currentUser = ref.read(currentUserProvider);
+    final debtCustomerName = _selectedCustomer!.name;
 
     final saleItems = cartItems.map((item) => SaleItem(
       product: item.product,
@@ -268,11 +226,18 @@ class _TechPosState extends ConsumerState<TechPos> {
     );
 
     await ref.read(saleHistoryProvider.notifier).addSale(sale);
+
+    // Clean cart and checkout state immediately after debt sale
     ref.read(cartProvider.notifier).clear();
+    setState(() {
+      _selectedCustomer = null;
+      _imeiController.clear();
+      _paymentMethod = 'Cash';
+    });
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Sale saved as outstanding debt for ${_selectedCustomer!.name}')),
+      SnackBar(content: Text('Sale saved as outstanding debt for $debtCustomerName')),
     );
   }
 
@@ -444,14 +409,12 @@ class _TechPosState extends ConsumerState<TechPos> {
 
     // Prioritize database products if they exist
     List<Product> productsList = [];
-    bool usingFallback = false;
 
     if (productsAsync.hasValue) {
       final dbProducts = productsAsync.value!
           .where((p) => !p.isDeleted)
           .where((p) {
             final cat = p.category.toUpperCase();
-            final name = p.name.toUpperCase();
             final isTechCategory = p.requiresImei || 
                    cat.contains('PHONE') || 
                    cat.contains('TECH') || 
@@ -482,17 +445,8 @@ class _TechPosState extends ConsumerState<TechPos> {
           })
           .toList();
       
-      if (dbProducts.isNotEmpty) {
-        productsList = dbProducts;
-      } else if (productsAsync.value!.isEmpty) {
-        // Only use fallbacks if the database is literally empty (new installation)
-        productsList = _fallbackTech;
-        usingFallback = true;
-      }
-    } else {
-      // Show fallbacks during initial load for UI responsiveness
-      productsList = _fallbackTech;
-      usingFallback = true;
+      final activeProds = productsAsync.value!.where((p) => !p.isDeleted && !p.requiresPrescription).toList();
+      productsList = dbProducts.isNotEmpty ? dbProducts : activeProds;
     }
 
     final categories = ['All', ...{...productsList.map((p) => p.category.toUpperCase())}];
@@ -510,9 +464,9 @@ class _TechPosState extends ConsumerState<TechPos> {
       child: PasscodeGuard(
         child: Scaffold(
           backgroundColor: theme.scaffoldBackgroundColor,
-          appBar: MainAppBar(
-            title: 'Tech Shop POS (${isWholesale ? "Wholesale" : "Retail"})',
-            actions: const [],
+          appBar: const MainAppBar(
+            title: 'Tech Shop POS',
+            actions: [],
           ),
           drawer: isDesktop ? null : Drawer(
             child: AppSidebar(
@@ -561,29 +515,11 @@ class _TechPosState extends ConsumerState<TechPos> {
             padding: const EdgeInsets.all(AppSpacing.m),
             child: Column(
               children: [
-                // Top controls: Retail vs Wholesale & Category Dropdown
+                // Category & Search
                 Row(
                   children: [
-                    Expanded(
-                      child: Container(
-                        height: 45,
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surface,
-                          borderRadius: BorderRadius.circular(AppRadius.m),
-                          border: Border.all(color: theme.dividerColor),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(child: _modeButton('Retail', !isWholesale)),
-                            Expanded(child: _modeButton('Wholesale', isWholesale)),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.m),
                     SizedBox(
-                      width: isMobile ? 130 : 200,
+                      width: isMobile ? 140 : 220,
                       child: DropdownButtonFormField<String>(
                         initialValue: categories.contains(_selectedCategory) ? _selectedCategory : 'All',
                         isExpanded: true,
@@ -592,24 +528,25 @@ class _TechPosState extends ConsumerState<TechPos> {
                         onChanged: (v) => setState(() => _selectedCategory = v!),
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.m),
-                // Search Field
-                SizedBox(
-                  height: 45,
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: (v) => setState(() {}),
-                    decoration: InputDecoration(
-                      hintText: 'Search tech, devices, or accessories...',
-                      prefixIcon: const Icon(Icons.search, size: 20),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.m)),
-                      filled: true,
-                      fillColor: theme.colorScheme.surface,
+                    const SizedBox(width: AppSpacing.m),
+                    Expanded(
+                      child: SizedBox(
+                        height: 45,
+                        child: TextField(
+                          controller: _searchController,
+                          onChanged: (v) => setState(() {}),
+                          decoration: InputDecoration(
+                            hintText: 'Search tech, devices, or accessories...',
+                            prefixIcon: const Icon(Icons.search, size: 20),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.m)),
+                            filled: true,
+                            fillColor: theme.colorScheme.surface,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
                 const SizedBox(height: AppSpacing.m),
                 // Product Cards Grid
@@ -626,14 +563,14 @@ class _TechPosState extends ConsumerState<TechPos> {
                           itemCount: products.length,
                           itemBuilder: (context, index) {
                             final product = products[index];
-                            final hasPromo = product.isPromoActiveFor(isWholesale, _selectedCustomer);
-                            final currentPrice = product.getPrice(isWholesale, customer: _selectedCustomer);
+                            final hasPromo = product.isPromoActiveFor(false, _selectedCustomer);
+                            final currentPrice = product.getPrice(false, customer: _selectedCustomer);
 
                             return ProductCard(
                               name: product.name,
                               category: product.category,
                               price: '₵${currentPrice.toStringAsFixed(2)}/${product.unit}',
-                              originalPrice: hasPromo ? '₵${(isWholesale ? product.wholesalePrice : product.retailPrice).toStringAsFixed(2)}' : null,
+                              originalPrice: hasPromo ? '₵${product.retailPrice.toStringAsFixed(2)}' : null,
                               stockQuantity: product.stockQuantity,
                               isUnlimited: product.isUnlimited,
                               unit: product.unit,
@@ -641,7 +578,7 @@ class _TechPosState extends ConsumerState<TechPos> {
                               imageUrl: product.imageUrl,
                               requiresImei: product.requiresImei,
                               isService: product.isService,
-                              onTap: () => _addToCart(product, isWholesale),
+                              onTap: () => _addToCart(product, false),
                             );
                           },
                         ),
@@ -665,31 +602,7 @@ class _TechPosState extends ConsumerState<TechPos> {
     );
   }
 
-  Widget _modeButton(String label, bool isSelected) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: () {
-        final newMode = label == 'Wholesale';
-        ref.read(isWholesaleProvider.notifier).state = newMode;
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? theme.colorScheme.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(AppRadius.m - 4),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : theme.colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.bold,
-            fontSize: 12,
-          ),
-        ),
-      ),
-    );
-  }
+
 
   Widget _buildCartSection() {
     final theme = Theme.of(context);

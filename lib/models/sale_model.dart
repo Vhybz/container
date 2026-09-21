@@ -9,21 +9,27 @@ class PaymentDetail {
   final double amount;
   final String? reference; // For mobile/card refs
   final bool isPaystack;
+  final DateTime? date;
 
   PaymentDetail({
     required this.method,
     required this.amount,
     this.reference,
     this.isPaystack = false,
+    this.date,
   });
 
   factory PaymentDetail.fromJson(dynamic json) {
     final map = Map<String, dynamic>.from(json);
     return PaymentDetail(
-      method: PaymentMethod.values.byName(map['method']),
-      amount: (map['amount'] as num).toDouble(),
+      method: PaymentMethod.values.firstWhere(
+        (e) => e.name == map['method'],
+        orElse: () => PaymentMethod.cash,
+      ),
+      amount: (map['amount'] as num? ?? 0.0).toDouble(),
       reference: map['reference'],
       isPaystack: map['is_paystack'] ?? false,
+      date: map['date'] != null ? DateTime.tryParse(map['date'].toString()) : null,
     );
   }
 
@@ -32,6 +38,7 @@ class PaymentDetail {
     'amount': amount,
     'reference': reference,
     'is_paystack': isPaystack,
+    'date': date?.toIso8601String(),
   };
 }
 
@@ -88,6 +95,12 @@ class SaleRecord {
   final String? bankReceiptUrl;
   final String? bankReceiptId;
   final bool isVerified;
+  final String? prescription; // Prescribed medication & dosage instructions
+  final bool includePrescriptionOnReceipt; // Whether to print prescription on the receipt
+  final bool sendPrescriptionSms; // Whether prescription was requested to be sent as SMS
+  final String? patientName; // Optional patient name
+  final String? doctorName; // Optional doctor / prescriber name
+  final String? rxNumber; // Optional Rx Serial Number
 
   SaleRecord({
     required this.id,
@@ -108,29 +121,44 @@ class SaleRecord {
     this.bankReceiptUrl,
     this.bankReceiptId,
     this.isVerified = false,
+    this.prescription,
+    this.includePrescriptionOnReceipt = true,
+    this.sendPrescriptionSms = false,
+    this.patientName,
+    this.doctorName,
+    this.rxNumber,
   });
 
   factory SaleRecord.fromJson(dynamic json) {
     final map = Map<String, dynamic>.from(json);
     return SaleRecord(
-      id: map['id'],
+      id: map['id']?.toString() ?? 'unknown_${DateTime.now().millisecondsSinceEpoch}',
       branchCode: map['branch_code'],
-      items: (map['items'] as List).map((e) => SaleItem.fromJson(e)).toList(),
-      totalAmount: (map['total_amount'] as num).toDouble(),
+      items: (map['items'] as List?)?.map((e) => SaleItem.fromJson(e)).toList() ?? [],
+      totalAmount: (map['total_amount'] as num? ?? 0.0).toDouble(),
       totalDiscount: (map['total_discount'] as num? ?? 0.0).toDouble(),
       totalCost: (map['total_cost'] as num? ?? 0.0).toDouble(),
       appliedPromo: map['applied_promo'],
-      payments: (map['payments'] as List).map((e) => PaymentDetail.fromJson(e)).toList(),
-      timestamp: DateTime.parse(map['timestamp']),
-      cashierName: map['cashier_name'],
-      cashierId: map['cashier_id'],
+      payments: (map['payments'] as List?)?.map((e) => PaymentDetail.fromJson(e)).toList() ?? [],
+      timestamp: DateTime.tryParse(map['timestamp']?.toString() ?? '') ?? DateTime.now(),
+      cashierName: (map['staff_name'] ?? map['cashier_name'] ?? 'System').toString(),
+      cashierId: (map['staff_id'] ?? map['cashier_id'] ?? 'system').toString(),
       customerName: map['customer_name'],
       customerPhone: map['customer_phone'],
-      status: SaleStatus.values.byName(map['status'] ?? 'completed'),
+      status: SaleStatus.values.firstWhere(
+        (e) => e.name == map['status'],
+        orElse: () => SaleStatus.completed,
+      ),
       correctionReason: map['correction_reason'],
       bankReceiptUrl: map['bank_receipt_url'],
       bankReceiptId: map['bank_receipt_id'],
       isVerified: map['is_verified'] ?? false,
+      prescription: map['prescription'],
+      includePrescriptionOnReceipt: map['include_prescription_on_receipt'] ?? true,
+      sendPrescriptionSms: map['send_prescription_sms'] ?? false,
+      patientName: map['patient_name'],
+      doctorName: map['doctor_name'],
+      rxNumber: map['rx_number'],
     );
   }
 
@@ -147,6 +175,8 @@ class SaleRecord {
       'timestamp': timestamp.toIso8601String(),
       'cashier_name': cashierName,
       'cashier_id': cashierId,
+      'staff_name': cashierName, // Mapping for older database schemas
+      'staff_id': cashierId, // Mapping for older database schemas
       'customer_name': customerName,
       'customer_phone': customerPhone,
       'status': status.name,
@@ -154,6 +184,12 @@ class SaleRecord {
       'bank_receipt_url': bankReceiptUrl,
       'bank_receipt_id': bankReceiptId,
       'is_verified': isVerified,
+      'prescription': prescription,
+      'include_prescription_on_receipt': includePrescriptionOnReceipt,
+      'send_prescription_sms': sendPrescriptionSms,
+      'patient_name': patientName,
+      'doctor_name': doctorName,
+      'rx_number': rxNumber,
     };
   }
 
@@ -212,6 +248,12 @@ class SaleRecord {
     bool? isVerified,
     String? customerName,
     String? customerPhone,
+    String? prescription,
+    bool? includePrescriptionOnReceipt,
+    bool? sendPrescriptionSms,
+    String? patientName,
+    String? doctorName,
+    String? rxNumber,
   }) {
     return SaleRecord(
       id: id,
@@ -232,6 +274,12 @@ class SaleRecord {
       bankReceiptUrl: bankReceiptUrl ?? this.bankReceiptUrl,
       bankReceiptId: bankReceiptId ?? this.bankReceiptId,
       isVerified: isVerified ?? this.isVerified,
+      prescription: prescription ?? this.prescription,
+      includePrescriptionOnReceipt: includePrescriptionOnReceipt ?? this.includePrescriptionOnReceipt,
+      sendPrescriptionSms: sendPrescriptionSms ?? this.sendPrescriptionSms,
+      patientName: patientName ?? this.patientName,
+      doctorName: doctorName ?? this.doctorName,
+      rxNumber: rxNumber ?? this.rxNumber,
     );
   }
 }

@@ -18,7 +18,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       description: 'Track medication batches, lot expiration alerts, patient prescription records, and instant OTC dispensing.',
       icon: Icons.local_pharmacy_rounded,
       color: const Color(0xFF2E7D32),
-      bgAsset: 'assets/images/bgi/img11.png',
+      bgAsset: 'assets/images/bgi/meds.jpg',
     ),
     OnboardingData(
       title: 'Barbershop Operations',
@@ -26,7 +26,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       description: 'Live client queues, grooming service catalogs, barber performance tracking, and automated commission calculations.',
       icon: Icons.content_cut_rounded,
       color: const Color(0xFF1565C0),
-      bgAsset: 'assets/images/bgi/img22.png',
+      bgAsset: 'assets/images/bgi/shave.jpg',
     ),
     OnboardingData(
       title: 'Tech & Phone Shop',
@@ -34,7 +34,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       description: 'Register device IMEI numbers, track phone repair work orders, manage accessories, and issue digital warranties.',
       icon: Icons.phone_android_rounded,
       color: const Color(0xFFE65100),
-      bgAsset: 'assets/images/bgi/img11.png',
+      bgAsset: 'assets/images/bgi/ass.jpg',
     ),
     OnboardingData(
       title: 'Cross-Sector Analytics',
@@ -42,7 +42,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       description: 'Real-time profit tracking, staff permissions, multi-branch management, and offline-first POS reliability.',
       icon: Icons.insights_rounded,
       color: const Color(0xFF6B1111),
-      bgAsset: 'assets/images/bgi/img22.png',
+      bgAsset: 'assets/images/CLI.png',
     ),
   ];
 

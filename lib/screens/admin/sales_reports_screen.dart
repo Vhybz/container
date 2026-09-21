@@ -162,14 +162,13 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> with Si
 
   Widget _buildOverviewTab(BuildContext context, List<SaleRecord> sales, List<dynamic> expenses) {
     final tillState = ref.watch(tillProvider);
-    final totalPending = tillState.pendingByDay.values.fold(0.0, (sum, val) => sum + val);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.l),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSummaryCards(context, sales, expenses, totalPending),
+          _buildSummaryCards(context, sales, expenses, tillState.currentBalance),
           const SizedBox(height: AppSpacing.xl),
           _buildRevenueChart(context, sales),
         ],
@@ -493,7 +492,7 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> with Si
 
   Widget _buildSummaryCards(BuildContext context, List<SaleRecord> sales, List<dynamic> expenses, double tillBalance) {
     final totalRevenue = sales.where((s) => s.status != SaleStatus.cancelled).fold(0.0, (sum, sale) => sum + sale.totalAmount);
-    final totalExpenses = expenses.fold(0.0, (sum, e) => sum + (e.amount as double));
+    final totalExpenses = expenses.where((e) => !ExpenseNotifier.nonExpenseCategories.contains(e.category)).fold(0.0, (sum, e) => sum + (e.amount as double));
     final netProfit = totalRevenue - totalExpenses;
 
     return LayoutBuilder(builder: (context, constraints) {
@@ -1005,7 +1004,7 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> with Si
                                 const SizedBox(width: 8),
                                 Expanded(
                                   flex: 2,
-                                  child: Text('${WeightConverter.formatShort(item.quantity, unit: item.product.unit)} x ₵${item.priceAtSale.toStringAsFixed(2)}', 
+                                  child: Text('${WeightConverter.formatShort(item.quantity, unit: item.product.unit, productName: item.product.name, category: item.product.category)} x ₵${item.priceAtSale.toStringAsFixed(2)}', 
                                     textAlign: TextAlign.right,
                                     style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
                                   ),
@@ -1566,9 +1565,9 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> with Si
                       final bb = b['barbershop'] ?? 0;
                       return BarTooltipItem(
                         'Total: ₵${rod.toY.toStringAsFixed(0)}\n'
-                        '🟢 Pharm: ₵${p.toStringAsFixed(0)}\n'
-                        '🟠 Tech: ₵${ph.toStringAsFixed(0)}\n'
-                        '🔵 Barber: ₵${bb.toStringAsFixed(0)}',
+                        'Pharmacy: ₵${p.toStringAsFixed(0)}\n'
+                        'Tech: ₵${ph.toStringAsFixed(0)}\n'
+                        'Barber: ₵${bb.toStringAsFixed(0)}',
                         TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.bold, fontSize: 10),
                       );
                     },
@@ -2091,7 +2090,7 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> with Si
                                 ),
                               ),
                               Text(
-                                '${WeightConverter.formatShort(topItemQty, unit: unit)} • ₵${topItemAmount.toStringAsFixed(2)}',
+                                '${WeightConverter.formatShort(topItemQty, unit: unit, productName: topItemName, category: topItemCategory)} • ₵${topItemAmount.toStringAsFixed(2)}',
                                 style: TextStyle(fontSize: 11, color: theme.colorScheme.primary, fontWeight: FontWeight.bold),
                               ),
                             ],

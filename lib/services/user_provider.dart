@@ -151,12 +151,16 @@ class UserNotifier extends StateNotifier<List<UserAccount>> {
           branchCode: branchCode,
         );
         
-        final connectivity = await Connectivity().checkConnectivity();
-        if (!connectivity.contains(ConnectivityResult.none)) {
+        if (kIsWeb) {
           await service.updateUser(updatedUser);
         } else {
-          _updateLocalAndSession(updatedUser);
-          await service.updateUser(updatedUser); 
+          final connectivity = await Connectivity().checkConnectivity();
+          if (!connectivity.contains(ConnectivityResult.none)) {
+            await service.updateUser(updatedUser);
+          } else {
+            _updateLocalAndSession(updatedUser);
+            await service.updateUser(updatedUser); 
+          }
         }
       }
     } catch (e) {

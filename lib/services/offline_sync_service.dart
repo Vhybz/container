@@ -4,6 +4,13 @@ import 'package:flutter/foundation.dart';
 import 'dart:async';
 import '../core/supabase_config.dart';
 
+class SyncStatus {
+  final int pendingCount;
+  final bool isSyncing;
+  final String? lastError;
+  SyncStatus({required this.pendingCount, required this.isSyncing, this.lastError});
+}
+
 /// This service manages the "Offline-First" logic for Multi-Business Manager.
 /// It uses Hive as a fast, schema-less storage for pending cloud actions.
 class OfflineSyncService {
@@ -20,10 +27,25 @@ class OfflineSyncService {
   static StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   static bool _isProcessing = false;
 
+  static final _statusController = StreamController<SyncStatus>.broadcast();
+  static Stream<SyncStatus> get statusStream => _statusController.stream;
+
+  static void _updateStatus(bool isSyncing) {
+    try {
+      final box = Hive.box(queueBoxName);
+      _statusController.add(SyncStatus(pendingCount: box.length, isSyncing: isSyncing));
+    } catch (_) {}
+  }
+
   /// Initialize Hive and the sync monitoring
   static Future<void> initialize() async {
     try {
       await Hive.initFlutter();
+      
+      // Mandatory: Theme/Settings box
+      await Hive.openBox(settingsBoxName);
+
+      // Offline-First feature boxes (Now enabled on all platforms including Web)
       await Hive.openBox(queueBoxName);
       await Hive.openBox(productsBoxName);
       await Hive.openBox(customersBoxName);
@@ -33,17 +55,18 @@ class OfflineSyncService {
       await Hive.openBox(transfersBoxName);
       await Hive.openBox(butcherBoxName);
       await Hive.openBox(auditBoxName);
-      await Hive.openBox(settingsBoxName);
       
-      // Listen for connectivity changes to trigger sync automatically
-      _connectivitySubscription = Connectivity().onConnectivityChanged.listen((results) {
-        if (results.any((result) => result != ConnectivityResult.none)) {
-          debugPrint('Connectivity Restored: Triggering background sync...');
-          processQueue();
-        }
-      });
+      if (!kIsWeb) {
+        // Listen for connectivity changes to trigger sync automatically
+        _connectivitySubscription = Connectivity().onConnectivityChanged.listen((results) {
+          if (results.any((result) => result != ConnectivityResult.none)) {
+            debugPrint('Connectivity Restored: Triggering background sync...');
+            processQueue();
+          }
+        });
+      }
       
-      // Initial check
+      // Initial check (Works on Web too if internet is available)
       processQueue();
     } catch (e) {
       if (e.toString().contains('lock failed')) {
@@ -70,6 +93,7 @@ class OfflineSyncService {
       'timestamp': DateTime.now().toIso8601String(),
     });
     
+    _updateStatus(false);
     debugPrint('Offline Engine: Action "$actionType" cached in Hive (ID: $requestId)');
     
     // Attempt sync immediately (will fail silently if no net)
@@ -90,6 +114,7 @@ class OfflineSyncService {
     if (box.isEmpty) return;
 
     _isProcessing = true;
+    _updateStatus(true);
     debugPrint('Sync Monitor: ${box.length} pending items found. Starting cloud push...');
 
     final List<dynamic> keys = List.from(box.keys);
@@ -107,7 +132,43 @@ class OfflineSyncService {
         
         switch (type) {
           case 'SALE':
-            await SupabaseConfig.client.from('sales').upsert(payload);
+            try {
+              await SupabaseConfig.client.from('sales').upsert(payload);
+            } catch (e) {
+              final errStr = e.toString();
+              // PGRST204: Column missing in schema. Fallback by stripping non-essential columns.
+              if (errStr.contains('PGRST204')) {
+                final Map<String, dynamic> fallbackPayload = Map<String, dynamic>.from(payload);
+                
+                // Progressively remove columns that might be missing in older schemas
+                final possiblyMissing = ['cashier_id', 'cashier_name', 'staff_id', 'staff_name', 'total_cost', 'is_verified', 'bank_receipt_id', 'bank_receipt_url'];
+                
+                bool retryNeeded = false;
+                for (final col in possiblyMissing) {
+                  if (errStr.contains("'$col'")) {
+                    fallbackPayload.remove(col);
+                    retryNeeded = true;
+                  }
+                }
+
+                if (retryNeeded) {
+                  try {
+                    await SupabaseConfig.client.from('sales').upsert(fallbackPayload);
+                  } catch (innerE) {
+                    // Recursive deep cleanup for stubborn schema mismatches
+                    final Map<String, dynamic> minimalPayload = Map<String, dynamic>.from(payload);
+                    for (final col in possiblyMissing) {
+                      minimalPayload.remove(col);
+                    }
+                    await SupabaseConfig.client.from('sales').upsert(minimalPayload);
+                  }
+                } else {
+                  rethrow;
+                }
+              } else {
+                rethrow;
+              }
+            }
             success = true;
             break;
           case 'ANIMAL':
@@ -299,6 +360,7 @@ class OfflineSyncService {
     }
     
     _isProcessing = false;
+    _updateStatus(false);
   }
 
   /// NEW: Retrieve pending actions of a specific type from the queue.

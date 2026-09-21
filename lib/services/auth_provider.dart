@@ -7,7 +7,6 @@ import 'sale_provider.dart';
 import 'product_service.dart';
 import 'expense_provider.dart';
 import 'branch_provider.dart';
-import 'transfer_provider.dart';
 import 'notification_service.dart';
 import 'cart_provider.dart';
 import 'audit_service.dart';
@@ -73,7 +72,6 @@ class GlobalLogout {
     ref.invalidate(productsFutureProvider);
     ref.invalidate(expenseProvider);
     ref.invalidate(branchesProvider);
-    ref.invalidate(transferProvider);
     ref.invalidate(notificationProvider);
     ref.invalidate(cartProvider);
   }

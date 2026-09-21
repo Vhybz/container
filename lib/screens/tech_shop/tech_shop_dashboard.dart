@@ -25,30 +25,6 @@ class _TechShopDashboardState extends ConsumerState<TechShopDashboard> with Sing
   late TabController _tabController;
   final currencyFormat = NumberFormat.currency(symbol: 'GHS ', decimalDigits: 2);
 
-  // Live Repair Tickets Work Orders List
-  final List<Map<String, dynamic>> _repairTickets = [
-    {
-      'ticketId': 'REP-1021',
-      'customer': 'Emmanuel Ofori',
-      'phone': '0249876543',
-      'device': 'iPhone 13',
-      'issue': 'Screen Replacement & Battery Replacement',
-      'status': 'In Progress',
-      'cost': 1200.0,
-      'date': '2026-09-07'
-    },
-    {
-      'ticketId': 'REP-1022',
-      'customer': 'Sarkodie A.',
-      'phone': '0201234567',
-      'device': 'Samsung Note 20',
-      'issue': 'Charging Port Solder Repair',
-      'status': 'Ready for Pickup',
-      'cost': 350.0,
-      'date': '2026-09-06'
-    },
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -149,6 +125,7 @@ class _TechShopDashboardState extends ConsumerState<TechShopDashboard> with Sing
     // Live Data Providers
     final productsAsync = ref.watch(productsFutureProvider);
     final sales = ref.watch(saleHistoryProvider);
+    final tickets = ref.watch(repairTicketProvider);
 
     final allProducts = productsAsync.value ?? [];
     final techProducts = allProducts.where((p) => !p.isDeleted && (
@@ -277,7 +254,7 @@ class _TechShopDashboardState extends ConsumerState<TechShopDashboard> with Sing
                       children: [
                         Expanded(child: _buildStatCard('Devices in Stock', '${totalDeviceUnits.toInt()} Units', Icons.smartphone, Colors.orange)),
                         const SizedBox(width: AppSpacing.m),
-                        Expanded(child: _buildStatCard('Active Repairs', '${_repairTickets.where((t) => t['status'] != 'Completed').length} Tickets', Icons.build_outlined, Colors.blue)),
+                        Expanded(child: _buildStatCard('Active Repairs', '${tickets.where((t) => t.status != "Delivered" && t.status != "Completed").length} Tickets', Icons.build_outlined, Colors.blue)),
                         const SizedBox(width: AppSpacing.m),
                         Expanded(child: _buildStatCard('Today\'s Revenue', currencyFormat.format(todayRevenue), Icons.monetization_on, Colors.green)),
                       ],
@@ -449,12 +426,17 @@ class _TechShopDashboardState extends ConsumerState<TechShopDashboard> with Sing
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               crossAxisAlignment: CrossAxisAlignment.end,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(currencyFormat.format(w.cost), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                Chip(
-                                  label: Text(w.status, style: const TextStyle(fontSize: 10, color: Colors.white)),
-                                  backgroundColor: isCompleted ? Colors.grey : (isReady ? Colors.green : Colors.orange),
-                                  visualDensity: VisualDensity.compact,
+                                const SizedBox(height: 2),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isCompleted ? Colors.grey : (isReady ? Colors.green : Colors.orange),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(w.status, style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
                                 ),
                               ],
                             ),

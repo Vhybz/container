@@ -63,7 +63,7 @@ class _TaxComplianceScreenState extends ConsumerState<TaxComplianceScreen> {
     }).toList();
 
     final totalSales = monthlySales.fold(0.0, (sum, s) => sum + s.totalAmount);
-    final totalExpenses = monthlyExpenses.fold(0.0, (sum, e) => sum + e.amount);
+    final totalExpenses = monthlyExpenses.where((e) => !ExpenseNotifier.nonExpenseCategories.contains(e.category)).fold(0.0, (sum, e) => sum + e.amount);
     final monthlyProfit = totalSales - totalExpenses;
 
     // GRA Tax Module Calculations (Updated as per request)

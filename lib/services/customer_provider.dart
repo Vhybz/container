@@ -49,6 +49,8 @@ class CustomerNotifier extends StateNotifier<List<Customer>> {
 
   void _saveToCache(List<Customer> customers) {
     try {
+      if (customers.isEmpty && state.isNotEmpty) return;
+
       final box = Hive.box(OfflineSyncService.customersBoxName);
       box.clear();
       for (var c in customers) {
@@ -64,12 +66,72 @@ class CustomerNotifier extends StateNotifier<List<Customer>> {
     final user = ref.read(currentUserProvider);
     final branchCode = user?.branchCode ?? '';
 
+    // 1. Initial Fresh Fetch (Prioritize Network)
+    _fetchFreshCustomers(branchCode);
+
+    // 2. Start Real-time Stream
     _subscription = _service.watchCustomers(branchCode).listen((customers) {
-      state = customers;
+      _applyPendingAndSetState(customers);
       _saveToCache(customers);
     }, onError: (e) {
-      debugPrint('Customer Stream Error: $e');
+      if (kIsWeb) {
+        debugPrint('Customer Stream Error: $e');
+      } else {
+        debugPrint('Customer Stream Error (Offline?): Using cached data.');
+      }
     });
+  }
+
+  Future<void> _fetchFreshCustomers(String branchCode) async {
+    try {
+      final customers = await _service.getCustomers(branchCode);
+      _applyPendingAndSetState(customers);
+      _saveToCache(customers);
+    } catch (e) {
+      if (kIsWeb) {
+        debugPrint('Customer Fetch Error (Web): $e');
+      } else {
+        debugPrint('Customer Fetch Error (Offline): $e');
+      }
+    }
+  }
+
+  void _applyPendingAndSetState(List<Customer> remoteCustomers) {
+    final pendingCustomers = OfflineSyncService.getPendingItems('CUSTOMER')
+        .map((json) => Customer.fromJson(json))
+        .toList();
+        
+    final pendingDeletes = OfflineSyncService.getPendingItems('DELETE_CUSTOMER')
+        .map((json) => json['id'] as String)
+        .toList();
+
+    final Map<String, Customer> allMap = {};
+    
+    // 1. Current State
+    for (var c in state) {
+      if (!pendingDeletes.contains(c.id)) {
+        allMap[c.id] = c;
+      }
+    }
+    
+    // 2. Remote Cloud
+    for (var c in remoteCustomers) {
+      if (!pendingDeletes.contains(c.id)) {
+        allMap[c.id] = c;
+      }
+    }
+    
+    // 3. Local Queue
+    for (var c in pendingCustomers) {
+      if (!pendingDeletes.contains(c.id)) {
+        allMap[c.id] = c;
+      }
+    }
+
+    final finalCustomers = allMap.values.toList();
+    finalCustomers.sort((a, b) => a.name.compareTo(b.name));
+
+    state = finalCustomers;
   }
 
   @override
@@ -79,7 +141,11 @@ class CustomerNotifier extends StateNotifier<List<Customer>> {
   }
 
   Future<void> loadCustomers() async {
-    _startSubscription();
+    final user = ref.read(currentUserProvider);
+    final branchCode = user?.branchCode ?? '';
+    
+    // Heartbeat: Force a fresh fetch
+    await _fetchFreshCustomers(branchCode);
   }
 
   Future<Customer?> addCustomer(Customer customer) async {
@@ -111,8 +177,8 @@ class CustomerNotifier extends StateNotifier<List<Customer>> {
         );
       }
     } catch (e) {
-      debugPrint('Customer Sync Background Error: $e');
-      // If Supabase fails for other reasons, ensure it's in the offline queue to try again
+      debugPrint('Customer Sync Error: $e');
+      // If Supabase fails, ensure it's in the offline queue
       await OfflineSyncService.addToQueue(
         actionType: 'CUSTOMER', 
         data: customer.toJson(),
@@ -152,35 +218,51 @@ class CustomerNotifier extends StateNotifier<List<Customer>> {
 
   Future<void> updateCustomer(Customer customer) async {
     try {
-      final connectivity = await Connectivity().checkConnectivity();
-      if (!connectivity.contains(ConnectivityResult.none)) {
+      if (kIsWeb) {
         await _service.updateCustomer(customer);
       } else {
-        throw Exception('Offline');
+        final connectivity = await Connectivity().checkConnectivity();
+        if (!connectivity.contains(ConnectivityResult.none)) {
+          await _service.updateCustomer(customer);
+        } else {
+          throw Exception('Offline');
+        }
       }
     } catch (e) {
-      await OfflineSyncService.addToQueue(
-        actionType: 'CUSTOMER',
-        data: customer.toJson(),
-      );
-      state = [for (final c in state) if (c.id == customer.id) customer else c];
+      if (!kIsWeb) {
+        await OfflineSyncService.addToQueue(
+          actionType: 'CUSTOMER',
+          data: customer.toJson(),
+        );
+        state = [for (final c in state) if (c.id == customer.id) customer else c];
+      } else {
+        rethrow;
+      }
     }
   }
 
   Future<void> deleteCustomer(String id) async {
     try {
-      final connectivity = await Connectivity().checkConnectivity();
-      if (!connectivity.contains(ConnectivityResult.none)) {
+      if (kIsWeb) {
         await _service.deleteCustomer(id);
       } else {
-        throw Exception('Offline');
+        final connectivity = await Connectivity().checkConnectivity();
+        if (!connectivity.contains(ConnectivityResult.none)) {
+          await _service.deleteCustomer(id);
+        } else {
+          throw Exception('Offline');
+        }
       }
     } catch (e) {
-      await OfflineSyncService.addToQueue(
-        actionType: 'DELETE_CUSTOMER',
-        data: {'id': id},
-      );
-      state = state.where((c) => c.id != id).toList();
+      if (!kIsWeb) {
+        await OfflineSyncService.addToQueue(
+          actionType: 'DELETE_CUSTOMER',
+          data: {'id': id},
+        );
+        state = state.where((c) => c.id != id).toList();
+      } else {
+        rethrow;
+      }
     }
   }
 

@@ -32,18 +32,74 @@ class WeightConverter {
     }
   }
 
-  static String formatShort(double weight, {String? unit}) {
-    final lowerUnit = unit?.toLowerCase();
-    if (lowerUnit == 'unit' || lowerUnit == 'qty' || lowerUnit == 'pcs') {
-      return '${weight.toStringAsFixed(0)} pcs';
+  static String formatShort(
+    double weight, {
+    String? unit,
+    String? productName,
+    String? category,
+  }) {
+    final lowerUnit = unit?.toLowerCase().trim() ?? '';
+    final lowerName = productName?.toLowerCase().trim() ?? '';
+    final lowerCat = category?.toLowerCase().trim() ?? '';
+
+    final count = weight == weight.roundToDouble() ? weight.toInt() : weight;
+
+    // 1. Shave service detection
+    if (lowerUnit == 'shave' || lowerUnit == 'shaves' ||
+        lowerName.contains('shave') || lowerName.contains('shaving') ||
+        (lowerName.contains('beard') && !lowerName.contains('oil'))) {
+      return count == 1 ? '1 shave' : '$count shaves';
     }
-    if (lowerUnit == 'g' || (weight < 0.1 && weight > 0)) {
+
+    // 2. Haircut / Barber cut service detection
+    if (lowerUnit == 'cut' || lowerUnit == 'cuts' ||
+        lowerCat.contains('barber') ||
+        lowerCat.contains('hair') ||
+        lowerName.contains('cut') ||
+        lowerName.contains('haircut') ||
+        lowerName.contains('fade') ||
+        lowerName.contains('trim') ||
+        lowerName.contains('shampoo') ||
+        lowerName.contains('dye') ||
+        lowerName.contains('wave') ||
+        lowerName.contains('sponge') ||
+        lowerName.contains('styling')) {
+      return count == 1 ? '1 cut' : '$count cuts';
+    }
+
+    // 3. Tech repair service detection
+    if (lowerUnit == 'repair' || lowerUnit == 'repairs' ||
+        ((lowerCat.contains('repair') || lowerCat.contains('tech')) &&
+         (lowerUnit == 'service' || lowerUnit == 'unit'))) {
+      return count == 1 ? '1 repair' : '$count repairs';
+    }
+
+    // 4. Other services
+    if (lowerUnit == 'service' || lowerUnit == 'services') {
+      return count == 1 ? '1 service' : '$count services';
+    }
+
+    // 5. Piece / Unit counts
+    if (lowerUnit == 'unit' || lowerUnit == 'units' || lowerUnit == 'qty' || lowerUnit == 'pcs' || lowerUnit == 'pc') {
+      return count == 1 ? '1 pc' : '$count pcs';
+    }
+
+    // 6. Weight (g / kg / t)
+    if (lowerUnit == 'g' || (weight < 0.1 && weight > 0 && (lowerUnit.isEmpty || lowerUnit == 'kg'))) {
       return '${(weight * 1000).toStringAsFixed(0)}g';
     }
-    if (weight >= 1000) {
+    if (weight >= 1000 && lowerUnit != 'g') {
       return '${(weight / 1000).toStringAsFixed(1)}t';
     }
-    return '${weight.toStringAsFixed(1)}kg';
+    if (lowerUnit == 'kg') {
+      return '${weight.toStringAsFixed(1)}kg';
+    }
+
+    if (lowerUnit.isNotEmpty) {
+      return count == 1 ? '$count $lowerUnit' : '$count ${lowerUnit}s';
+    }
+
+    return count == 1 ? '$count pc' : '$count pcs';
   }
 }
 

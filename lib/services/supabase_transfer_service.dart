@@ -1,43 +1,25 @@
 import '../models/transfer_models.dart';
-import '../core/supabase_config.dart';
+import 'supabase_base_service.dart';
 
-class SupabaseTransferService {
-  final _client = SupabaseConfig.client;
+class SupabaseTransferService extends SupabaseBaseService {
+  @override
+  List<String> get riskyColumns => ['branch_code', 'unit'];
 
   Future<List<StockTransfer>> getTransfers() async {
-    try {
-      final response = await _client
-          .from('stock_transfers')
-          .select()
-          .order('transfer_time', ascending: false);
-      
-      return (response as List).map((json) => StockTransfer.fromJson(json)).toList();
-    } catch (e) {
-      return [];
-    }
+    final response = await selectSorted('stock_transfers', order: 'transfer_time');
+    return response.map((json) => StockTransfer.fromJson(json)).toList();
   }
 
   Future<void> addTransfer(StockTransfer transfer) async {
-    await _client.from('stock_transfers').insert(transfer.toJson());
+    await robustOperation('stock_transfers', transfer.toJson());
   }
 
   Future<void> updateTransferStatus(String id, TransferStatus status) async {
-    await _client
-        .from('stock_transfers')
-        .update({'status': status.name})
-        .eq('id', id);
+    await client.from('stock_transfers').update({'status': status.name}).eq('id', id);
   }
 
   Stream<List<StockTransfer>> watchTransfers() {
-    try {
-      return _client
-          .from('stock_transfers')
-          .stream(primaryKey: ['id'])
-          .order('transfer_time', ascending: false)
-          .map((data) => data.map((json) => StockTransfer.fromJson(json)).toList())
-          .handleError((_) => <StockTransfer>[]);
-    } catch (e) {
-      return Stream.value(<StockTransfer>[]);
-    }
+    return watchTable('stock_transfers', order: 'transfer_time')
+        .map((data) => data.map((json) => StockTransfer.fromJson(json)).toList());
   }
 }

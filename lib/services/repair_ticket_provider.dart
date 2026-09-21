@@ -107,24 +107,14 @@ class RepairTicketNotifier extends StateNotifier<List<RepairTicket>> {
       final rawList = box.get('tickets_list');
       if (rawList != null) {
         final List decoded = jsonDecode(rawList);
-        state = decoded.map((e) => RepairTicket.fromJson(Map<String, dynamic>.from(e))).toList();
+        final loaded = decoded
+            .map((e) => RepairTicket.fromJson(Map<String, dynamic>.from(e)))
+            .where((t) => t.id != 'REP-1021' && t.id != 'REP-1022' && t.customer != 'Emmanuel Ofori' && t.customer != 'Sarkodie A.')
+            .toList();
+        state = loaded;
+        _saveToCache(loaded);
       } else {
-        // Seed default initial repair ticket
-        state = [
-          RepairTicket(
-            id: 'REP-1021',
-            branchCode: 'MAIN',
-            customer: 'Emmanuel Ofori',
-            phone: '0249876543',
-            device: 'iPhone 13',
-            issue: 'Screen & Battery Replacement',
-            status: 'In Progress',
-            cost: 1200.0,
-            deposit: 500.0,
-            technician: 'Tech Specialist',
-            timestamp: DateTime.now().subtract(const Duration(days: 1)),
-          ),
-        ];
+        state = [];
         _saveToCache(state);
       }
     } catch (e) {
@@ -175,7 +165,7 @@ class RepairTicketNotifier extends StateNotifier<List<RepairTicket>> {
     if (phone.trim().isNotEmpty) {
       SmsService.sendCustomSms(
         phone.trim(),
-        'Hello $customer, your repair work order #$ticketId for $device has been registered at Container Tech Shop. Cost: GHS ${cost.toStringAsFixed(2)}. Thank you!',
+        'Hello $customer, your repair work order #$ticketId for $device has been registered at Container Tech Shop. Cost: GHS ${cost.toStringAsFixed(2)}. Track status live: https://container.app/#/track?id=$ticketId. Thank you!',
       );
     }
 

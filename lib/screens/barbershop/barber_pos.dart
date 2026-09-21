@@ -15,6 +15,9 @@ import '../../services/receipt_service.dart';
 import '../../services/sale_provider.dart';
 import '../../services/user_provider.dart';
 import '../../services/sms_service.dart';
+import '../../models/barbershop_models.dart';
+import '../../services/barber_records_provider.dart';
+import '../../services/barbershop_service.dart';
 import '../../widgets/app_sidebar.dart';
 import '../../widgets/cart_item_tile.dart';
 import '../../widgets/main_app_bar.dart';
@@ -36,9 +39,11 @@ class _BarberPosState extends ConsumerState<BarberPos> {
   final TextEditingController _tipController = TextEditingController(text: '0.0');
   final TextEditingController _clientNameController = TextEditingController();
   final TextEditingController _clientPhoneController = TextEditingController();
+  final TextEditingController _childNameController = TextEditingController();
+  final TextEditingController _parentPhoneController = TextEditingController();
 
   String _selectedCategory = 'All';
-  String _selectedBarber = 'Master Barber Frank';
+  String _selectedBarber = 'King Mojo';
   String _clientGender = 'Male';
   String _clientAgeCategory = 'Adult';
   String _paymentMethod = 'Cash';
@@ -47,77 +52,24 @@ class _BarberPosState extends ConsumerState<BarberPos> {
 
   final List<String> _customBarbers = [];
   final List<String> _barbers = [
-    'Master Barber Frank',
-    'Barber Alex',
-    'Barber Sam',
+    'King Mojo',
   ];
 
-  final List<Product> _fallbackBarber = [
-    Product(
-      id: 'S1',
-      name: 'Executive Haircut',
-      category: 'BARBERSHOP',
-      retailPrice: 50.0,
-      wholesalePrice: 45.0,
-      imageUrl: '',
-      unit: 'service',
-      isService: true,
-      isUnlimited: true,
-    ),
-    Product(
-      id: 'S2',
-      name: 'Beard Grooming & Oil',
-      category: 'BARBERSHOP',
-      retailPrice: 30.0,
-      wholesalePrice: 25.0,
-      imageUrl: '',
-      unit: 'service',
-      isService: true,
-      isUnlimited: true,
-    ),
-    Product(
-      id: 'S3',
-      name: 'Hair Dye / Blackening',
-      category: 'BARBERSHOP',
-      retailPrice: 45.0,
-      wholesalePrice: 40.0,
-      imageUrl: '',
-      unit: 'service',
-      isService: true,
-      isUnlimited: true,
-    ),
-    Product(
-      id: 'S4',
-      name: 'Facial Scrub & Steam',
-      category: 'BARBERSHOP',
-      retailPrice: 60.0,
-      wholesalePrice: 55.0,
-      imageUrl: '',
-      unit: 'service',
-      isService: true,
-      isUnlimited: true,
-    ),
-    Product(
-      id: 'P1',
-      name: 'Premium Hair Gel (150g)',
-      category: 'BARBERSHOP',
-      retailPrice: 25.0,
-      wholesalePrice: 20.0,
-      imageUrl: '',
-      unit: 'pcs',
-      stockQuantity: 40,
-    ),
-    Product(
-      id: 'P2',
-      name: 'Beard Growth Oil (50ml)',
-      category: 'BARBERSHOP',
-      retailPrice: 40.0,
-      wholesalePrice: 35.0,
-      imageUrl: '',
-      unit: 'pcs',
-      stockQuantity: 30,
-    ),
-  ];
+  final TextEditingController _historySearchController = TextEditingController();
+  String _historyBarberFilter = 'All';
+  String _historyServiceFilter = 'All';
+  String _historyDateFilter = 'All Time';
+  DateTimeRange? _historyCustomRange;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(cartProvider.notifier).registerPos('/barbershop/pos');
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -125,6 +77,9 @@ class _BarberPosState extends ConsumerState<BarberPos> {
     _tipController.dispose();
     _clientNameController.dispose();
     _clientPhoneController.dispose();
+    _childNameController.dispose();
+    _parentPhoneController.dispose();
+    _historySearchController.dispose();
     super.dispose();
   }
 
@@ -161,6 +116,9 @@ class _BarberPosState extends ConsumerState<BarberPos> {
     final String clientName = nameInput.isNotEmpty ? nameInput : (_selectedCustomer?.name ?? 'Walk-In Client');
     final String clientPhone = phoneInput.isNotEmpty ? phoneInput : (_selectedCustomer?.phone ?? '');
     final String fullClientDisplay = '$clientName ($_clientGender • $_clientAgeCategory)';
+    final String clientGenderSaved = _clientGender;
+    final String clientAgeSaved = _clientAgeCategory;
+    final String paymentMethodSaved = _paymentMethod;
 
     final saleItems = cartItems.map((item) {
       return SaleItem(
@@ -177,6 +135,7 @@ class _BarberPosState extends ConsumerState<BarberPos> {
 
     final sale = SaleRecord(
       id: 'INV-${DateTime.now().millisecondsSinceEpoch}',
+      branchCode: currentUser?.branchCode ?? 'MAIN',
       items: saleItems,
       totalAmount: grandTotal,
       totalDiscount: 0.0,
@@ -197,19 +156,109 @@ class _BarberPosState extends ConsumerState<BarberPos> {
     // Save sale to state
     await ref.read(saleHistoryProvider.notifier).addSale(sale);
 
-    // Trigger instant post-haircut SMS to client if phone is provided
-    if (clientPhone.isNotEmpty) {
-      final String serviceNames = saleItems
-          .where((i) => i.product.isService || i.product.category.toUpperCase().contains('BARBER'))
-          .map((i) => i.product.name)
-          .join(', ');
-      SmsService.sendPostHaircutSms(
-        name: clientName,
-        phone: clientPhone,
-        serviceName: serviceNames.isNotEmpty ? serviceNames : 'Haircut / Shave Service',
-        barberName: _selectedBarber,
+    // Resolve service names for records and SMS
+    final String serviceNames = saleItems
+        .where((i) => i.product.isService || i.product.category.toUpperCase().contains('BARBER'))
+        .map((i) => i.product.name)
+        .join(', ');
+    final String resolvedServiceName = serviceNames.isNotEmpty ? serviceNames : 'Haircut / Shave Service';
+
+    // Save permanent record to BarberRecords provider (preserved forever)
+    final String paymentMethodLabel = _paymentMethod;
+    final List<CartItem> serviceCartItems = cartItems
+        .where((i) => i.product.isService || i.product.category.toUpperCase().contains('BARBER') || i.product.category.toUpperCase().contains('HAIR') || i.product.category.toUpperCase().contains('BEARD'))
+        .toList();
+
+    if (serviceCartItems.isNotEmpty) {
+      for (final item in serviceCartItems) {
+        final double fixedComm = item.product.serviceCommission > 0
+            ? (item.product.serviceCommission * item.quantity)
+            : ref.read(barberRecordsProvider.notifier).resolveCommissionAmount(item.product.name, price: item.priceAtSale, product: item.product);
+        final double commRate = item.priceAtSale > 0 ? ((fixedComm / item.priceAtSale) * 100.0) : 40.0;
+
+        await ref.read(barberRecordsProvider.notifier).recordService(
+          customerName: clientName,
+          customerPhone: clientPhone,
+          service: item.product.name,
+          barber: _selectedBarber,
+          price: item.priceAtSale,
+          tip: item == serviceCartItems.first ? tip : 0.0,
+          paymentMethod: paymentMethodLabel,
+          attendant: cashierName,
+          saleId: sale.id,
+          source: 'POS',
+          notes: _clientAgeCategory == 'Kid' ? 'Kid cut (Parent: ${_parentPhoneController.text.trim()})' : null,
+          timestamp: sale.timestamp,
+          commissionRate: commRate,
+          commissionAmount: fixedComm,
+          product: item.product,
+        );
+      }
+    } else {
+      final double fixedComm = ref.read(barberRecordsProvider.notifier).resolveCommissionAmount(resolvedServiceName, price: grandTotal);
+      final double commRate = grandTotal > 0 ? ((fixedComm / grandTotal) * 100.0) : 40.0;
+
+      await ref.read(barberRecordsProvider.notifier).recordService(
+        customerName: clientName,
+        customerPhone: clientPhone,
+        service: resolvedServiceName,
+        barber: _selectedBarber,
+        price: grandTotal,
+        tip: tip,
+        paymentMethod: paymentMethodLabel,
+        attendant: cashierName,
+        saleId: sale.id,
+        source: 'POS',
+        notes: _clientAgeCategory == 'Kid' ? 'Kid cut (Parent: ${_parentPhoneController.text.trim()})' : null,
+        timestamp: sale.timestamp,
+        commissionRate: commRate,
+        commissionAmount: fixedComm,
       );
     }
+
+    // Trigger instant post-haircut SMS to client if phone is provided
+
+    if (_clientAgeCategory == 'Kid') {
+      // Kid: send sweet SMS to parent's phone with child's name
+      final String childName = _childNameController.text.trim().isNotEmpty
+          ? _childNameController.text.trim()
+          : clientName;
+      final String parentPhone = _parentPhoneController.text.trim().isNotEmpty
+          ? _parentPhoneController.text.trim()
+          : clientPhone;
+      if (parentPhone.isNotEmpty) {
+        SmsService.sendKidHaircutSms(
+          childName: childName,
+          parentPhone: parentPhone,
+          serviceName: resolvedServiceName,
+          barberName: _selectedBarber,
+        );
+      }
+    } else {
+      // Adult: send normal post-haircut SMS
+      if (clientPhone.isNotEmpty) {
+        SmsService.sendPostHaircutSms(
+          name: clientName,
+          phone: clientPhone,
+          serviceName: resolvedServiceName,
+          barberName: _selectedBarber,
+        );
+      }
+    }
+
+    // Clean cart and all checkout fields immediately after sale
+    ref.read(cartProvider.notifier).clear();
+    setState(() {
+      _clientNameController.clear();
+      _clientPhoneController.clear();
+      _childNameController.clear();
+      _parentPhoneController.clear();
+      _tipController.text = '0.0';
+      _clientGender = 'Male';
+      _clientAgeCategory = 'Adult';
+      _paymentMethod = 'Cash';
+      _selectedCustomer = null;
+    });
 
     if (!mounted) return;
 
@@ -230,12 +279,12 @@ class _BarberPosState extends ConsumerState<BarberPos> {
             Text('Invoice: ${sale.id}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
             Text('Barber Assigned: $_selectedBarber', style: const TextStyle(fontWeight: FontWeight.bold)),
             Text('Client: $clientName'),
-            Text('Category: $_clientGender • $_clientAgeCategory', style: const TextStyle(fontSize: 12, color: Colors.blue)),
+            Text('Category: $clientGenderSaved • $clientAgeSaved', style: const TextStyle(fontSize: 12, color: Colors.blue)),
             if (clientPhone.isNotEmpty) Text('Phone: $clientPhone', style: const TextStyle(fontSize: 12)),
             const SizedBox(height: 6),
             Text('Total Paid: ${currencyFormat.format(grandTotal)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             if (tip > 0) Text('Includes Barber Tip: ${currencyFormat.format(tip)}', style: const TextStyle(fontSize: 12, color: Colors.green)),
-            Text('Payment Method: $_paymentMethod'),
+            Text('Payment Method: $paymentMethodSaved'),
             const Divider(),
             const Text('Receipt issued successfully.'),
           ],
@@ -247,13 +296,7 @@ class _BarberPosState extends ConsumerState<BarberPos> {
             label: const Text('RE-PRINT RECEIPT'),
           ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              ref.read(cartProvider.notifier).clear();
-              setState(() {
-                _tipController.text = '0.0';
-              });
-            },
+            onPressed: () => Navigator.pop(ctx),
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1565C0), foregroundColor: Colors.white),
             child: const Text('OK / NEW CLIENT'),
           ),
@@ -273,6 +316,7 @@ class _BarberPosState extends ConsumerState<BarberPos> {
 
     final subtotal = ref.read(cartProvider.notifier).subtotal;
     final currentUser = ref.read(currentUserProvider);
+    final debtCustName = _selectedCustomer!.name;
 
     final saleItems = cartItems.map((item) => SaleItem(
       product: item.product,
@@ -298,11 +342,63 @@ class _BarberPosState extends ConsumerState<BarberPos> {
     );
 
     await ref.read(saleHistoryProvider.notifier).addSale(sale);
+
+    // Save permanent record to BarberRecords provider
+    final String debtClientName = _selectedCustomer?.name ?? 'Client';
+    final String debtClientPhone = _selectedCustomer?.phone ?? '';
+    final List<CartItem> debtServiceCartItems = cartItems
+        .where((i) => i.product.isService || i.product.category.toUpperCase().contains('BARBER') || i.product.category.toUpperCase().contains('HAIR') || i.product.category.toUpperCase().contains('BEARD'))
+        .toList();
+
+    if (debtServiceCartItems.isNotEmpty) {
+      for (final item in debtServiceCartItems) {
+        await ref.read(barberRecordsProvider.notifier).recordService(
+          customerName: debtClientName,
+          customerPhone: debtClientPhone,
+          service: item.product.name,
+          barber: _selectedBarber,
+          price: item.priceAtSale,
+          tip: 0.0,
+          paymentMethod: 'Debt',
+          attendant: currentUser?.name ?? 'Barber Rep',
+          saleId: sale.id,
+          source: 'POS Debt',
+          timestamp: sale.timestamp,
+        );
+      }
+    } else {
+      await ref.read(barberRecordsProvider.notifier).recordService(
+        customerName: debtClientName,
+        customerPhone: debtClientPhone,
+        service: 'Haircut / Shave Service',
+        barber: _selectedBarber,
+        price: subtotal,
+        tip: 0.0,
+        paymentMethod: 'Debt',
+        attendant: currentUser?.name ?? 'Barber Rep',
+        saleId: sale.id,
+        source: 'POS Debt',
+        timestamp: sale.timestamp,
+      );
+    }
+
+    // Clean cart and all checkout fields immediately after debt sale
     ref.read(cartProvider.notifier).clear();
+    setState(() {
+      _clientNameController.clear();
+      _clientPhoneController.clear();
+      _childNameController.clear();
+      _parentPhoneController.clear();
+      _tipController.text = '0.0';
+      _clientGender = 'Male';
+      _clientAgeCategory = 'Adult';
+      _paymentMethod = 'Cash';
+      _selectedCustomer = null;
+    });
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Saved as debt for ${_selectedCustomer!.name}')),
+      SnackBar(content: Text('Saved as debt for $debtCustName')),
     );
   }
 
@@ -474,7 +570,6 @@ class _BarberPosState extends ConsumerState<BarberPos> {
 
     // Prioritize database products if they exist
     List<Product> productsList = [];
-    bool usingFallback = false;
 
     if (productsAsync.hasValue) {
       final dbProducts = productsAsync.value!
@@ -494,17 +589,8 @@ class _BarberPosState extends ConsumerState<BarberPos> {
           })
           .toList();
       
-      if (dbProducts.isNotEmpty) {
-        productsList = dbProducts;
-      } else if (productsAsync.value!.isEmpty) {
-        // Only use fallbacks if the database is literally empty (new installation)
-        productsList = _fallbackBarber;
-        usingFallback = true;
-      }
-    } else {
-      // Show fallbacks during initial load for UI responsiveness
-      productsList = _fallbackBarber;
-      usingFallback = true;
+      final activeProds = productsAsync.value!.where((p) => !p.isDeleted && !p.requiresPrescription).toList();
+      productsList = dbProducts.isNotEmpty ? dbProducts : activeProds;
     }
 
     final categories = ['All', ...{...productsList.map((p) => p.category.toUpperCase())}];
@@ -522,9 +608,9 @@ class _BarberPosState extends ConsumerState<BarberPos> {
       child: PasscodeGuard(
         child: Scaffold(
           backgroundColor: theme.scaffoldBackgroundColor,
-          appBar: MainAppBar(
-            title: 'Barbershop POS (${isWholesale ? "Wholesale" : "Retail"})',
-            actions: const [],
+          appBar: const MainAppBar(
+            title: 'Barbershop POS',
+            actions: [],
           ),
           drawer: isDesktop ? null : Drawer(
             child: AppSidebar(
@@ -595,46 +681,21 @@ class _BarberPosState extends ConsumerState<BarberPos> {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.s),
-                // Mode Selector and Search
-                Row(
-                  children: [
-                    SizedBox(
-                      width: 180,
-                      height: 42,
-                      child: Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surface,
-                          borderRadius: BorderRadius.circular(AppRadius.m),
-                          border: Border.all(color: theme.dividerColor),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(child: _modeButton('Retail', !isWholesale)),
-                            Expanded(child: _modeButton('Wholesale', isWholesale)),
-                          ],
-                        ),
-                      ),
+                // Search Bar
+                SizedBox(
+                  height: 42,
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (v) => setState(() {}),
+                    decoration: InputDecoration(
+                      hintText: 'Search service or grooming product...',
+                      prefixIcon: const Icon(Icons.search, size: 18),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.m)),
+                      filled: true,
+                      fillColor: theme.colorScheme.surface,
                     ),
-                    const SizedBox(width: AppSpacing.s),
-                    Expanded(
-                      child: SizedBox(
-                        height: 42,
-                        child: TextField(
-                          controller: _searchController,
-                          onChanged: (v) => setState(() {}),
-                          decoration: InputDecoration(
-                            hintText: 'Search service or grooming product...',
-                            prefixIcon: const Icon(Icons.search, size: 18),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.m)),
-                            filled: true,
-                            fillColor: theme.colorScheme.surface,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.m),
                 // Product Cards Grid
@@ -651,21 +712,21 @@ class _BarberPosState extends ConsumerState<BarberPos> {
                           itemCount: products.length,
                           itemBuilder: (context, index) {
                             final product = products[index];
-                            final hasPromo = product.isPromoActiveFor(isWholesale, _selectedCustomer);
-                            final currentPrice = product.getPrice(isWholesale, customer: _selectedCustomer);
+                            final hasPromo = product.isPromoActiveFor(false, _selectedCustomer);
+                            final currentPrice = product.getPrice(false, customer: _selectedCustomer);
 
                             return ProductCard(
                               name: product.name,
                               category: product.category,
                               price: '₵${currentPrice.toStringAsFixed(2)}/${product.unit}',
-                              originalPrice: hasPromo ? '₵${(isWholesale ? product.wholesalePrice : product.retailPrice).toStringAsFixed(2)}' : null,
+                              originalPrice: hasPromo ? '₵${product.retailPrice.toStringAsFixed(2)}' : null,
                               stockQuantity: product.stockQuantity,
                               isUnlimited: product.isUnlimited,
                               unit: product.unit,
                               promoLabel: hasPromo ? '${product.discountPercentage.toInt()}% OFF' : null,
                               imageUrl: product.imageUrl,
                               isService: product.isService,
-                              onTap: () => _addToCart(product, isWholesale),
+                              onTap: () => _addToCart(product, false),
                             );
                           },
                         ),
@@ -689,31 +750,7 @@ class _BarberPosState extends ConsumerState<BarberPos> {
     );
   }
 
-  Widget _modeButton(String label, bool isSelected) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: () {
-        final newMode = label == 'Wholesale';
-        ref.read(isWholesaleProvider.notifier).state = newMode;
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? theme.colorScheme.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(AppRadius.m - 4),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : theme.colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.bold,
-            fontSize: 12,
-          ),
-        ),
-      ),
-    );
-  }
+
 
   Widget _tipChip(String label, double amount) {
     return ActionChip(
@@ -949,11 +986,12 @@ class _BarberPosState extends ConsumerState<BarberPos> {
                 ),
               ),
               const SizedBox(width: 4),
-              IconButton(
-                icon: const Icon(Icons.person_add_alt_1, color: Color(0xFF1565C0)),
-                tooltip: 'Add New Barber',
-                onPressed: _showAddNewBarberDialog,
-              ),
+              if (ref.read(currentUserProvider)?.role == UserRole.admin || ref.read(currentUserProvider)?.role == UserRole.superAdmin)
+                IconButton(
+                  icon: const Icon(Icons.person_add_alt_1, color: Color(0xFF1565C0)),
+                  tooltip: 'Add New Barber',
+                  onPressed: _showAddNewBarberDialog,
+                ),
             ],
           ),
         ),
@@ -1042,6 +1080,67 @@ class _BarberPosState extends ConsumerState<BarberPos> {
                   ),
                 ],
               ),
+              // Kid-specific fields: Child's Name & Parent's Phone
+              if (_clientAgeCategory == 'Kid') ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.shade300),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.child_care, size: 14, color: Colors.orange.shade800),
+                          const SizedBox(width: 4),
+                          Text('Kid Details', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.orange.shade800)),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _childNameController,
+                              decoration: InputDecoration(
+                                labelText: 'Child\'s Name',
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                prefixIcon: const Icon(Icons.face, size: 16),
+                                fillColor: Colors.white,
+                                filled: true,
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+                              ),
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: TextField(
+                              controller: _parentPhoneController,
+                              keyboardType: TextInputType.phone,
+                              decoration: InputDecoration(
+                                labelText: 'Parent\'s Phone',
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                prefixIcon: const Icon(Icons.phone, size: 16),
+                                fillColor: Colors.white,
+                                filled: true,
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+                              ),
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1203,34 +1302,558 @@ class _BarberPosState extends ConsumerState<BarberPos> {
   }
 
   Widget _buildHistoryLayout() {
+    final allRecords = ref.watch(barberRecordsProvider);
     final salesHistory = ref.watch(saleHistoryProvider);
+    final theme = Theme.of(context);
+
+    // Dynamic multi-criteria filter supporting Barber, Haircut, and Customer Name
+    final filtered = ref.watch(barberRecordsProvider.notifier).filter(
+      searchQuery: _historySearchController.text,
+      barber: _historyBarberFilter,
+      service: _historyServiceFilter,
+      dateFilter: _historyDateFilter,
+      customRange: _historyCustomRange,
+    );
+
+    // Unique Barber list for dropdown
+    final allBarbers = <String>{'All', ..._barbers, ...allRecords.map((r) => r.barber)}
+        .where((b) => b.trim().isNotEmpty)
+        .toList()
+      ..sort((a, b) {
+        if (a == 'All') return -1;
+        if (b == 'All') return 1;
+        return a.compareTo(b);
+      });
+
+    // Unique Haircut/Service list for dropdown
+    final allServices = <String>{'All', ...allRecords.map((r) => r.service)}
+        .where((s) => s.trim().isNotEmpty)
+        .toList()
+      ..sort((a, b) {
+        if (a == 'All') return -1;
+        if (b == 'All') return 1;
+        return a.compareTo(b);
+      });
+
+    // KPIs for current filtered view
+    final double totalRevenue = filtered.fold(0.0, (sum, r) => sum + r.totalPaid);
+    final double totalCommission = filtered.fold(0.0, (sum, r) => sum + r.effectiveCommission);
+    final double avgTicket = filtered.isNotEmpty ? (totalRevenue / filtered.length) : 0.0;
 
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.m),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Barbershop Service History', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          // Header Row with Title & Quick KPI chips
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Shaving & Haircut Records', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                  Text('Filter by barber, haircut style, or search client name', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                ],
+              ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  Chip(
+                    avatar: const Icon(Icons.cut, size: 14, color: Color(0xFF1565C0)),
+                    label: Text('${filtered.length} Cuts / Shaves', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                  ),
+                  Chip(
+                    avatar: const Icon(Icons.monetization_on, size: 14, color: Colors.green),
+                    label: Text(currencyFormat.format(totalRevenue), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                  ),
+                  Chip(
+                    avatar: const Icon(Icons.account_balance_wallet, size: 14, color: Color(0xFF2E7D32)),
+                    label: Text('Comm: ${currencyFormat.format(totalCommission)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF2E7D32))),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                  ),
+                  Chip(
+                    avatar: const Icon(Icons.analytics_outlined, size: 14, color: Colors.orange),
+                    label: Text('Avg: ${currencyFormat.format(avgTicket)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                  ),
+                ],
+              ),
+            ],
+          ),
           const SizedBox(height: AppSpacing.m),
+
+          // Search Bar (Customer Name / Phone / Service)
+          SizedBox(
+            height: 42,
+            child: TextField(
+              controller: _historySearchController,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: 'Search by client name, phone number, or haircut style...',
+                prefixIcon: const Icon(Icons.search, size: 18),
+                suffixIcon: _historySearchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 16),
+                        onPressed: () {
+                          _historySearchController.clear();
+                          setState(() {});
+                        },
+                      )
+                    : null,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.m)),
+                filled: true,
+                fillColor: theme.colorScheme.surface,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s),
+
+          // Filter Dropdowns Row: Barber & Haircut
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              // Barber Filter Dropdown
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                decoration: BoxDecoration(
+                  border: Border.all(color: theme.dividerColor),
+                  borderRadius: BorderRadius.circular(AppRadius.s),
+                  color: theme.colorScheme.surface,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.person, size: 15, color: Color(0xFF1565C0)),
+                    const SizedBox(width: 6),
+                    DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: allBarbers.contains(_historyBarberFilter) ? _historyBarberFilter : 'All',
+                        isDense: true,
+                        style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface),
+                        items: allBarbers.map((barber) {
+                          return DropdownMenuItem(
+                            value: barber,
+                            child: Text(barber == 'All' ? 'All Barbers' : 'Barber: $barber'),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) setState(() => _historyBarberFilter = val);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Haircut / Service Filter Dropdown
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                decoration: BoxDecoration(
+                  border: Border.all(color: theme.dividerColor),
+                  borderRadius: BorderRadius.circular(AppRadius.s),
+                  color: theme.colorScheme.surface,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.content_cut, size: 15, color: Color(0xFF1565C0)),
+                    const SizedBox(width: 6),
+                    DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: allServices.contains(_historyServiceFilter) ? _historyServiceFilter : 'All',
+                        isDense: true,
+                        style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface),
+                        items: allServices.map((service) {
+                          return DropdownMenuItem(
+                            value: service,
+                            child: Text(
+                              service == 'All'
+                                  ? 'All Haircuts & Services'
+                                  : (service.length > 28 ? '${service.substring(0, 26)}...' : service),
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) setState(() => _historyServiceFilter = val);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Clear all filters button if any filter is active
+              if (_historyBarberFilter != 'All' ||
+                  _historyServiceFilter != 'All' ||
+                  _historyDateFilter != 'All Time' ||
+                  _historySearchController.text.isNotEmpty)
+                TextButton.icon(
+                  icon: const Icon(Icons.filter_alt_off, size: 14),
+                  label: const Text('Clear Filters', style: TextStyle(fontSize: 11)),
+                  onPressed: () {
+                    setState(() {
+                      _historySearchController.clear();
+                      _historyBarberFilter = 'All';
+                      _historyServiceFilter = 'All';
+                      _historyDateFilter = 'All Time';
+                      _historyCustomRange = null;
+                    });
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.s),
+
+          // Date Range Chips Row
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildPosDateChip('All Time', theme),
+                const SizedBox(width: 6),
+                _buildPosDateChip('Today', theme),
+                const SizedBox(width: 6),
+                _buildPosDateChip('Yesterday', theme),
+                const SizedBox(width: 6),
+                _buildPosDateChip('This Week', theme),
+                const SizedBox(width: 6),
+                _buildPosDateChip('This Month', theme),
+                const SizedBox(width: 6),
+                ActionChip(
+                  avatar: const Icon(Icons.date_range, size: 13),
+                  label: Text(
+                    _historyCustomRange != null
+                        ? '${DateFormat('d MMM').format(_historyCustomRange!.start)} - ${DateFormat('d MMM').format(_historyCustomRange!.end)}'
+                        : 'Custom Range',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: _historyDateFilter == 'Custom Range' ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  backgroundColor: _historyDateFilter == 'Custom Range'
+                      ? const Color(0xFF1565C0).withValues(alpha: 0.15)
+                      : null,
+                  onPressed: () async {
+                    final picked = await showDateRangePicker(
+                      context: context,
+                      firstDate: DateTime(2023),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                      initialDateRange: _historyCustomRange ??
+                          DateTimeRange(
+                            start: DateTime.now().subtract(const Duration(days: 7)),
+                            end: DateTime.now(),
+                          ),
+                    );
+                    if (picked != null) {
+                      setState(() {
+                        _historyDateFilter = 'Custom Range';
+                        _historyCustomRange = picked;
+                      });
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.m),
+
+          // Records List or Empty State
           Expanded(
-            child: salesHistory.isEmpty
-                ? const Center(child: Text('No barbershop sales records found.'))
+            child: filtered.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.search_off, size: 48, color: Colors.grey),
+                        const SizedBox(height: 12),
+                        const Text('No shaving or haircut records found.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        const SizedBox(height: 6),
+                        const Text('Try adjusting your search query, barber filter, or date range.', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        const SizedBox(height: 12),
+                        ElevatedButton.icon(
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Reset All Filters'),
+                          onPressed: () {
+                            setState(() {
+                              _historySearchController.clear();
+                              _historyBarberFilter = 'All';
+                              _historyServiceFilter = 'All';
+                              _historyDateFilter = 'All Time';
+                              _historyCustomRange = null;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  )
                 : ListView.separated(
-                    itemCount: salesHistory.length,
-                    separatorBuilder: (context, sepIndex) => Divider(key: ValueKey('div_$sepIndex')),
+                    itemCount: filtered.length,
+                    separatorBuilder: (context, sepIndex) => const SizedBox(height: 8),
                     itemBuilder: (context, index) {
-                      final sale = salesHistory[index];
-                      return ListTile(
-                        leading: const CircleAvatar(backgroundColor: Color(0xFF1565C0), child: Icon(Icons.cut, color: Colors.white)),
-                        title: Text('Invoice ${sale.id}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('${DateFormat('MMM dd, yyyy HH:mm').format(sale.timestamp)} • Client: ${sale.customerName ?? "Walk-In"}'),
-                        trailing: Text('GHS ${sale.totalAmount.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1565C0))),
-                        onTap: () => ReceiptService.printReceipt(sale, context: context),
-                      );
+                      final record = filtered[index];
+                      return _buildPosRecordCard(record, salesHistory, theme);
                     },
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPosDateChip(String label, ThemeData theme) {
+    final isSelected = _historyDateFilter == label;
+    return ChoiceChip(
+      label: Text(label),
+      labelStyle: TextStyle(
+        fontSize: 11,
+        color: isSelected ? Colors.white : theme.colorScheme.onSurface,
+        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+      ),
+      selected: isSelected,
+      selectedColor: const Color(0xFF1565C0),
+      backgroundColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: isSelected ? const Color(0xFF1565C0) : Colors.grey.shade400,
+        ),
+      ),
+      onSelected: (selected) {
+        if (selected) {
+          setState(() {
+            _historyDateFilter = label;
+            _historyCustomRange = null;
+          });
+        }
+      },
+    );
+  }
+
+  Widget _buildPosRecordCard(BarberRecord record, List<SaleRecord> sales, ThemeData theme) {
+    final isShave = record.serviceCategory == 'Shaves & Beard';
+    final isDye = record.serviceCategory == 'Dye & Color';
+    final isFacial = record.serviceCategory == 'Facials & Wash';
+    final isKid = record.serviceCategory == 'Kids Haircut';
+
+    Color categoryColor = const Color(0xFF1565C0);
+    IconData categoryIcon = Icons.cut;
+    if (isShave) {
+      categoryColor = const Color(0xFFD32F2F);
+      categoryIcon = Icons.face_retouching_natural;
+    } else if (isDye) {
+      categoryColor = const Color(0xFF6A1B9A);
+      categoryIcon = Icons.palette;
+    } else if (isFacial) {
+      categoryColor = Colors.teal;
+      categoryIcon = Icons.clean_hands;
+    } else if (isKid) {
+      categoryColor = Colors.orange.shade800;
+      categoryIcon = Icons.child_care;
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(AppRadius.m),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.6)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.m),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  backgroundColor: categoryColor.withValues(alpha: 0.12),
+                  child: Icon(categoryIcon, color: categoryColor, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              record.customerName,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: categoryColor.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              record.serviceCategory,
+                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: categoryColor),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Haircut / Service: ${record.service}',
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          const Icon(Icons.person_pin, size: 14, color: Colors.grey),
+                          const SizedBox(width: 4),
+                          Text('Barber: ${record.barber}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                          const SizedBox(width: 10),
+                          if (record.customerPhone.isNotEmpty) ...[
+                            const Icon(Icons.phone, size: 12, color: Colors.grey),
+                            const SizedBox(width: 4),
+                            Text(record.customerPhone, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      currencyFormat.format(record.totalPaid),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.green),
+                    ),
+                    const SizedBox(height: 2),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        record.paymentMethod.toUpperCase(),
+                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Divider(height: 1),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.access_time, size: 13, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      DateFormat('EEE, d MMM yyyy @ h:mm a').format(record.timestamp),
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Text(
+                        'Via ${record.source}',
+                        style: const TextStyle(fontSize: 9, color: Color(0xFF1565C0), fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Text(
+                        'Fixed Comm: ₵${record.effectiveCommission.toStringAsFixed(2)}',
+                        style: const TextStyle(fontSize: 9, color: Colors.green, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    if (record.tip > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                        child: Text(
+                          'Tip: ₵${record.tip.toStringAsFixed(1)}',
+                          style: TextStyle(fontSize: 9, color: Colors.amber.shade900, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                Wrap(
+                  spacing: 6,
+                  children: [
+                    if (record.saleId != null)
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          textStyle: const TextStyle(fontSize: 10),
+                          minimumSize: Size.zero,
+                        ),
+                        icon: const Icon(Icons.receipt_long, size: 12),
+                        label: const Text('Receipt'),
+                        onPressed: () {
+                          final matched = sales.where((s) => s.id == record.saleId).firstOrNull;
+                          if (matched != null) {
+                            ReceiptService.printReceipt(matched, context: context);
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Invoice #${record.saleId} recorded.')),
+                            );
+                          }
+                        },
+                      ),
+                    if (record.customerPhone.isNotEmpty)
+                      IconButton(
+                        constraints: const BoxConstraints(),
+                        padding: const EdgeInsets.all(4),
+                        icon: const Icon(Icons.sms_outlined, size: 16, color: Color(0xFF1565C0)),
+                        tooltip: 'Send Follow-up SMS',
+                        onPressed: () async {
+                          await SmsService.sendPostHaircutSms(
+                            name: record.customerName,
+                            phone: record.customerPhone,
+                            serviceName: record.service,
+                            barberName: record.barber,
+                          );
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Follow-up SMS sent to ${record.customerPhone}.')),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

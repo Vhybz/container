@@ -6,8 +6,8 @@ import 'push_notification_service.dart';
 import 'sms_service.dart';
 import 'offline_sync_service.dart';
 import 'supabase_notification_service.dart';
-import 'transfer_provider.dart';
 import 'product_service.dart';
+import '../models/product.dart';
 import '../models/system_models.dart';
 import '../models/user_model.dart';
 import 'user_provider.dart';
@@ -27,7 +27,90 @@ class NotificationNotifier extends StateNotifier<List<SystemNotification>> {
         _startSubscription();
       }
     });
+
+    // Watch for low stock alerts to break circular dependency with ProductNotifier
+    ref.listen(productsFutureProvider, (previous, next) {
+      next.whenData((products) {
+        _checkStockAlerts(products);
+      });
+    });
+
     _startSubscription();
+  }
+
+  void _checkStockAlerts(List<Product> products) {
+    for (final product in products) {
+      if (!product.isDeleted && 
+          product.lastStockUpdate != null && 
+          product.stockQuantity <= product.lowStockThreshold) {
+        
+        final title = 'INVENTORY NOTICE: ${product.name}';
+        final message = '${product.name} is below safety threshold (${product.stockQuantity}${product.unit} remaining).';
+        
+        // Avoid duplicate notifications in current state
+        final existing = state.any((n) => n.title == title && !n.isRead);
+        if (!existing) {
+          addNotification(title, message, type: 'warning');
+        }
+      }
+    }
+    _checkExpiryAlerts(products);
+  }
+
+  void _checkExpiryAlerts(List<Product> products) {
+    final now = DateTime.now();
+    final sixMonthsFromNow = now.add(const Duration(days: 180));
+
+    for (final product in products) {
+      if (product.isDeleted || product.batchExpiryDate == null) continue;
+
+      final expiry = product.batchExpiryDate!;
+      if (expiry.isAfter(sixMonthsFromNow)) continue;
+
+      final daysUntilExpiry = expiry.difference(now).inDays;
+
+      String title;
+      String message;
+      String type;
+
+      if (daysUntilExpiry < 0) {
+        // Already expired
+        title = 'EXPIRED DRUG: ${product.name}';
+        message = '${product.name} expired ${(-daysUntilExpiry)} days ago. Please remove from shelves immediately. Stock remaining: ${product.stockQuantity}${product.unit}.';
+        type = 'critical';
+      } else if (daysUntilExpiry <= 30) {
+        // Expiring within 30 days — urgent
+        title = 'URGENT EXPIRY: ${product.name}';
+        message = '${product.name} expires in $daysUntilExpiry days (${_formatDate(expiry)}). Stock remaining: ${product.stockQuantity}${product.unit}. Consider clearing stock.';
+        type = 'critical';
+      } else if (daysUntilExpiry <= 90) {
+        // Expiring within 3 months
+        title = 'EXPIRY WARNING: ${product.name}';
+        message = '${product.name} expires in $daysUntilExpiry days (${_formatDate(expiry)}). Stock remaining: ${product.stockQuantity}${product.unit}.';
+        type = 'warning';
+      } else {
+        // Expiring within 6 months
+        title = 'EXPIRY NOTICE: ${product.name}';
+        message = '${product.name} expires in $daysUntilExpiry days (${_formatDate(expiry)}). Stock remaining: ${product.stockQuantity}${product.unit}. Plan to sell or return.';
+        type = 'warning';
+      }
+
+      // Avoid duplicate unread notifications with the same title
+      final existing = state.any((n) => n.title == title && !n.isRead);
+      if (!existing) {
+        addNotification(title, message, type: type);
+
+        // SMS admin for urgent cases (expired or expiring within 30 days)
+        if (daysUntilExpiry <= 30) {
+          SmsService.notifyAdmin(title: title, message: message);
+        }
+      }
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    final months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
 
   void _startSubscription() {
@@ -61,15 +144,7 @@ class NotificationNotifier extends StateNotifier<List<SystemNotification>> {
                                       msg.contains('TRANSFER');
 
             if (isStockAlert) {
-              debugPrint('Notification Engine: Stock event detected. Refreshing...');
-              Future.delayed(const Duration(milliseconds: 500), () {
-                try {
-                  ref.read(transferProvider.notifier).loadTransfers();
-                  ref.read(productsFutureProvider.notifier).loadProducts();
-                } catch (e) {
-                  debugPrint('Notification Sync Error: $e');
-                }
-              });
+              debugPrint('Notification Engine: Stock event detected. Refreshing is handled by SyncMonitor or external listener.');
             }
             
             // Show push notification popup if recent AND unread
@@ -113,10 +188,14 @@ class NotificationNotifier extends StateNotifier<List<SystemNotification>> {
     state = [notification, ...state];
 
     // 1. Persist to Offline Queue
-    await OfflineSyncService.addToQueue(
-      actionType: 'NOTIFICATION', 
-      data: notification.toJson(),
-    );
+    if (kIsWeb) {
+      await SupabaseNotificationService().addNotification(notification);
+    } else {
+      await OfflineSyncService.addToQueue(
+        actionType: 'NOTIFICATION', 
+        data: notification.toJson(),
+      );
+    }
 
     // 2. Show System Tray "Popup" Notification
     PushNotificationService.showNotification(

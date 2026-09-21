@@ -18,6 +18,8 @@ import 'screens/admin/expense_management_screen.dart';
 import 'screens/admin/customer_management_screen.dart';
 import 'screens/admin/staff_management_screen.dart';
 import 'screens/admin/system_settings_screen.dart';
+import 'services/notification_observer.dart';
+import 'services/pos_navigator_observer.dart';
 import 'screens/admin/recents_screen.dart';
 import 'screens/admin/system_maintenance_screen.dart';
 import 'screens/admin/tax_compliance_screen.dart';
@@ -25,7 +27,6 @@ import 'screens/admin/salary_management_screen.dart';
 import 'screens/admin/audit_trail_screen.dart';
 import 'screens/admin/product_activity_report_screen.dart';
 import 'screens/cashier/cashier_pos.dart';
-import 'screens/cashier/stock_verification_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/about_screen.dart';
@@ -41,6 +42,8 @@ import 'core/supabase_config.dart';
 import 'services/push_notification_service.dart';
 import 'services/offline_sync_service.dart';
 import 'screens/admin/super_admin_screen.dart';
+import 'screens/tracking/live_tracking_screen.dart';
+import 'screens/pharmacy/prescription_refill_manager.dart';
 
 void main() async {
   try {
@@ -308,12 +311,15 @@ class MultiBusinessApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeState = ref.watch(themeProvider);
-    // Initialize background sync
+    // Initialize background services
     ref.watch(syncProvider);
+    ref.watch(notificationObserverProvider);
+    final posObserver = ref.watch(posNavigatorObserverProvider);
 
     return MaterialApp(
       title: 'Multi-Business Manager',
       debugShowCheckedModeBanner: false,
+      navigatorObservers: [posObserver],
       theme: AppTheme.getLightTheme(themeState.primaryColor),
       darkTheme: AppTheme.getDarkTheme(themeState.primaryColor),
       themeMode: themeState.mode,
@@ -342,13 +348,28 @@ class MultiBusinessApp extends ConsumerWidget {
         '/profile': (context) => const ProfileScreen(),
         '/about': (context) => const AboutScreen(),
         '/cashier': (context) => const CashierPOS(),
-        '/cashier/verify-stock': (context) => const StockVerificationScreen(),
         '/pharmacy': (context) => const PharmacyDashboard(),
         '/pharmacy/pos': (context) => const PharmacistPos(),
+        '/pharmacy/refills': (context) => const PrescriptionRefillManagerScreen(),
         '/barbershop': (context) => const BarbershopDashboard(),
         '/barbershop/pos': (context) => const BarberPos(),
         '/tech': (context) => const TechShopDashboard(),
         '/tech/pos': (context) => const TechPos(),
+        '/track': (context) {
+          final uri = Uri.base;
+          final ticketId = uri.queryParameters['id'];
+          return LiveTrackingScreen(initialTicketId: ticketId);
+        },
+      },
+      onGenerateRoute: (settings) {
+        if (settings.name != null && settings.name!.startsWith('/track')) {
+          final uri = Uri.parse(settings.name!);
+          final ticketId = uri.queryParameters['id'] ?? (settings.arguments is String ? settings.arguments as String : null);
+          return MaterialPageRoute(
+            builder: (context) => LiveTrackingScreen(initialTicketId: ticketId),
+          );
+        }
+        return null;
       },
     );
   }

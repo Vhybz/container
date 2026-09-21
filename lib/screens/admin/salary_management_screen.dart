@@ -18,6 +18,8 @@ import '../../models/salary_model.dart';
 import '../../core/uuid_utils.dart';
 import '../../widgets/role_pop_scope.dart';
 import '../../widgets/passcode_guard.dart';
+import '../../services/barber_records_provider.dart';
+import '../../models/barbershop_models.dart';
 
 class SalaryManagementScreen extends ConsumerWidget {
   const SalaryManagementScreen({super.key});
@@ -142,6 +144,15 @@ class SalaryManagementScreen extends ConsumerWidget {
                             ),
                           ),
                           OutlinedButton.icon(
+                            onPressed: () => _showBarberCommissionLedgerDialog(context, ref),
+                            icon: const Icon(Icons.content_cut_rounded, size: 18, color: Color(0xFF1565C0)),
+                            label: const Text('Barber Commissions'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF1565C0),
+                              side: const BorderSide(color: Color(0xFF1565C0)),
+                            ),
+                          ),
+                          OutlinedButton.icon(
                             onPressed: () => _showGlobalHistoryDetails(context, ref),
                             icon: const Icon(Icons.account_balance_rounded, size: 18),
                             label: const Text('Global Ledger'),
@@ -160,7 +171,9 @@ class SalaryManagementScreen extends ConsumerWidget {
                           ),
                         ],
                       ),
-                      const SizedBox(height: AppSpacing.xl),
+                      const SizedBox(height: AppSpacing.l),
+                      _buildBarberCommissionOverviewBanner(context, ref, theme),
+                      const SizedBox(height: AppSpacing.m),
                       if (users.isEmpty)
                         _buildEmptyState(theme)
                       else
@@ -253,12 +266,12 @@ class SalaryManagementScreen extends ConsumerWidget {
         final crossAxisCount = constraints.maxWidth > 1200 ? 3 : (constraints.maxWidth > 800 ? 2 : 1);
         
         // Dynamic aspect ratio calculation to prevent overflow
-        // Desktop cards need more vertical room for all the buttons and stats
-        double aspectRatio = 1.1; 
+        // Desktop cards need room for all buttons, financial stats, and barber commissions
+        double aspectRatio = 0.85; 
         if (constraints.maxWidth < 600) {
-          aspectRatio = 0.85; // Taller on mobile
+          aspectRatio = 0.68; // Taller on mobile
         } else if (constraints.maxWidth < 900) {
-          aspectRatio = 1.0;
+          aspectRatio = 0.78;
         }
 
         return GridView.builder(
@@ -295,6 +308,24 @@ class SalaryManagementScreen extends ConsumerWidget {
     if (staff.lastSalaryDate != null) {
       isPaidThisMonth = staff.lastSalaryDate!.month == now.month && staff.lastSalaryDate!.year == now.year;
     }
+
+    // Barber commission calculations for this staff member
+    final allBarberRecords = ref.watch(barberRecordsProvider);
+    final barberCuts = allBarberRecords.where((r) {
+      final rName = r.barber.trim().toLowerCase();
+      final sName = staff.name.trim().toLowerCase();
+      final fName = staff.firstName.trim().toLowerCase();
+      return rName == sName || (fName.length > 2 && rName.contains(fName)) || (rName.length > 2 && sName.contains(rName));
+    }).toList();
+
+    final bool isBarber = staff.role == UserRole.barber || 
+        staff.secondaryRoles.contains(UserRole.barber) || 
+        barberCuts.isNotEmpty;
+
+    final thisMonthCuts = barberCuts.where((r) => r.timestamp.year == now.year && r.timestamp.month == now.month).toList();
+    final double thisMonthComm = thisMonthCuts.fold(0.0, (sum, r) => sum + r.effectiveCommission);
+    final double thisMonthTips = thisMonthCuts.fold(0.0, (sum, r) => sum + r.tip);
+    final double lifetimeComm = barberCuts.fold(0.0, (sum, r) => sum + r.effectiveCommission);
 
     return Card(
       elevation: isDueSoon && !isPaidThisMonth ? 8 : 2,
@@ -386,6 +417,86 @@ class SalaryManagementScreen extends ConsumerWidget {
                 ],
               ),
             ),
+
+            // Stylist Commissions Section (for Barbers)
+            if (isBarber) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blue.withValues(alpha: 0.2)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.content_cut_rounded, size: 13, color: Color(0xFF1565C0)),
+                            const SizedBox(width: 4),
+                            const Text('BARBER COMMISSIONS', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFF1565C0), letterSpacing: 0.5)),
+                          ],
+                        ),
+                        InkWell(
+                          onTap: () => _showStaffCommissionDetailsDialog(context, staff.name, barberCuts),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1565C0),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text('VIEW CUTS', style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.white)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('THIS MONTH', style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.grey)),
+                              Text('₵${thisMonthComm.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green)),
+                              Text('${thisMonthCuts.length} cuts / shaves', style: const TextStyle(fontSize: 9, color: Colors.grey)),
+                            ],
+                          ),
+                        ),
+                        Container(width: 1, height: 24, color: theme.dividerColor),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('TIPS (MONTH)', style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.grey)),
+                              Text('₵${thisMonthTips.toStringAsFixed(0)}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.amber.shade900)),
+                              const Text('retained', style: TextStyle(fontSize: 9, color: Colors.grey)),
+                            ],
+                          ),
+                        ),
+                        Container(width: 1, height: 24, color: theme.dividerColor),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('LIFETIME COMM.', style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.grey)),
+                              Text('₵${lifetimeComm.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1565C0))),
+                              Text('${barberCuts.length} total cuts', style: const TextStyle(fontSize: 9, color: Colors.grey)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
             
             const SizedBox(height: 16),
             Row(
@@ -1553,6 +1664,7 @@ class SalaryManagementScreen extends ConsumerWidget {
 
   void _handlePayment(BuildContext context, WidgetRef ref, UserAccount staff, {required bool isAdvance}) {
     final allPayments = ref.read(salaryHistoryProvider);
+    final now = DateTime.now();
     final lastFullSalaryDate = staff.lastSalaryDate ?? DateTime(2000);
     
     // 1. Calculations
@@ -1569,18 +1681,56 @@ class SalaryManagementScreen extends ConsumerWidget {
         .fold(0.0, (sum, p) => sum + p.amount);
 
     final double baseSalary = staff.salaryAmount ?? 0.0;
+
+    // Barber commission calculations for current payment period
+    final allBarberRecords = ref.read(barberRecordsProvider);
+    final barberCuts = allBarberRecords.where((r) {
+      final rName = r.barber.trim().toLowerCase();
+      final sName = staff.name.trim().toLowerCase();
+      final fName = staff.firstName.trim().toLowerCase();
+      return rName == sName || (fName.length > 2 && rName.contains(fName)) || (rName.length > 2 && sName.contains(rName));
+    }).toList();
+
+    final bool isBarber = staff.role == UserRole.barber || 
+        staff.secondaryRoles.contains(UserRole.barber) || 
+        barberCuts.isNotEmpty;
+
+    // Period commissions: services completed since last full salary date
+    final periodCuts = barberCuts.where((r) {
+      if (staff.lastSalaryDate != null) {
+        return r.timestamp.isAfter(staff.lastSalaryDate!);
+      }
+      return r.timestamp.year == now.year && r.timestamp.month == now.month;
+    }).toList();
+
+    final double earnedCommission = periodCuts.fold(0.0, (sum, r) => sum + r.effectiveCommission);
+    final double earnedTips = periodCuts.fold(0.0, (sum, r) => sum + r.tip);
+    bool includeCommission = !isAdvance && isBarber && earnedCommission > 0;
     
     final amountController = TextEditingController(text: isAdvance ? '' : baseSalary.toStringAsFixed(2));
     final noteController = TextEditingController();
     
     bool isProcessing = false;
     bool deductAdvances = !isAdvance && pendingAdvances > 0; 
-    final now = DateTime.now();
     DateTime selectedTargetMonth = DateTime(now.year, now.month, 1);
 
-    // Initial amount update if deducting
-    if (deductAdvances) {
-      amountController.text = (baseSalary - pendingAdvances).clamp(0.0, double.infinity).toStringAsFixed(2);
+    void recalculateTotal() {
+      double total = baseSalary;
+      if (includeCommission) {
+        total += earnedCommission;
+      }
+      if (deductAdvances) {
+        total -= pendingAdvances;
+      }
+      amountController.text = total.clamp(0.0, double.infinity).toStringAsFixed(2);
+      if (!isAdvance && isBarber && includeCommission) {
+        noteController.text = 'Base Salary ₵${baseSalary.toStringAsFixed(0)} + Commission ₵${earnedCommission.toStringAsFixed(0)} (${periodCuts.length} cuts)';
+      }
+    }
+
+    // Initial amount update if deducting or including commission
+    if (!isAdvance) {
+      recalculateTotal();
     }
     
     showDialog(
@@ -1710,11 +1860,7 @@ class SalaryManagementScreen extends ConsumerWidget {
                         onChanged: (v) {
                           setDialogState(() {
                             deductAdvances = v ?? false;
-                            if (deductAdvances) {
-                              amountController.text = (baseSalary - pendingAdvances).clamp(0.0, double.infinity).toStringAsFixed(2);
-                            } else {
-                              amountController.text = baseSalary.toStringAsFixed(2);
-                            }
+                            recalculateTotal();
                           });
                         }
                       ),
@@ -1723,6 +1869,63 @@ class SalaryManagementScreen extends ConsumerWidget {
                       ),
                       Text('₵${pendingAdvances.toStringAsFixed(0)}', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
                     ],
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
+                if (!isAdvance && isBarber && periodCuts.isNotEmpty) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(AppRadius.s),
+                      border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.content_cut_rounded, size: 15, color: Color(0xFF1565C0)),
+                                SizedBox(width: 6),
+                                Text('BARBER COMMISSIONS FOR PERIOD', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF1565C0))),
+                              ],
+                            ),
+                            Text('${periodCuts.length} cuts / services', style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Commission Earned: ₵${earnedCommission.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green)),
+                            if (earnedTips > 0)
+                              Text('Tips: ₵${earnedTips.toStringAsFixed(2)}', style: TextStyle(fontSize: 11, color: Colors.amber.shade900, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Checkbox(
+                              value: includeCommission,
+                              onChanged: (v) {
+                                setDialogState(() {
+                                  includeCommission = v ?? false;
+                                  recalculateTotal();
+                                });
+                              },
+                            ),
+                            const Expanded(
+                              child: Text('Include Earned Commission in Payout', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            ),
+                            Text('+₵${earnedCommission.toStringAsFixed(0)}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -2078,4 +2281,246 @@ class SalaryManagementScreen extends ConsumerWidget {
       ),
     );
   }
+
+  Widget _buildBarberCommissionOverviewBanner(BuildContext context, WidgetRef ref, ThemeData theme) {
+    final barberRecords = ref.watch(barberRecordsProvider);
+    final now = DateTime.now();
+    final thisMonthRecords = barberRecords.where((r) => r.timestamp.year == now.year && r.timestamp.month == now.month).toList();
+    final double totalCommThisMonth = thisMonthRecords.fold(0.0, (sum, r) => sum + r.effectiveCommission);
+    final double totalTipsThisMonth = thisMonthRecords.fold(0.0, (sum, r) => sum + r.tip);
+    final double lifetimeComm = barberRecords.fold(0.0, (sum, r) => sum + r.effectiveCommission);
+
+    if (barberRecords.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.m),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1565C0).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppRadius.m),
+        border: Border.all(color: const Color(0xFF1565C0).withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1565C0).withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.content_cut_rounded, color: Color(0xFF1565C0), size: 22),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Barbershop Stylist Commissions Summary',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1565C0)),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'This Month: ₵${totalCommThisMonth.toStringAsFixed(2)} earned (${thisMonthRecords.length} cuts) • Tips: ₵${totalTipsThisMonth.toStringAsFixed(2)} • Lifetime Commissions: ₵${lifetimeComm.toStringAsFixed(2)}',
+                  style: const TextStyle(fontSize: 12, color: Colors.black87),
+                ),
+              ],
+            ),
+          ),
+          OutlinedButton.icon(
+            onPressed: () => _showBarberCommissionLedgerDialog(context, ref),
+            icon: const Icon(Icons.table_chart_rounded, size: 16),
+            label: const Text('Stylist Ledger', style: TextStyle(fontSize: 12)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF1565C0),
+              side: const BorderSide(color: Color(0xFF1565C0)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showBarberCommissionLedgerDialog(BuildContext context, WidgetRef ref) {
+    final summariesMap = ref.read(barberRecordsProvider.notifier).getAllBarbersCommissionSummary(
+      dateFilter: 'This Month',
+    );
+    final summaries = summariesMap.values.toList()
+      ..sort((a, b) => b.totalCommission.compareTo(a.totalCommission));
+
+    final int totalServices = summaries.fold(0, (sum, s) => sum + s.totalServices);
+    final double totalComm = summaries.fold(0.0, (sum, s) => sum + s.totalCommission);
+    final double totalTips = summaries.fold(0.0, (sum, s) => sum + s.totalTips);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.content_cut_rounded, color: Color(0xFF1565C0)),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Barber Commission Ledger (This Month)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  Text('Active stylist performance and commission breakdown', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 700,
+          height: 460,
+          child: Column(
+            children: [
+              // Summary KPI header
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    Column(
+                      children: [
+                        const Text('TOTAL CUTS', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey)),
+                        Text('$totalServices', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1565C0))),
+                      ],
+                    ),
+                    Column(
+                      children: [
+                        const Text('TOTAL COMMISSIONS', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey)),
+                        Text('₵${totalComm.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.green)),
+                      ],
+                    ),
+                    Column(
+                      children: [
+                        const Text('TOTAL TIPS', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey)),
+                        Text('₵${totalTips.toStringAsFixed(2)}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.amber.shade900)),
+                      ],
+                    ),
+                    Column(
+                      children: [
+                        const Text('TOTAL TAKE-HOME', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey)),
+                        Text('₵${(totalComm + totalTips).toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.purple)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: summaries.isEmpty
+                    ? const Center(child: Text('No barber cut records logged this month.'))
+                    : ListView.separated(
+                        itemCount: summaries.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (ctx, i) {
+                          final s = summaries[i];
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: const Color(0xFF1565C0),
+                              child: Text(s.barberName.isNotEmpty ? s.barberName[0].toUpperCase() : 'B', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                            ),
+                            title: Text(s.barberName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            subtitle: Text('${s.totalServices} cuts • Gross: ₵${s.grossSales.toStringAsFixed(0)} • Fixed Comm: ₵${s.totalCommission.toStringAsFixed(2)}'),
+                            trailing: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text('₵${s.totalCommission.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 15)),
+                                if (s.totalTips > 0)
+                                  Text('+₵${s.totalTips.toStringAsFixed(2)} tip', style: TextStyle(fontSize: 10, color: Colors.amber.shade900)),
+                              ],
+                            ),
+                            onTap: () => _showStaffCommissionDetailsDialog(context, s.barberName, s.records),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
+  void _showStaffCommissionDetailsDialog(BuildContext context, String staffName, List<BarberRecord> cuts) {
+    final double totalComm = cuts.fold(0.0, (sum, r) => sum + r.effectiveCommission);
+    final double totalTips = cuts.fold(0.0, (sum, r) => sum + r.tip);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.content_cut_rounded, color: Color(0xFF1565C0)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('$staffName - Commission Log', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  Text('${cuts.length} cuts • Total Comm: ₵${totalComm.toStringAsFixed(2)} • Tips: ₵${totalTips.toStringAsFixed(2)}',
+                      style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 600,
+          height: 400,
+          child: cuts.isEmpty
+              ? const Center(child: Text('No haircut records recorded for this barber.'))
+              : ListView.separated(
+                  itemCount: cuts.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, i) {
+                    final r = cuts[i];
+                    return ListTile(
+                      dense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      title: Row(
+                        children: [
+                          Expanded(
+                            child: Text('${r.service} (${r.customerName})',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          ),
+                          Text(
+                            '+₵${r.effectiveCommission.toStringAsFixed(2)}',
+                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                      subtitle: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '${DateFormat('d MMM yyyy, h:mm a').format(r.timestamp)} • Price: ₵${r.price.toStringAsFixed(0)} • Comm: ₵${r.effectiveCommission.toStringAsFixed(2)}',
+                            style: const TextStyle(fontSize: 11, color: Colors.black54),
+                          ),
+                          if (r.tip > 0)
+                            Text('Tip: +₵${r.tip.toStringAsFixed(1)}',
+                                style: TextStyle(fontSize: 11, color: Colors.amber.shade900, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
 }
+

@@ -3,10 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../widgets/app_sidebar.dart';
 import '../models/user_model.dart';
 import 'user_provider.dart';
-import 'transfer_provider.dart';
 
 class MenuService {
-  static List<SidebarItem> getMenuItemsForUser(UserAccount user, {bool inButcherShell = false, int? pendingTransfersCount}) {
+  static List<SidebarItem> getMenuItemsForUser(UserAccount user, {bool inButcherShell = false}) {
     final List<SidebarItem> items = [];
     final roles = user.activeRoles;
     
@@ -29,7 +28,6 @@ class MenuService {
       SidebarItem(icon: Icons.folder_open_rounded, label: 'Compliance Documents', route: '/admin/documents'),
       SidebarItem(icon: Icons.history_rounded, label: 'Company Recents', route: '/admin/recents'),
       SidebarItem(icon: Icons.security_update_good_rounded, label: 'System Audit Trail', route: '/admin/audit'),
-      SidebarItem(icon: Icons.qr_code_scanner_rounded, label: 'Verify Incoming Stock', route: '/cashier/verify-stock'),
       SidebarItem(icon: Icons.build_circle_rounded, label: 'System Maintenance', route: '/admin/maintenance'),
     ];
 
@@ -43,7 +41,6 @@ class MenuService {
             label: item.label,
             route: item.route,
             isCatchy: user.newlyAddedPermissions.contains(item.route),
-            badgeCount: item.route == '/cashier/verify-stock' ? pendingTransfersCount : null,
           ));
           continue;
         }
@@ -70,7 +67,6 @@ class MenuService {
             label: item.label,
             route: item.route,
             isCatchy: user.newlyAddedPermissions.contains(item.route),
-            badgeCount: item.route == '/cashier/verify-stock' ? pendingTransfersCount : null,
           ));
         }
       }
@@ -84,7 +80,6 @@ class MenuService {
             label: item.label,
             route: item.route,
             isCatchy: user.newlyAddedPermissions.contains(item.route),
-            badgeCount: item.route == '/cashier/verify-stock' ? pendingTransfersCount : null,
           ));
         }
       }
@@ -95,27 +90,19 @@ class MenuService {
                              roles.contains(UserRole.cashier) || 
                              user.enabledPermissions.contains('/cashier');
     
-    if (hasCashierAccess) {
+    if (hasCashierAccess && !roles.contains(UserRole.secretary)) {
       items.add(SidebarItem(
         icon: Icons.point_of_sale_rounded, 
         label: 'Cashier POS', 
         route: '/cashier', 
         isCatchy: user.newlyAddedPermissions.contains('/cashier'),
       ));
-
-      items.add(SidebarItem(
-        icon: Icons.qr_code_scanner_rounded,
-        label: 'Verify Incoming Stock',
-        route: '/cashier/verify-stock',
-        badgeCount: (pendingTransfersCount ?? 0) > 0 ? pendingTransfersCount : null,
-      ));
       
-      // NEW: Cashiers get Daily Sales Report access
       if (roles.contains(UserRole.cashier)) {
         items.add(SidebarItem(
           icon: Icons.bar_chart_rounded,
           label: 'Daily Sales Report',
-          route: '/admin/sales', // Reusing sales report screen
+          route: '/admin/sales',
         ));
       }
     }
@@ -252,14 +239,12 @@ class MenuService {
 final menuItemsProvider = Provider<List<SidebarItem>>((ref) {
   final user = ref.watch(currentUserProvider);
   if (user == null) return [];
-  final pendingCount = ref.watch(pendingIncomingTransfersProvider).length;
-  return MenuService.getMenuItemsForUser(user, pendingTransfersCount: pendingCount);
+  return MenuService.getMenuItemsForUser(user);
 });
 
 /// A reactive provider for butcher unit menu items
 final butcherMenuItemsProvider = Provider<List<SidebarItem>>((ref) {
   final user = ref.watch(currentUserProvider);
   if (user == null) return [];
-  final pendingCount = ref.watch(pendingIncomingTransfersProvider).length;
-  return MenuService.getMenuItemsForUser(user, inButcherShell: true, pendingTransfersCount: pendingCount);
+  return MenuService.getMenuItemsForUser(user, inButcherShell: true);
 });

@@ -77,14 +77,14 @@ class SystemNotification {
 
   factory SystemNotification.fromJson(Map<String, dynamic> json) {
     return SystemNotification(
-      id: json['id'],
-      branchCode: json['branch_code'],
-      userId: json['user_id'],
-      title: json['title'],
-      message: json['message'],
-      type: json['type'] ?? 'info',
+      id: json['id']?.toString() ?? 'unknown',
+      branchCode: json['branch_code']?.toString(),
+      userId: json['user_id']?.toString(),
+      title: json['title']?.toString() ?? 'Notification',
+      message: json['message']?.toString() ?? '',
+      type: json['type']?.toString() ?? 'info',
       isRead: json['is_read'] ?? false,
-      createdAt: DateTime.parse(json['created_at']),
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ?? DateTime.now(),
     );
   }
 

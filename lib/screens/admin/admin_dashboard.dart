@@ -27,6 +27,7 @@ import '../../widgets/multi_business_accordion.dart';
 import '../../core/uuid_utils.dart';
 import '../../models/expense_model.dart';
 import '../../services/daily_reminder_service.dart';
+import '../../services/daily_briefing_service.dart';
 
 class AdminDashboard extends ConsumerStatefulWidget {
   const AdminDashboard({super.key});
@@ -41,8 +42,9 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
   Timer? _timer;
 
   final List<String> _bannerImages = [
-    'assets/images/bgi/img11.png',
-    'assets/images/bgi/img22.png',
+    'assets/images/bgi/meds.jpg',
+    'assets/images/bgi/shave.jpg',
+    'assets/images/bgi/ass.jpg',
     'assets/images/CLI.png',
   ];
 
@@ -668,6 +670,20 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
           ),
         ),
         ElevatedButton.icon(
+          onPressed: () => DailyBriefingService.showBriefingModal(context, ref),
+          icon: const Icon(Icons.chat, size: 18),
+          label: const Text('WhatsApp Daily Close'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF25D366),
+            foregroundColor: Colors.white,
+            elevation: 1,
+            padding: EdgeInsets.symmetric(
+              horizontal: isMobile ? 12 : 20, 
+              vertical: isMobile ? 10 : 15
+            ),
+          ),
+        ),
+        ElevatedButton.icon(
           onPressed: !hasPending ? null : () => _handleCloseDailySales(context, ref, amount: todayPending > 0 ? todayPending : totalPending),
           icon: Icon(hasPending ? (hasPastUnclosed ? Icons.warning_amber_rounded : Icons.lock_clock) : Icons.check_circle_outline, size: 18),
           label: Text(label),
@@ -905,7 +921,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
                                         final products = ref.read(productsFutureProvider).value ?? [];
                                         await ReportService.generateInventoryAudit(products);
                                       } else if (r['title'] == 'Business Expense Ledger') {
-                                        final expenses = ref.read(expenseProvider).records;
+                                        final expenses = ref.read(expenseProvider).records.where((e) => !ExpenseNotifier.nonExpenseCategories.contains(e.category)).toList();
                                         await ReportService.generateExpenseLedger(expenses);
                                       } else if (r['title'] == 'Customer Debt Statement') {
                                         final sales = ref.read(saleHistoryProvider);
@@ -976,13 +992,13 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
     
     final expensesState = ref.watch(expenseProvider);
     final totalExpenses = expensesState.records.where((e) => 
-      e.date.month == now.month && e.date.year == now.year
+      e.date.month == now.month && e.date.year == now.year && 
+      !ExpenseNotifier.nonExpenseCategories.contains(e.category)
     ).fold(0.0, (sum, e) => sum + e.amount);
 
     final netProfit = grossProfit - totalExpenses;
 
     final tillState = ref.watch(tillProvider);
-    final totalPending = tillState.pendingByDay.values.fold(0.0, (sum, val) => sum + val);
 
     final theme = Theme.of(context);
 
@@ -1030,7 +1046,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
             InkWell(
               onTap: () => Navigator.pushNamed(context, '/admin/sales'), // Now points to Sales Analytics where Till Ledger is
               borderRadius: BorderRadius.circular(AppRadius.m),
-              child: _kpiWithTrend(context, 'Cash at Shop', '₵${totalPending.toStringAsFixed(0)}', Icons.account_balance_wallet_rounded, Colors.orange.shade800, 'TILL'),
+              child: _kpiWithTrend(context, 'Cash at Shop', '₵${tillState.currentBalance.abs() < 0.01 ? "0" : tillState.currentBalance.toStringAsFixed(0)}', Icons.account_balance_wallet_rounded, Colors.orange.shade800, 'TILL'),
             ),
             _kpiWithTrend(context, 'Total Debt', '₵${totalDebt.toStringAsFixed(0)}', Icons.money_off, Colors.red, 'TOTAL'),
             _kpiWithTrend(context, 'Promo Impact', '₵${totalDiscounts.toStringAsFixed(0)}', Icons.auto_awesome, Colors.orange, 'SAVED'),
@@ -1038,7 +1054,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
           ],
         ),
         const SizedBox(height: AppSpacing.m),
-        _kpiWithTrend(context, 'Stock Sold', '${totalWeightSold.toStringAsFixed(1)} kg', Icons.scale, theme.colorScheme.primary, 'LIVE'),
+        _kpiWithTrend(context, 'Stock Sold', '${totalWeightSold.toStringAsFixed(1)} units', Icons.inventory_2, theme.colorScheme.primary, 'LIVE'),
       ],
     );
   }
@@ -1378,7 +1394,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
                       ),
                       const SizedBox(height: 6),
                       Tooltip(
-                        message: '${DateFormat('EEE, MMM dd').format(date)}\nTotal: ₵${total.toStringAsFixed(2)}\n🟢 Pharm: ₵${p.toStringAsFixed(0)}\n🟠 Tech: ₵${ph.toStringAsFixed(0)}\n🔵 Barber: ₵${b.toStringAsFixed(0)}',
+                        message: '${DateFormat('EEE, MMM dd').format(date)}\nTotal: ₵${total.toStringAsFixed(2)}\nPharmacy: ₵${p.toStringAsFixed(0)}\nTech: ₵${ph.toStringAsFixed(0)}\nBarber: ₵${b.toStringAsFixed(0)}',
                         child: Container(
                           margin: const EdgeInsets.symmetric(horizontal: 10),
                           width: double.infinity,

@@ -67,6 +67,7 @@ class Product {
   final double? numberOfBoxes;
   final double? packsPerBox;
   final double? boxPrice;
+  final double? commissionAmount;
 
   Product({
     required this.id,
@@ -102,7 +103,15 @@ class Product {
     this.numberOfBoxes,
     this.packsPerBox,
     this.boxPrice,
+    this.commissionAmount,
   });
+
+  /// Straight fixed commission amount defined by admin in Stock Control for this service
+  double get serviceCommission {
+    if (commissionAmount != null && commissionAmount! > 0) return commissionAmount!;
+    if (isService && costPrice > 0) return costPrice;
+    return 0.0;
+  }
 
   double get effectivePiecesPerPack => (piecesPerPack != null && piecesPerPack! > 0) ? piecesPerPack! : 1.0;
   double get effectivePackPrice => (packPrice != null && packPrice! > retailPrice) ? packPrice! : (retailPrice * effectivePiecesPerPack);
@@ -183,6 +192,10 @@ class Product {
     double? numberOfBoxes,
     double? packsPerBox,
     double? boxPrice,
+    DateTime? batchExpiryDate,
+    String? batchNumber,
+    double? commissionAmount,
+    bool? isService,
   }) {
     return Product(
       id: id,
@@ -208,9 +221,9 @@ class Product {
       dailyStockAdded: dailyStockAdded ?? this.dailyStockAdded,
       lastStockUpdate: lastStockUpdate ?? this.lastStockUpdate,
       imeiList: imeiList,
-      batchExpiryDate: batchExpiryDate,
-      batchNumber: batchNumber,
-      isService: isService,
+      batchExpiryDate: batchExpiryDate ?? this.batchExpiryDate,
+      batchNumber: batchNumber ?? this.batchNumber,
+      isService: isService ?? this.isService,
       requiresPrescription: requiresPrescription,
       requiresImei: requiresImei,
       piecesPerPack: piecesPerPack ?? this.piecesPerPack,
@@ -218,18 +231,24 @@ class Product {
       numberOfBoxes: numberOfBoxes ?? this.numberOfBoxes,
       packsPerBox: packsPerBox ?? this.packsPerBox,
       boxPrice: boxPrice ?? this.boxPrice,
+      commissionAmount: commissionAmount ?? this.commissionAmount,
     );
   }
 
   factory Product.fromJson(dynamic json) {
     final map = Map<String, dynamic>.from(json);
+    final isServiceVal = map['is_service'] ?? false;
+    final costVal = (map['cost_price'] as num? ?? 0.0).toDouble();
+    final commAmountVal = (map['commission_amount'] as num?)?.toDouble() ??
+        (isServiceVal && costVal > 0 ? costVal : null);
+
     return Product(
-      id: map['id'] as String,
+      id: map['id']?.toString() ?? 'unknown',
       branchCode: map['branch_code'],
-      name: map['name'] as String,
-      retailPrice: (map['retail_price'] as num).toDouble(),
-      wholesalePrice: (map['wholesale_price'] as num).toDouble(),
-      costPrice: (map['cost_price'] as num? ?? 0).toDouble(),
+      name: map['name']?.toString() ?? 'Unnamed Product',
+      retailPrice: (map['retail_price'] as num? ?? 0.0).toDouble(),
+      wholesalePrice: (map['wholesale_price'] as num? ?? 0.0).toDouble(),
+      costPrice: costVal,
       retailBrackets: (map['retail_brackets'] as List?)
           ?.map((e) => PriceBracket.fromJson(e))
           .toList(),
@@ -237,23 +256,23 @@ class Product {
           ?.map((e) => PriceBracket.fromJson(e))
           .toList(),
       imageUrl: map['image_url'] as String? ?? '',
-      category: map['category'] as String,
-      stockQuantity: (map['stock_quantity'] as num? ?? 0).toDouble(),
+      category: map['category']?.toString() ?? 'General',
+      stockQuantity: (map['stock_quantity'] as num? ?? 0.0).toDouble(),
       unit: map['unit'] as String? ?? 'kg',
       discountPercentage: (map['discount_percentage'] as num? ?? 0.0).toDouble(),
-      promoStartDate: map['promo_start'] != null ? DateTime.parse(map['promo_start']) : null,
-      promoEndDate: map['promo_end'] != null ? DateTime.parse(map['promo_end']) : null,
-      promoTarget: PromoTarget.values.byName(map['promo_target'] ?? 'both'),
-      promoCustomerTarget: PromoCustomerTarget.values.byName(map['promo_customer_target'] ?? 'all'),
+      promoStartDate: map['promo_start'] != null ? DateTime.tryParse(map['promo_start']) : null,
+      promoEndDate: map['promo_end'] != null ? DateTime.tryParse(map['promo_end']) : null,
+      promoTarget: PromoTarget.values.firstWhere((e) => e.name == map['promo_target'], orElse: () => PromoTarget.both),
+      promoCustomerTarget: PromoCustomerTarget.values.firstWhere((e) => e.name == map['promo_customer_target'], orElse: () => PromoCustomerTarget.all),
       isDeleted: map['is_deleted'] ?? false,
       isUnlimited: map['is_unlimited'] ?? false,
       lowStockThreshold: (map['low_stock_threshold'] as num? ?? 5.0).toDouble(),
       dailyStockAdded: (map['daily_stock_added'] as num? ?? 0.0).toDouble(),
-      lastStockUpdate: map['last_stock_update'] != null ? DateTime.parse(map['last_stock_update']) : null,
+      lastStockUpdate: map['last_stock_update'] != null ? DateTime.tryParse(map['last_stock_update']) : null,
       imeiList: map['imei_list'] != null ? List<String>.from(map['imei_list']) : null,
-      batchExpiryDate: map['batch_expiry_date'] != null ? DateTime.parse(map['batch_expiry_date']) : null,
-      batchNumber: map['batch_number'],
-      isService: map['is_service'] ?? false,
+      batchExpiryDate: map['batch_expiry_date'] != null ? DateTime.tryParse(map['batch_expiry_date']) : null,
+      batchNumber: map['batch_number']?.toString(),
+      isService: isServiceVal,
       requiresPrescription: map['requires_prescription'] ?? false,
       requiresImei: map['requires_imei'] ?? false,
       piecesPerPack: (map['pieces_per_pack'] as num?)?.toDouble(),
@@ -261,6 +280,7 @@ class Product {
       numberOfBoxes: (map['number_of_boxes'] as num?)?.toDouble(),
       packsPerBox: (map['packs_per_box'] as num?)?.toDouble(),
       boxPrice: (map['box_price'] as num?)?.toDouble(),
+      commissionAmount: commAmountVal,
     );
   }
 
@@ -298,6 +318,7 @@ class Product {
         'number_of_boxes': numberOfBoxes,
         'packs_per_box': packsPerBox,
         'box_price': boxPrice,
+        'commission_amount': commissionAmount ?? (isService ? costPrice : null),
       };
 }
 

@@ -9,6 +9,7 @@ import '../core/uuid_utils.dart';
 import 'customer_provider.dart';
 import 'supabase_sale_service.dart';
 import 'user_provider.dart';
+import '../models/user_model.dart';
 import 'product_service.dart';
 import 'offline_sync_service.dart';
 import 'audit_service.dart';
@@ -34,11 +35,11 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
     // Watch current user and restart subscription if branch changes
     ref.listen(currentUserProvider, (previous, next) {
       if (next?.branchCode != previous?.branchCode) {
-        _initStream();
+        _startSubscription();
       }
     });
 
-    _initStream();
+    _startSubscription();
   }
 
   void _loadFromCache() {
@@ -58,6 +59,12 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
 
   void _saveToCache(List<SaleRecord> sales) {
     try {
+      if (sales.isEmpty && state.isNotEmpty) {
+        // Safety: Don't overwrite a non-empty cache with an empty list unless we've verified it's intentional.
+        // This prevents data loss during transient network/indexing delays.
+        return;
+      }
+
       final box = Hive.box(OfflineSyncService.salesBoxName);
       box.clear();
       // Keep only last 100 sales offline to save space
@@ -65,22 +72,89 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
       for (var s in toCache) {
         box.put(s.id, s.toJson());
       }
+      debugPrint('Sale Engine: ${toCache.length} records saved to local cache.');
     } catch (e) {
       debugPrint('Sale Engine Save Error: $e');
     }
   }
 
-  void _initStream() {
+  void _startSubscription() {
     final user = ref.read(currentUserProvider);
-    if (user?.branchCode == null) return;
+    final Set<UserRole> roles = user?.activeRoles ?? <UserRole>{};
+    final bool canSeeAll = roles.contains(UserRole.admin) || roles.contains(UserRole.superAdmin);
+
+    if (!canSeeAll && (user?.branchCode == null || user!.branchCode!.isEmpty)) return;
 
     _subscription?.cancel();
-    _subscription = _service.getSalesStream(user!.branchCode!).listen((sales) {
-      state = sales;
+    
+    // 1. Initial Fresh Fetch (Prioritize Network if online)
+    _fetchFreshSales(user?.branchCode, canSeeAll);
+
+    // 2. Start Real-time Stream
+    _subscription = _service.getSalesStream(user?.branchCode, canSeeAll: canSeeAll).listen((sales) {
+      _applyPendingAndSetState(sales);
       _saveToCache(sales);
     }, onError: (e) {
-      debugPrint('Sale Stream Error (Offline?): Using cached data.');
+      if (kIsWeb) {
+        debugPrint('Sale Stream Error: $e');
+      } else {
+        debugPrint('Sale Stream Error (Offline?): Using cached data.');
+      }
     });
+  }
+
+  Future<void> _fetchFreshSales(String? branchCode, bool canSeeAll) async {
+    try {
+      final sales = await _service.getSales(branchCode, canSeeAll: canSeeAll);
+      _applyPendingAndSetState(sales);
+      _saveToCache(sales);
+    } catch (e) {
+      if (kIsWeb) {
+        debugPrint('Sale Fetch Error (Web): $e');
+      } else {
+        debugPrint('Sale Fetch Error (Offline): $e');
+      }
+    }
+  }
+
+  void _applyPendingAndSetState(List<SaleRecord> remoteSales) {
+    final pendingSales = OfflineSyncService.getPendingItems('SALE')
+        .map((json) => SaleRecord.fromJson(json))
+        .toList();
+        
+    final pendingDeletes = OfflineSyncService.getPendingItems('DELETE_SALE')
+        .map((json) => json['id'] as String)
+        .toList();
+
+    // Reconcile and Deduplicate: Local state + Remote + Queue
+    final Map<String, SaleRecord> allSalesMap = {};
+    
+    // 1. Start with current local state (contains items from cache or previous session)
+    for (var s in state) {
+      if (!pendingDeletes.contains(s.id)) {
+        allSalesMap[s.id] = s;
+      }
+    }
+
+    // 2. Add/Overwrite with remote sales (the cloud source of truth)
+    for (var s in remoteSales) {
+      if (!pendingDeletes.contains(s.id)) {
+        allSalesMap[s.id] = s;
+      }
+    }
+    
+    // 3. Add/Overwrite with pending items from Sync Queue (the local optimistic truth)
+    for (var s in pendingSales) {
+      if (!pendingDeletes.contains(s.id)) {
+        allSalesMap[s.id] = s;
+      }
+    }
+    
+    final finalSales = allSalesMap.values.toList();
+    finalSales.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    
+    // Limit local memory/cache to last 200 items for performance
+    state = finalSales.take(200).toList();
   }
 
   @override
@@ -90,19 +164,35 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
   }
 
   Future<void> loadSales() async {
-    _initStream();
+    final user = ref.read(currentUserProvider);
+    final Set<UserRole> roles = user?.activeRoles ?? <UserRole>{};
+    final bool canSeeAll = roles.contains(UserRole.admin) || roles.contains(UserRole.superAdmin);
+    
+    // Heartbeat: Force a fresh fetch rather than just restarting the stream
+    await _fetchFreshSales(user?.branchCode, canSeeAll);
   }
 
   Future<void> addSale(SaleRecord sale) async {
     final user = ref.read(currentUserProvider);
-    final saleWithBranch = sale.copyWith(branchCode: user?.branchCode);
+    final String branchToAssign = (sale.branchCode != null && sale.branchCode!.isNotEmpty)
+        ? sale.branchCode!
+        : (user?.branchCode != null && user!.branchCode!.isNotEmpty ? user.branchCode! : 'MAIN');
 
-    // 1. Optimistic Local Update (Riverpod State & Hive DB Cache)
+    final saleWithBranch = sale.copyWith(branchCode: branchToAssign);
+
+    // 1. PERSISTENCE FIRST: Add to Sync Queue immediately
+    // This ensures that even a crash/restart won't lose the sale data.
+    await OfflineSyncService.addToQueue(
+      actionType: 'SALE', 
+      data: saleWithBranch.toJson(),
+    );
+
+    // 2. OPTIMISTIC UI: Update state and cache
     state = [saleWithBranch, ...state.where((s) => s.id != saleWithBranch.id)];
     _saveToCache(state);
 
     try {
-      // 2. Audit Log (Source of truth tracking)
+      // 3. Audit Log
       await AuditService.log(
         ref: ref,
         action: 'SALE_CREATED',
@@ -111,22 +201,11 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
         newData: saleWithBranch.toJson(),
       );
 
-      // 3. Sync to Supabase Backend
-      final connectivity = await Connectivity().checkConnectivity();
-      if (!connectivity.contains(ConnectivityResult.none)) {
-        await _service.saveSale(saleWithBranch);
-      } else {
-        await OfflineSyncService.addToQueue(
-          actionType: 'SALE', 
-          data: saleWithBranch.toJson(),
-        );
-      }
+      // 4. Background Sync is already triggered by addToQueue
+      // We don't manually call saveSale here anymore to avoid duplicate logic
+      // and ensure the queue handles the success/failure state correctly.
     } catch (e) {
-      debugPrint('Save Sale Error (Queued Offline): $e');
-      await OfflineSyncService.addToQueue(
-        actionType: 'SALE', 
-        data: saleWithBranch.toJson(),
-      );
+      debugPrint('Add Sale Logic Error (Audit/Log): $e');
     }
 
     // 4. Auto-Register Client as Customer if phone is provided
@@ -163,7 +242,17 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
         bankReceiptId: bankReceiptId ?? sale.bankReceiptId,
       );
       
-      // Audit Log
+      // 1. PERSISTENCE FIRST
+      await OfflineSyncService.addToQueue(
+        actionType: 'SALE',
+        data: updatedSale.toJson(),
+      );
+
+      // 2. OPTIMISTIC UI
+      state = [for (final s in state) if (s.id == saleId) updatedSale else s];
+      _saveToCache(state);
+
+      // 3. Audit Log
       await AuditService.log(
         ref: ref,
         action: 'SALE_VERIFIED',
@@ -172,17 +261,7 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
         newData: updatedSale.toJson(),
       );
 
-      final connectivity = await Connectivity().checkConnectivity();
-      if (!connectivity.contains(ConnectivityResult.none)) {
-        await _service.saveSale(updatedSale);
-      } else {
-        await OfflineSyncService.addToQueue(
-          actionType: 'SALE',
-          data: updatedSale.toJson(),
-        );
-        state = [for (final s in state) if (s.id == saleId) updatedSale else s];
-      }
-
+      // 4. Update stock locally
       for (final item in sale.items) {
         if (!item.product.isUnlimited) {
           await ref.read(productsFutureProvider.notifier).updateStock(
@@ -203,7 +282,17 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
       final oldSale = state.where((s) => s.id == updatedSale.id).firstOrNull;
       if (oldSale == null) return;
 
-      // 1. Reconciliation Logic for Stock
+      // 1. PERSISTENCE FIRST
+      await OfflineSyncService.addToQueue(
+        actionType: 'SALE',
+        data: updatedSale.toJson(),
+      );
+
+      // 2. OPTIMISTIC UI
+      state = [for (final s in state) if (s.id == updatedSale.id) updatedSale else s];
+      _saveToCache(state);
+
+      // 3. Reconciliation Logic for Stock
       // Process items in the updated sale
       for (final newItem in updatedSale.items) {
         if (newItem.product.isUnlimited) continue;
@@ -212,8 +301,6 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
         if (oldItem != null) {
           final diff = oldItem.quantity - newItem.quantity;
           if (diff != 0) {
-             // If old > new, diff is positive (e.g. 10 - 8 = 2), so we add 2 back to stock.
-             // If old < new, diff is negative (e.g. 5 - 7 = -2), so we subtract 2 from stock.
              await ref.read(productsFutureProvider.notifier).updateStock(
                newItem.product.id, 
                diff, 
@@ -222,7 +309,7 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
              );
           }
         } else {
-          // New product added to existing receipt: subtract full quantity
+          // New product added: subtract full quantity
           await ref.read(productsFutureProvider.notifier).updateStock(
             newItem.product.id, 
             -newItem.quantity, 
@@ -246,7 +333,7 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
         }
       }
 
-      // 2. Audit Log
+      // 4. Audit Log
       await AuditService.log(
         ref: ref,
         action: 'SALE_RECTIFIED',
@@ -255,21 +342,6 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
         oldData: oldSale.toJson(),
         newData: updatedSale.toJson(),
       );
-
-      // 3. Database Update
-      final connectivity = await Connectivity().checkConnectivity();
-      if (!connectivity.contains(ConnectivityResult.none)) {
-        await _service.updateSale(updatedSale);
-      } else {
-        await OfflineSyncService.addToQueue(
-          actionType: 'SALE',
-          data: updatedSale.toJson(),
-        );
-      }
-
-      // 4. State Update
-      state = [for (final s in state) if (s.id == updatedSale.id) updatedSale else s];
-      _saveToCache(state);
       
       // Auto-Register Debtor if update created a debt
       _ensureCustomerRegistered(updatedSale);
@@ -327,15 +399,11 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
       // 3. Update status to Reversed (Do not delete)
       final reversedSale = sale.copyWith(status: SaleStatus.reversed);
       
-      final connectivity = await Connectivity().checkConnectivity();
-      if (!connectivity.contains(ConnectivityResult.none)) {
-        await _service.updateSale(reversedSale);
-      } else {
-        await OfflineSyncService.addToQueue(
-          actionType: 'SALE',
-          data: reversedSale.toJson(),
-        );
-      }
+      // 1. PERSISTENCE FIRST
+      await OfflineSyncService.addToQueue(
+        actionType: 'SALE',
+        data: reversedSale.toJson(),
+      );
 
       // 4. Update local state
       state = [

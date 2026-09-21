@@ -110,7 +110,7 @@ class TillNotifier extends StateNotifier<TillState> {
       
       // Calculate Pending (Sales minus any money taken out)
       final currentPending = pendingByDay[date] ?? 0.0;
-      if (m.type == TillMovementType.cashIn) {
+      if (m.type == TillMovementType.cashIn || m.type == TillMovementType.openingBalance) {
         pendingByDay[date] = currentPending + m.amount;
       } else if (m.type == TillMovementType.closure || m.type == TillMovementType.cashOut) {
         pendingByDay[date] = currentPending - m.amount;
