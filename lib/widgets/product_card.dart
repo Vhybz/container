@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -32,6 +33,8 @@ class ProductCard extends StatelessWidget {
   final bool requiresPrescription;
   final bool requiresImei;
   final bool isService;
+  final DateTime? batchExpiryDate;
+  final String? batchNumber;
   final VoidCallback onTap;
 
   const ProductCard({
@@ -48,6 +51,8 @@ class ProductCard extends StatelessWidget {
     this.requiresPrescription = false,
     this.requiresImei = false,
     this.isService = false,
+    this.batchExpiryDate,
+    this.batchNumber,
     required this.imageUrl,
     required this.onTap,
   });
@@ -154,12 +159,22 @@ class ProductCard extends StatelessWidget {
     final bool isOutOfStock = !isUnlimited && stockQuantity != null && stockQuantity! <= 0;
     final bool isLowStock = !isUnlimited && stockQuantity != null && stockQuantity! <= (lowStockThreshold ?? 5.0) && stockQuantity! > 0;
 
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final bool isExpired = batchExpiryDate != null && batchExpiryDate!.isBefore(today);
+    final int? daysUntilExpiry = batchExpiryDate?.difference(today).inDays;
+    final bool isExpiringCritical = !isExpired && daysUntilExpiry != null && daysUntilExpiry <= 30;
+
     BorderSide borderSide = isDark 
         ? BorderSide(color: Colors.white.withValues(alpha: 0.08), width: 1) 
         : BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4), width: 1);
     
-    if (isOutOfStock) {
+    if (isExpired) {
+      borderSide = BorderSide(color: Colors.red.shade700, width: 2.0);
+    } else if (isOutOfStock) {
       borderSide = BorderSide(color: Colors.red.shade400, width: 1.8);
+    } else if (isExpiringCritical) {
+      borderSide = BorderSide(color: Colors.deepOrange.shade400, width: 1.8);
     } else if (isLowStock) {
       borderSide = BorderSide(color: Colors.orange.shade400, width: 1.8);
     }
@@ -319,7 +334,49 @@ class ProductCard extends StatelessWidget {
                         ),
                       ),
 
-
+                    // FEFO Banner Overlays on Image
+                    if (isExpired)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: Container(
+                          color: const Color(0xFFDC2626).withValues(alpha: 0.94),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3.5),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.dangerous_rounded, color: Colors.white, size: 12),
+                              SizedBox(width: 4),
+                              Text(
+                                'EXPIRED • DO NOT DISPENSE',
+                                style: TextStyle(color: Colors.white, fontSize: 8.5, fontWeight: FontWeight.w900, letterSpacing: 0.3),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else if (isExpiringCritical)
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        child: Container(
+                          color: const Color(0xFFEA580C).withValues(alpha: 0.92),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.timer_outlined, color: Colors.white, size: 11),
+                              const SizedBox(width: 4),
+                              Text(
+                                'FEFO: ${daysUntilExpiry}D REMAINING',
+                                style: const TextStyle(color: Colors.white, fontSize: 8.5, fontWeight: FontWeight.w900, letterSpacing: 0.3),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -332,10 +389,11 @@ class ProductCard extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // Category & Attribute Badges
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Container(
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
                               color: catColor.withValues(alpha: 0.12),
@@ -353,41 +411,43 @@ class ProductCard extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                        ),
-                        if (requiresPrescription)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                            margin: const EdgeInsets.only(left: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.red.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.zero,
-                              border: Border.all(color: Colors.red.withValues(alpha: 0.5), width: 0.8),
+                          if (requiresPrescription)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                              margin: const EdgeInsets.only(left: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.red.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.zero,
+                                border: Border.all(color: Colors.red.withValues(alpha: 0.5), width: 0.8),
+                              ),
+                              child: const Text('Rx', style: TextStyle(color: Colors.red, fontSize: 8.5, fontWeight: FontWeight.bold)),
                             ),
-                            child: const Text('Rx', style: TextStyle(color: Colors.red, fontSize: 8.5, fontWeight: FontWeight.bold)),
-                          ),
-                        if (requiresImei)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                            margin: const EdgeInsets.only(left: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.deepOrange.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.zero,
-                              border: Border.all(color: Colors.deepOrange.withValues(alpha: 0.5), width: 0.8),
+                          if (requiresImei)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                              margin: const EdgeInsets.only(left: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.deepOrange.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.zero,
+                                border: Border.all(color: Colors.deepOrange.withValues(alpha: 0.5), width: 0.8),
+                              ),
+                              child: const Text('IMEI', style: TextStyle(color: Colors.deepOrange, fontSize: 8.5, fontWeight: FontWeight.bold)),
                             ),
-                            child: const Text('IMEI', style: TextStyle(color: Colors.deepOrange, fontSize: 8.5, fontWeight: FontWeight.bold)),
-                          ),
-                        if (isService)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                            margin: const EdgeInsets.only(left: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.zero,
-                              border: Border.all(color: Colors.blue.withValues(alpha: 0.5), width: 0.8),
+                          if (isService)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                              margin: const EdgeInsets.only(left: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.zero,
+                                border: Border.all(color: Colors.blue.withValues(alpha: 0.5), width: 0.8),
+                              ),
+                              child: const Text('SERVICE', style: TextStyle(color: Colors.blue, fontSize: 8, fontWeight: FontWeight.bold)),
                             ),
-                            child: const Text('SERVICE', style: TextStyle(color: Colors.blue, fontSize: 8, fontWeight: FontWeight.bold)),
-                          ),
-                      ],
+                          if (batchExpiryDate != null)
+                            _buildExpiryBadge(context),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 4),
 
@@ -449,6 +509,76 @@ class ProductCard extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExpiryBadge(BuildContext context) {
+    if (batchExpiryDate == null) return const SizedBox.shrink();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final isExp = batchExpiryDate!.isBefore(today);
+    final days = batchExpiryDate!.difference(today).inDays;
+    final dateFormatted = DateFormat('MM/yy').format(batchExpiryDate!);
+
+    Color badgeBg;
+    Color textColor;
+    String label;
+    IconData icon;
+
+    if (isExp) {
+      badgeBg = const Color(0xFFFEE2E2);
+      textColor = const Color(0xFFDC2626);
+      label = 'EXP: $dateFormatted (EXPIRED)';
+      icon = Icons.error_outline_rounded;
+    } else if (days <= 30) {
+      badgeBg = const Color(0xFFFFEDD5);
+      textColor = const Color(0xFFC2410C);
+      label = 'EXP: $dateFormatted (${days}d)';
+      icon = Icons.warning_amber_rounded;
+    } else if (days <= 90) {
+      badgeBg = const Color(0xFFFEF3C7);
+      textColor = const Color(0xFFB45309);
+      label = 'EXP: $dateFormatted';
+      icon = Icons.schedule_rounded;
+    } else {
+      badgeBg = const Color(0xFFD1FAE5);
+      textColor = const Color(0xFF047857);
+      label = 'EXP: $dateFormatted';
+      icon = Icons.check_circle_outline_rounded;
+    }
+
+    final tooltipParts = <String>[
+      if (batchNumber != null && batchNumber!.isNotEmpty) 'Batch: $batchNumber',
+      'Expires: ${DateFormat('dd MMM yyyy').format(batchExpiryDate!)}',
+      if (isExp) 'EXPIRED - DO NOT SELL' else '$days days remaining',
+    ];
+
+    return Tooltip(
+      message: tooltipParts.join(' • '),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+        margin: const EdgeInsets.only(left: 4),
+        decoration: BoxDecoration(
+          color: badgeBg,
+          borderRadius: BorderRadius.zero,
+          border: Border.all(color: textColor.withValues(alpha: 0.4), width: 0.8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 9, color: textColor),
+            const SizedBox(width: 3),
+            Text(
+              label,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 8.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
         ),
       ),
     );

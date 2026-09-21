@@ -21,6 +21,7 @@ import '../../widgets/app_sidebar.dart';
 import '../../widgets/main_app_bar.dart';
 import '../../widgets/responsive_layout.dart';
 import '../../widgets/role_pop_scope.dart';
+import '../../widgets/barber_settlement_dialog.dart';
 
 class BarbershopDashboard extends ConsumerStatefulWidget {
   const BarbershopDashboard({super.key});
@@ -2331,7 +2332,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                     title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(
                       'Category: ${p.category} • Type: ${p.isService ? "Service / Labor" : "Retail Care Product"}\n'
-                      '${p.isService ? "Fixed Barber Commission: " + currencyFormat.format(p.serviceCommission) : "Stock: " + (p.isUnlimited ? "Unlimited" : "${p.stockQuantity} ${p.unit}")}',
+                      '${p.isService ? "Fixed Barber Commission: ${currencyFormat.format(p.serviceCommission)}" : "Stock: ${p.isUnlimited ? "Unlimited" : "${p.stockQuantity} ${p.unit}"}"}',
                     ),
                     trailing: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -2581,6 +2582,27 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                                 icon: const Icon(Icons.receipt_long_rounded, size: 14, color: Color(0xFF1565C0)),
                                 label: const Text('Breakdown', style: TextStyle(fontSize: 11, color: Color(0xFF1565C0))),
                                 onPressed: () => _showBarberCommissionDetailsDialog(context, summary),
+                              ),
+                              const SizedBox(width: 8),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green.shade800,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                ),
+                                icon: const Icon(Icons.payments_outlined, size: 14),
+                                label: const Text('Settle', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                onPressed: () {
+                                  final matching = staff.where((u) => '${u.firstName} ${u.surname}'.toLowerCase() == summary.barberName.toLowerCase() || u.firstName.toLowerCase() == summary.barberName.toLowerCase()).firstOrNull;
+                                  BarberSettlementDialog.show(
+                                    context: context,
+                                    ref: ref,
+                                    barberName: summary.barberName,
+                                    barberPhone: matching?.phone,
+                                    initialFilter: _commissionDateFilter == 'Custom Range' ? 'Today' : _commissionDateFilter,
+                                  );
+                                },
                               ),
                             ],
                           ),

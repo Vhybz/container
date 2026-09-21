@@ -24,6 +24,7 @@ import '../../widgets/product_card.dart';
 import '../../widgets/responsive_layout.dart';
 import '../../widgets/role_pop_scope.dart';
 import '../../widgets/passcode_guard.dart';
+import '../../widgets/category_filter_rail.dart';
 
 class PharmacistPos extends ConsumerStatefulWidget {
   const PharmacistPos({super.key});
@@ -97,6 +98,56 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
   }
 
   void _addToCart(Product product, bool isWholesale) {
+    // Safety Quarantine: Dispensing expired medications is strictly prohibited
+    if (product.isExpired) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: const Icon(Icons.dangerous_rounded, color: Colors.red, size: 48),
+          title: const Text('Safety Alert: Expired Medication', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${product.name} expired on ${DateFormat('dd MMM yyyy').format(product.batchExpiryDate!)}.',
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'FEFO Safety Protocol: Dispensing expired medications is strictly prohibited. Please immediately quarantine batch "${product.batchNumber ?? "Unknown"}" from the dispensary shelf.',
+                        style: TextStyle(color: Colors.red.shade900, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Understood / Quarantine Batch', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     final pcsPerPack = product.piecesPerPack ?? 1.0;
     final packPrice = product.effectivePackPrice;
     final packsPerBox = product.packsPerBox ?? 10.0;
@@ -179,6 +230,25 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                                         style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
                                       ),
                                     ),
+                                    if (product.batchExpiryDate != null)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: product.isExpiringCritical ? const Color(0xFFFFEDD5) : const Color(0xFFECFDF5),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(
+                                            color: product.isExpiringCritical ? const Color(0xFFFDBA74) : const Color(0xFFA7F3D0),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'EXP: ${DateFormat('MM/yy').format(product.batchExpiryDate!)}${product.daysUntilExpiry != null ? ' (${product.daysUntilExpiry}d)' : ''}',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: product.isExpiringCritical ? const Color(0xFFC2410C) : const Color(0xFF047857),
+                                          ),
+                                        ),
+                                      ),
                                     if (!product.isUnlimited)
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -1244,11 +1314,30 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
 
     final categories = ['All', ...{...productsList.map((p) => p.category.toUpperCase())}];
 
+    final Map<String, int> categoryCounts = {
+      'All': productsList.length,
+    };
+    for (final p in productsList) {
+      final cat = p.category.toUpperCase();
+      categoryCounts[cat] = (categoryCounts[cat] ?? 0) + 1;
+    }
+
     final filteredProducts = productsList.where((p) {
       final matchesCategory = _selectedCategory == 'All' || p.category.toUpperCase() == _selectedCategory.toUpperCase();
       final matchesSearch = p.name.toLowerCase().contains(_searchController.text.toLowerCase()) || p.category.toLowerCase().contains(_searchController.text.toLowerCase());
       return matchesCategory && matchesSearch;
     }).toList();
+
+    // Pharmacy FEFO (First-Expired, First-Out) Sorting Rule:
+    // Prioritize products with expiry dates ascending (earliest expiring stock first)
+    filteredProducts.sort((a, b) {
+      if (a.batchExpiryDate != null && b.batchExpiryDate != null) {
+        return a.batchExpiryDate!.compareTo(b.batchExpiryDate!);
+      }
+      if (a.batchExpiryDate != null) return -1;
+      if (b.batchExpiryDate != null) return 1;
+      return a.name.compareTo(b.name);
+    });
 
     const currentRoute = '/pharmacy/pos';
 
@@ -1290,7 +1379,7 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                 ),
               Expanded(
                 child: _currentTab == 0
-                    ? _buildPOSLayout(filteredProducts, categories, isWholesale, isMobile, isDesktop)
+                    ? _buildPOSLayout(filteredProducts, categories, isWholesale, isMobile, isDesktop, categoryCounts: categoryCounts)
                     : _buildHistoryLayout(),
               ),
             ],
@@ -1301,7 +1390,7 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
     );
   }
 
-  Widget _buildPOSLayout(List<Product> products, List<String> categories, bool isWholesale, bool isMobile, bool isDesktop) {
+  Widget _buildPOSLayout(List<Product> products, List<String> categories, bool isWholesale, bool isMobile, bool isDesktop, {Map<String, int>? categoryCounts}) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     int crossAxisCount = isMobile ? 2 : (ResponsiveLayout.isTablet(context) ? 3 : 4);
@@ -1313,25 +1402,34 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
           child: Padding(
             padding: const EdgeInsets.all(AppSpacing.m),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Emmanuel Chemist Official Address Header Banner
+                // Pharmacy Header Strip
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   margin: const EdgeInsets.only(bottom: AppSpacing.m),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF2E7D32),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF047857), Color(0xFF065F46)],
+                    ),
                     borderRadius: BorderRadius.circular(AppRadius.m),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.local_pharmacy_rounded, color: Colors.white, size: 28),
-                      const SizedBox(width: 12),
-                      Expanded(
+                      const Icon(Icons.local_pharmacy_rounded, color: Colors.white, size: 24),
+                      const SizedBox(width: 10),
+                      const Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text('EMMANUEL CHEMIST', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                            Text('Location: Opposite Kaabere Main Clinic • GPS: BJ 0003-5661 • ea0005917@gmail.com', style: TextStyle(color: Colors.white70, fontSize: 11)),
+                          children: [
+                            Text(
+                              'PHARMACY DISPENSARY',
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.5),
+                            ),
+                            Text(
+                              'FEFO Sorted • Expired Batches Quarantined • Batch & Dosage Tracking',
+                              style: TextStyle(color: Colors.white70, fontSize: 11),
+                            ),
                           ],
                         ),
                       ),
@@ -1349,40 +1447,40 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                     ],
                   ),
                 ),
-                // Category & Search
-                Row(
-                  children: [
-                    SizedBox(
-                      width: isMobile ? 140 : 220,
-                      child: DropdownButtonFormField<String>(
-                        initialValue: categories.contains(_selectedCategory) ? _selectedCategory : 'All',
-                        isExpanded: true,
-                        decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 12), isDense: true),
-                        items: categories.map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis))).toList(),
-                        onChanged: (v) => setState(() => _selectedCategory = v!),
-                      ),
+                // Full-width Search Input
+                SizedBox(
+                  height: 44,
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (v) => setState(() {}),
+                    decoration: InputDecoration(
+                      hintText: 'Search medication by name, brand, or active ingredient...',
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {});
+                              },
+                            )
+                          : null,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.m)),
+                      filled: true,
+                      fillColor: theme.colorScheme.surface,
                     ),
-                    const SizedBox(width: AppSpacing.m),
-                    Expanded(
-                      child: SizedBox(
-                        height: 45,
-                        child: TextField(
-                          controller: _searchController,
-                          onChanged: (v) => setState(() {}),
-                          decoration: InputDecoration(
-                            hintText: 'Search medication or category...',
-                            prefixIcon: const Icon(Icons.search, size: 20),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.m)),
-                            filled: true,
-                            fillColor: theme.colorScheme.surface,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-                const SizedBox(height: AppSpacing.m),
+                const SizedBox(height: 8),
+                // Category Filter Rail with live item counts
+                CategoryFilterRail(
+                  categories: categories,
+                  selectedCategory: _selectedCategory,
+                  categoryCounts: categoryCounts,
+                  onSelectCategory: (cat) => setState(() => _selectedCategory = cat),
+                ),
+                const SizedBox(height: 8),
                 // Product Cards Grid
                 Expanded(
                   child: products.isEmpty
@@ -1411,6 +1509,8 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                               promoLabel: hasPromo ? '${product.discountPercentage.toInt()}% OFF' : null,
                               imageUrl: product.imageUrl,
                               requiresPrescription: product.requiresPrescription,
+                              batchExpiryDate: product.batchExpiryDate,
+                              batchNumber: product.batchNumber,
                               onTap: () => _addToCart(product, false),
                             );
                           },
@@ -1489,54 +1589,66 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
         ),
         Divider(height: 1, color: theme.dividerColor),
         Expanded(
-          child: cartItems.isEmpty
-              ? Center(child: Text('Cart is empty', style: TextStyle(color: theme.colorScheme.onSurfaceVariant)))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(AppSpacing.m),
-                  itemCount: cartItems.length,
-                  itemBuilder: (context, index) {
-                    final item = cartItems[index];
-                    return CartItemTile(
-                      category: item.product.category,
-                      name: item.product.name,
-                      qty: item.quantity % 1 == 0 ? item.quantity.toInt().toString() : item.quantity.toStringAsFixed(1),
-                      weight: '${item.quantity} ${item.product.unit}',
-                      amount: '₵${item.total.toStringAsFixed(2)}',
-                      onDelete: () => cartNotifier.removeItem(index),
-                      onIncrement: () => cartNotifier.updateQuantity(index, item.quantity + 1),
-                      onDecrement: () => cartNotifier.updateQuantity(index, item.quantity - 1),
-                    );
-                  },
-                ),
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s, vertical: AppSpacing.xs),
+            children: [
+              if (cartItems.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 28),
+                  child: Center(
+                    child: Text('Cart is empty', style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
+                  ),
+                )
+              else
+                ...List.generate(cartItems.length, (index) {
+                  final item = cartItems[index];
+                  return CartItemTile(
+                    category: item.product.category,
+                    name: item.product.name,
+                    qty: item.quantity % 1 == 0 ? item.quantity.toInt().toString() : item.quantity.toStringAsFixed(1),
+                    weight: '${item.quantity} ${item.product.unit}',
+                    amount: '₵${item.total.toStringAsFixed(2)}',
+                    onDelete: () => cartNotifier.removeItem(index),
+                    onIncrement: () => cartNotifier.updateQuantity(index, item.quantity + 1),
+                    onDecrement: () => cartNotifier.updateQuantity(index, item.quantity - 1),
+                  );
+                }),
+              _buildPrescriptionSection(cartItems, theme),
+            ],
+          ),
         ),
-        _buildPrescriptionSection(cartItems, theme),
-        // Summary & Actions
+        // Summary & Actions (Pinned at bottom, guaranteed no overflow)
         Container(
-          padding: const EdgeInsets.all(AppSpacing.m),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.m, vertical: 10),
           decoration: BoxDecoration(
             color: theme.colorScheme.surface,
             border: Border(top: BorderSide(color: theme.dividerColor)),
           ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('TOTAL DUE', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: theme.colorScheme.onSurfaceVariant)),
-                  Text('₵${subtotal.toStringAsFixed(2)}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: theme.colorScheme.primary)),
+                  Text('TOTAL DUE', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: theme.colorScheme.onSurfaceVariant)),
+                  Text('₵${subtotal.toStringAsFixed(2)}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 19, color: theme.colorScheme.primary)),
                 ],
               ),
-              const SizedBox(height: AppSpacing.m),
+              const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 initialValue: _paymentMethod,
-                decoration: const InputDecoration(labelText: 'Payment Mode', isDense: true),
-                items: ['Cash', 'MoMo', 'Card'].map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
+                decoration: const InputDecoration(
+                  labelText: 'Payment Mode', 
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+                items: ['Cash', 'MoMo', 'Card'].map((p) => DropdownMenuItem(value: p, child: Text(p, style: const TextStyle(fontSize: 13)))).toList(),
                 onChanged: (v) => setState(() => _paymentMethod = v!),
               ),
-              const SizedBox(height: AppSpacing.m),
+              const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
-                height: 50,
+                height: 46,
                 child: ElevatedButton(
                   onPressed: cartItems.isEmpty ? null : _checkout,
                   style: ElevatedButton.styleFrom(
@@ -1544,17 +1656,17 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.m)),
                   ),
-                  child: const Text('PROCEED TO PAYMENT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  child: const Text('PROCEED TO PAYMENT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               SizedBox(
                 width: double.infinity,
-                height: 42,
+                height: 38,
                 child: OutlinedButton.icon(
                   onPressed: cartItems.isEmpty ? null : _saveAsDebt,
-                  icon: const Icon(Icons.money_off, size: 18),
-                  label: const Text('SAVE AS DEBT', style: TextStyle(fontWeight: FontWeight.bold)),
+                  icon: const Icon(Icons.money_off, size: 16),
+                  label: const Text('SAVE AS DEBT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.orange.shade800,
                     side: BorderSide(color: Colors.orange.shade800),
@@ -1612,7 +1724,7 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
     final isFilled = _prescriptionController.text.trim().isNotEmpty;
     
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.s, vertical: 4),
+      margin: const EdgeInsets.only(top: 6, bottom: 4),
       decoration: BoxDecoration(
         color: _prescriptionExpanded 
             ? const Color(0xFF2E7D32).withValues(alpha: 0.05)
@@ -1836,7 +1948,7 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                           controller: _doctorController,
                           style: const TextStyle(fontSize: 11),
                           decoration: const InputDecoration(
-                            labelText: 'Doctor / Prescriber (Optional)',
+                            labelText: 'Doctor / Prescriber',
                             hintText: 'Dr. Name',
                             isDense: true,
                             contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
@@ -1849,7 +1961,7 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                           controller: _rxNumberController,
                           style: const TextStyle(fontSize: 11),
                           decoration: const InputDecoration(
-                            labelText: 'Rx Serial No (Optional)',
+                            labelText: 'Rx Serial No',
                             hintText: 'e.g. RX-2026-01',
                             isDense: true,
                             contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),

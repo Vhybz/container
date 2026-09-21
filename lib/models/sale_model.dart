@@ -101,6 +101,8 @@ class SaleRecord {
   final String? patientName; // Optional patient name
   final String? doctorName; // Optional doctor / prescriber name
   final String? rxNumber; // Optional Rx Serial Number
+  final double? amountTendered; // Physical cash amount handed by customer
+  final double? changeDue; // Change calculated and given to customer
 
   SaleRecord({
     required this.id,
@@ -127,6 +129,8 @@ class SaleRecord {
     this.patientName,
     this.doctorName,
     this.rxNumber,
+    this.amountTendered,
+    this.changeDue,
   });
 
   factory SaleRecord.fromJson(dynamic json) {
@@ -159,6 +163,8 @@ class SaleRecord {
       patientName: map['patient_name'],
       doctorName: map['doctor_name'],
       rxNumber: map['rx_number'],
+      amountTendered: (map['amount_tendered'] as num?)?.toDouble(),
+      changeDue: (map['change_due'] as num?)?.toDouble(),
     );
   }
 
@@ -190,6 +196,8 @@ class SaleRecord {
       'patient_name': patientName,
       'doctor_name': doctorName,
       'rx_number': rxNumber,
+      'amount_tendered': amountTendered,
+      'change_due': changeDue,
     };
   }
 
@@ -230,6 +238,7 @@ class SaleRecord {
 
   double get amountPaid => payments.fold(0, (sum, p) => sum + p.amount);
   double get balance => totalAmount - amountPaid;
+  double get effectiveChange => changeDue ?? (amountTendered != null && amountTendered! > totalAmount ? amountTendered! - totalAmount : 0.0);
 
   bool get isActive => status != SaleStatus.cancelled && status != SaleStatus.reversed;
 
@@ -254,6 +263,8 @@ class SaleRecord {
     String? patientName,
     String? doctorName,
     String? rxNumber,
+    double? amountTendered,
+    double? changeDue,
   }) {
     return SaleRecord(
       id: id,
@@ -280,6 +291,8 @@ class SaleRecord {
       patientName: patientName ?? this.patientName,
       doctorName: doctorName ?? this.doctorName,
       rxNumber: rxNumber ?? this.rxNumber,
+      amountTendered: amountTendered ?? this.amountTendered,
+      changeDue: changeDue ?? this.changeDue,
     );
   }
 }

@@ -3,6 +3,7 @@ import 'system_models.dart';
 
 enum PromoTarget { retail, wholesale, both }
 enum PromoCustomerTarget { all, regularsOnly }
+enum ExpiryStatus { none, expired, critical, warning, good }
 
 class PriceBracket {
   final double minWeight;
@@ -116,6 +117,42 @@ class Product {
   double get effectivePiecesPerPack => (piecesPerPack != null && piecesPerPack! > 0) ? piecesPerPack! : 1.0;
   double get effectivePackPrice => (packPrice != null && packPrice! > retailPrice) ? packPrice! : (retailPrice * effectivePiecesPerPack);
   double get effectiveBoxPrice => (boxPrice != null && boxPrice! > effectivePackPrice) ? boxPrice! : (effectivePackPrice * (packsPerBox ?? 10.0));
+
+  /// FEFO (First-Expiring First-Out) Health & Expiry Attributes
+  bool get isExpired {
+    if (batchExpiryDate == null) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return batchExpiryDate!.isBefore(today);
+  }
+
+  int? get daysUntilExpiry {
+    if (batchExpiryDate == null) return null;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return batchExpiryDate!.difference(today).inDays;
+  }
+
+  bool get isExpiringCritical {
+    if (batchExpiryDate == null) return false;
+    final days = daysUntilExpiry!;
+    return days >= 0 && days <= 30;
+  }
+
+  bool get isExpiringWarning {
+    if (batchExpiryDate == null) return false;
+    final days = daysUntilExpiry!;
+    return days > 30 && days <= 90;
+  }
+
+  ExpiryStatus get expiryStatus {
+    if (batchExpiryDate == null) return ExpiryStatus.none;
+    final days = daysUntilExpiry!;
+    if (days < 0) return ExpiryStatus.expired;
+    if (days <= 30) return ExpiryStatus.critical;
+    if (days <= 90) return ExpiryStatus.warning;
+    return ExpiryStatus.good;
+  }
 
   /// Logic to check if promotion is currently scheduled correctly by date
   bool get isPromoScheduled {

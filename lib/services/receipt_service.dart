@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../models/sale_model.dart';
 import '../models/user_model.dart';
 import '../models/salary_model.dart';
+import '../models/shift_model.dart';
 import '../core/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -253,6 +254,24 @@ class ReceiptService {
                 ],
               ),
               
+              if (sale.amountTendered != null && sale.amountTendered! > sale.amountPaid)
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('Cash Tendered', style: pw.TextStyle(font: font, fontSize: 8)),
+                    pw.Text('₵ ${sale.amountTendered!.toStringAsFixed(2)}', style: pw.TextStyle(font: font, fontSize: 8)),
+                  ],
+                ),
+
+              if (sale.effectiveChange > 0.01)
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('CHANGE RETURNED', style: pw.TextStyle(font: boldFont, fontSize: 8, color: PdfColors.green800)),
+                    pw.Text('₵ ${sale.effectiveChange.toStringAsFixed(2)}', style: pw.TextStyle(font: boldFont, fontSize: 8, color: PdfColors.green800)),
+                  ],
+                ),
+              
               if (sale.balance > 0.01)
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -377,6 +396,9 @@ class ReceiptService {
       final String clientName = sale.customerName?.trim().isNotEmpty == true ? sale.customerName!.trim() : 'Valued Customer';
       final String targetPhone = customerPhone ?? overridePhone ?? (sale.customerPhone ?? '');
       
+      final String changeInfo = sale.effectiveChange > 0.01 
+          ? '\n💵 *Change Returned:* GHS ${sale.effectiveChange.toStringAsFixed(2)}' 
+          : '';
       final String linkText = publicPdfUrl != null ? '\n\n📄 Download Official PDF Receipt:\n$publicPdfUrl' : '';
       final String message = '''
 *CONTAINER STORE RECEIPT*
@@ -384,7 +406,7 @@ Hello $clientName, thank you for your purchase!
 
 🧾 *Invoice #:* ${sale.id}
 📅 *Date:* ${DateFormat('dd MMM yyyy, hh:mm a').format(sale.timestamp)}
-💰 *Total Paid:* GHS ${sale.totalAmount.toStringAsFixed(2)}$linkText
+💰 *Total Paid:* GHS ${sale.totalAmount.toStringAsFixed(2)}$changeInfo$linkText
 
 _Thank you for choosing Container Stores! Have a wonderful day._
 '''.trim();
@@ -421,6 +443,9 @@ static String _generateQRData(SaleRecord sale) {
     }
     buffer.writeln('Total: ₵${sale.totalAmount.toStringAsFixed(2)}');
     buffer.writeln('Paid: ₵${sale.amountPaid.toStringAsFixed(2)}');
+    if (sale.effectiveChange > 0.01) {
+      buffer.writeln('Change: ₵${sale.effectiveChange.toStringAsFixed(2)}');
+    }
     if (sale.balance > 0.01) {
       buffer.writeln('Balance: ₵${sale.balance.toStringAsFixed(2)}');
     }
@@ -1229,4 +1254,467 @@ static String _generateQRData(SaleRecord sale) {
       ),
     );
   }
+
+  /// Generate printable 80mm thermal shift handover slip / Z-Report
+  static Future<pw.Document> generateShiftHandoverDocument(ShiftRecord shift) async {
+    final doc = pw.Document();
+    final fonts = await _loadFonts();
+    final font = fonts['font']!;
+    final boldFont = fonts['boldFont']!;
+
+    final double expectedCash = shift.openingFloat + shift.expectedCashSales;
+    final double actualCash = shift.actualCashCounted ?? 0.0;
+    final double variance = shift.cashVariance ?? (actualCash - expectedCash);
+
+    PdfColor varianceBgColor = PdfColors.green50;
+    PdfColor varianceTextColor = PdfColors.green900;
+    String varianceTitle = 'BALANCED (₵0.00)';
+
+    if (variance > 0.01) {
+      varianceBgColor = PdfColors.blue50;
+      varianceTextColor = PdfColors.blue900;
+      varianceTitle = 'CASH SURPLUS (+₵${variance.toStringAsFixed(2)})';
+    } else if (variance < -0.01) {
+      varianceBgColor = PdfColors.red50;
+      varianceTextColor = PdfColors.red900;
+      varianceTitle = 'CASH SHORTAGE (-₵${variance.abs().toStringAsFixed(2)})';
+    }
+
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.roll80,
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Center(
+                child: pw.Column(
+                  children: [
+                    pw.Text('CONTAINER STORES', style: pw.TextStyle(font: boldFont, fontSize: 15)),
+                    pw.Text('SHIFT HANDOVER & TILL REPORT', style: pw.TextStyle(font: boldFont, fontSize: 8, color: PdfColors.grey700)),
+                    pw.Text('END-OF-DAY RECONCILIATION', style: pw.TextStyle(font: font, fontSize: 7)),
+                    pw.SizedBox(height: 6),
+                  ],
+                ),
+              ),
+              pw.Divider(thickness: 0.5),
+              _summaryRow('Shift Ref:', shift.id, font, boldFont),
+              _summaryRow('Branch:', shift.branchCode, font, boldFont),
+              _summaryRow('Cashier:', shift.cashierName, font, boldFont),
+              _summaryRow('Started:', DateFormat('dd-MM-yyyy HH:mm').format(shift.startTime), font, boldFont),
+              if (shift.endTime != null)
+                _summaryRow('Ended:', DateFormat('dd-MM-yyyy HH:mm').format(shift.endTime!), font, boldFont),
+              pw.Divider(thickness: 0.5),
+
+              pw.Text('SALES REVENUE SUMMARY', style: pw.TextStyle(font: boldFont, fontSize: 8)),
+              pw.SizedBox(height: 3),
+              _summaryRow('Opening Float:', '₵ ${shift.openingFloat.toStringAsFixed(2)}', font, font),
+              _summaryRow('Cash Sales Taken:', '₵ ${shift.expectedCashSales.toStringAsFixed(2)}', font, font),
+              _summaryRow('MoMo Sales Taken:', '₵ ${shift.momoSales.toStringAsFixed(2)}', font, font),
+              _summaryRow('Card / Bank Sales:', '₵ ${shift.cardSales.toStringAsFixed(2)}', font, font),
+              pw.Divider(thickness: 0.5),
+              _summaryRow('TOTAL TURNOVER:', '₵ ${shift.totalSales.toStringAsFixed(2)}', font, boldFont, isLarge: true),
+              pw.Divider(thickness: 0.5),
+
+              pw.Text('DRAWER CASH RECONCILIATION', style: pw.TextStyle(font: boldFont, fontSize: 8)),
+              pw.SizedBox(height: 3),
+              _summaryRow('Expected Cash in Till:', '₵ ${expectedCash.toStringAsFixed(2)}', font, boldFont),
+              _summaryRow('Actual Cash Counted:', '₵ ${actualCash.toStringAsFixed(2)}', font, boldFont),
+              pw.SizedBox(height: 4),
+
+              pw.Container(
+                width: double.infinity,
+                padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+                decoration: pw.BoxDecoration(
+                  color: varianceBgColor,
+                  border: pw.Border.all(color: varianceTextColor, width: 1),
+                  borderRadius: const pw.BorderRadius.all(pw.Radius.circular(3)),
+                ),
+                child: pw.Center(
+                  child: pw.Text(
+                    'VARIANCE: $varianceTitle',
+                    style: pw.TextStyle(font: boldFont, fontSize: 8, color: varianceTextColor),
+                  ),
+                ),
+              ),
+
+              if (shift.notes != null && shift.notes!.trim().isNotEmpty) ...[
+                pw.SizedBox(height: 6),
+                pw.Text('Notes / Discrepancy Reason:', style: pw.TextStyle(font: boldFont, fontSize: 7)),
+                pw.Text(shift.notes!.trim(), style: pw.TextStyle(font: font, fontSize: 7, color: PdfColors.grey800)),
+              ],
+
+              pw.SizedBox(height: 14),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text('__________________', style: pw.TextStyle(font: font, fontSize: 7)),
+                      pw.Text('Cashier Signature', style: pw.TextStyle(font: font, fontSize: 6.5, color: PdfColors.grey700)),
+                    ],
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text('__________________', style: pw.TextStyle(font: font, fontSize: 7)),
+                      pw.Text('Manager / Auditor', style: pw.TextStyle(font: font, fontSize: 6.5, color: PdfColors.grey700)),
+                    ],
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 10),
+              pw.Center(
+                child: pw.BarcodeWidget(
+                  barcode: pw.Barcode.qrCode(),
+                  data: 'SHIFT:${shift.id}|Cashier:${shift.cashierName}|Actual:${actualCash.toStringAsFixed(2)}|Expected:${expectedCash.toStringAsFixed(2)}|Variance:${variance.toStringAsFixed(2)}',
+                  width: 36,
+                  height: 36,
+                ),
+              ),
+              pw.SizedBox(height: 6),
+              pw.Center(
+                child: pw.Text('Verified by Multi-Business POS System', style: pw.TextStyle(font: font, fontSize: 6.5, color: PdfColors.grey600)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    return doc;
+  }
+
+  static pw.Widget _summaryRow(String label, String value, pw.Font font, pw.Font boldFont, {bool isLarge = false}) {
+    final double size = isLarge ? 8.5 : 7.5;
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 1),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(label, style: pw.TextStyle(font: font, fontSize: size)),
+          pw.Text(value, style: pw.TextStyle(font: boldFont, fontSize: size)),
+        ],
+      ),
+    );
+  }
+
+  /// Print Shift Handover Z-Report to thermal printer or system dialog
+  static Future<bool> printShiftHandoverReport(ShiftRecord shift, {BuildContext? context}) async {
+    try {
+      final doc = await generateShiftHandoverDocument(shift);
+      final result = await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => doc.save(),
+        name: 'Shift_Handover_${shift.id}',
+      );
+      return result;
+    } catch (e) {
+      debugPrint('Shift Handover Printing Error: $e');
+      if (context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Printing shift slip failed: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return false;
+    }
+  }
+
+  /// Share Shift Handover Report to Manager / Admin via WhatsApp
+  static Future<void> shareShiftHandoverViaWhatsApp(
+    ShiftRecord shift, {
+    BuildContext? context,
+    String? overridePhone,
+  }) async {
+    try {
+      final double expectedCash = shift.openingFloat + shift.expectedCashSales;
+      final double actualCash = shift.actualCashCounted ?? 0.0;
+      final double variance = shift.cashVariance ?? (actualCash - expectedCash);
+
+      String varianceEmoji = '✅';
+      String varianceText = 'Balanced (GHS 0.00)';
+      if (variance > 0.01) {
+        varianceEmoji = '📈';
+        varianceText = 'Surplus (+GHS ${variance.toStringAsFixed(2)})';
+      } else if (variance < -0.01) {
+        varianceEmoji = '⚠️';
+        varianceText = 'SHORTAGE (-GHS ${variance.abs().toStringAsFixed(2)})';
+      }
+
+      final String notesText = (shift.notes != null && shift.notes!.trim().isNotEmpty)
+          ? '\n📝 *Notes:* ${shift.notes!.trim()}\n'
+          : '';
+
+      final String message = '''
+*SHIFT HANDOVER & TILL REPORT*
+🏢 *Container Stores* (Branch: ${shift.branchCode})
+👤 *Cashier:* ${shift.cashierName}
+🆔 *Shift:* ${shift.id}
+⏱️ *Time:* ${DateFormat('dd MMM, hh:mm a').format(shift.startTime)} – ${shift.endTime != null ? DateFormat('hh:mm a').format(shift.endTime!) : 'Now'}
+
+💵 *Opening Float:* GHS ${shift.openingFloat.toStringAsFixed(2)}
+🛒 *Cash Sales:* GHS ${shift.expectedCashSales.toStringAsFixed(2)}
+📲 *MoMo Sales:* GHS ${shift.momoSales.toStringAsFixed(2)}
+💳 *Card/Bank:* GHS ${shift.cardSales.toStringAsFixed(2)}
+📊 *Total Sales:* GHS ${shift.totalSales.toStringAsFixed(2)}
+
+--------------------------------
+💰 *Expected Till Cash:* GHS ${expectedCash.toStringAsFixed(2)}
+🪙 *Actual Cash Counted:* GHS ${actualCash.toStringAsFixed(2)}
+$varianceEmoji *Variance:* $varianceText
+--------------------------------$notesText
+_Official Handover Audit Record_
+'''.trim();
+
+      final String targetPhone = overridePhone ?? '0209276200';
+      String cleanPhone = targetPhone.replaceAll(RegExp(r'[^0-9]'), '');
+      if (cleanPhone.startsWith('0')) cleanPhone = '233${cleanPhone.substring(1)}';
+      final Uri url = Uri.parse('https://wa.me/$cleanPhone?text=${Uri.encodeComponent(message)}');
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      debugPrint('WhatsApp share shift error: $e');
+      if (context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not share via WhatsApp: $e')),
+        );
+      }
+    }
+  }
+
+  /// Generate printable 80mm thermal Barber Commission Pay Slip
+  static Future<pw.Document> generateBarberCommissionDocument({
+    required String barberName,
+    String? barberPhone,
+    required String period,
+    required int totalServices,
+    required double grossSales,
+    required double commissionEarned,
+    required double tips,
+    required double deductions,
+    required double netPayout,
+    required String paymentMethod,
+    String? notes,
+  }) async {
+    final doc = pw.Document();
+    final fonts = await _loadFonts();
+    final font = fonts['font']!;
+    final boldFont = fonts['boldFont']!;
+
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.roll80,
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Center(
+                child: pw.Column(
+                  children: [
+                    pw.Text('CONTAINER BARBERSHOP', style: pw.TextStyle(font: boldFont, fontSize: 14)),
+                    pw.Text('STYLIST COMMISSION PAY SLIP', style: pw.TextStyle(font: boldFont, fontSize: 8, color: PdfColors.grey700)),
+                    pw.Text('Executive Grooming & Styling Services', style: pw.TextStyle(font: font, fontSize: 7)),
+                    pw.SizedBox(height: 6),
+                  ],
+                ),
+              ),
+              pw.Divider(thickness: 0.5),
+              _summaryRow('Stylist Name:', barberName, font, boldFont),
+              if (barberPhone != null && barberPhone.isNotEmpty)
+                _summaryRow('Phone:', barberPhone, font, font),
+              _summaryRow('Settlement Date:', DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()), font, font),
+              _summaryRow('Period:', period, font, boldFont),
+              pw.Divider(thickness: 0.5),
+
+              pw.Text('SERVICE PERFORMANCE BREAKDOWN', style: pw.TextStyle(font: boldFont, fontSize: 8)),
+              pw.SizedBox(height: 3),
+              _summaryRow('Completed Services:', '$totalServices Cuts/Services', font, boldFont),
+              _summaryRow('Gross Billed Value:', '₵ ${grossSales.toStringAsFixed(2)}', font, font),
+              _summaryRow('Commission Accrued:', '₵ ${commissionEarned.toStringAsFixed(2)}', font, boldFont),
+              if (tips > 0)
+                _summaryRow('Tips Collected:', '₵ ${tips.toStringAsFixed(2)}', font, boldFont),
+              if (deductions > 0)
+                _summaryRow('Deductions / Advances:', '-₵ ${deductions.toStringAsFixed(2)}', font, boldFont),
+              pw.Divider(thickness: 0.5),
+
+              pw.Container(
+                width: double.infinity,
+                padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                decoration: pw.BoxDecoration(
+                  color: PdfColors.green50,
+                  border: pw.Border.all(color: PdfColors.green800, width: 1),
+                  borderRadius: const pw.BorderRadius.all(pw.Radius.circular(3)),
+                ),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('NET COMMISSION PAYOUT:', style: pw.TextStyle(font: boldFont, fontSize: 8.5, color: PdfColors.green900)),
+                    pw.Text('GHS ${netPayout.toStringAsFixed(2)}', style: pw.TextStyle(font: boldFont, fontSize: 9.5, color: PdfColors.green900)),
+                  ],
+                ),
+              ),
+
+              pw.SizedBox(height: 4),
+              _summaryRow('Payment Mode:', paymentMethod.toUpperCase(), font, boldFont),
+
+              if (notes != null && notes.trim().isNotEmpty) ...[
+                pw.SizedBox(height: 4),
+                pw.Text('Notes:', style: pw.TextStyle(font: boldFont, fontSize: 7)),
+                pw.Text(notes.trim(), style: pw.TextStyle(font: font, fontSize: 7, color: PdfColors.grey800)),
+              ],
+
+              pw.SizedBox(height: 16),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text('__________________', style: pw.TextStyle(font: font, fontSize: 7)),
+                      pw.Text('Stylist Signature', style: pw.TextStyle(font: font, fontSize: 6.5, color: PdfColors.grey700)),
+                    ],
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text('__________________', style: pw.TextStyle(font: font, fontSize: 7)),
+                      pw.Text('Manager Signature', style: pw.TextStyle(font: font, fontSize: 6.5, color: PdfColors.grey700)),
+                    ],
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 10),
+              pw.Center(
+                child: pw.BarcodeWidget(
+                  barcode: pw.Barcode.qrCode(),
+                  data: 'BARBER_PAYSLIP:$barberName|Net:${netPayout.toStringAsFixed(2)}|Date:${DateFormat('yyyy-MM-dd').format(DateTime.now())}',
+                  width: 36,
+                  height: 36,
+                ),
+              ),
+              pw.SizedBox(height: 6),
+              pw.Center(
+                child: pw.Text('Verified by Multi-Business Barbershop System', style: pw.TextStyle(font: font, fontSize: 6.5, color: PdfColors.grey600)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    return doc;
+  }
+
+  /// Print official Barber Commission Pay Slip
+  static Future<bool> printBarberCommissionPaySlip({
+    required String barberName,
+    String? barberPhone,
+    required String period,
+    required int totalServices,
+    required double grossSales,
+    required double commissionEarned,
+    required double tips,
+    required double deductions,
+    required double netPayout,
+    required String paymentMethod,
+    String? notes,
+    BuildContext? context,
+  }) async {
+    try {
+      final doc = await generateBarberCommissionDocument(
+        barberName: barberName,
+        barberPhone: barberPhone,
+        period: period,
+        totalServices: totalServices,
+        grossSales: grossSales,
+        commissionEarned: commissionEarned,
+        tips: tips,
+        deductions: deductions,
+        netPayout: netPayout,
+        paymentMethod: paymentMethod,
+        notes: notes,
+      );
+      final result = await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => doc.save(),
+        name: 'Barber_PaySlip_${barberName}_${DateFormat('yyyyMMdd').format(DateTime.now())}',
+      );
+      return result;
+    } catch (e) {
+      debugPrint('Barber Payslip Printing Error: $e');
+      if (context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Printing barber payslip failed: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return false;
+    }
+  }
+
+  /// Share official Barber Commission Pay Slip via WhatsApp
+  static Future<void> shareBarberCommissionSlipViaWhatsApp({
+    required String barberName,
+    required String barberPhone,
+    required String period,
+    required int totalServices,
+    required double grossSales,
+    required double commissionEarned,
+    required double tips,
+    required double deductions,
+    required double netPayout,
+    required String paymentMethod,
+    String? notes,
+    BuildContext? context,
+  }) async {
+    try {
+      final String tipsText = tips > 0 ? '\n🎁 *Tips Added:* GHS ${tips.toStringAsFixed(2)}' : '';
+      final String deductionsText = deductions > 0 ? '\n🔻 *Deductions / Advance:* -GHS ${deductions.toStringAsFixed(2)}' : '';
+      final String notesText = (notes != null && notes.trim().isNotEmpty) ? '\n📝 *Notes:* ${notes.trim()}\n' : '';
+
+      final String message = '''
+*BARBER COMMISSION PAY SLIP*
+💈 *Container Barbershop*
+👤 *Stylist:* $barberName
+📅 *Settlement Date:* ${DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now())}
+⏱️ *Period:* $period
+
+✂️ *Services Completed:* $totalServices
+💵 *Gross Sales Generated:* GHS ${grossSales.toStringAsFixed(2)}
+💰 *Commission Earned:* GHS ${commissionEarned.toStringAsFixed(2)}$tipsText$deductionsText
+
+================================
+✅ *NET PAYOUT:* GHS ${netPayout.toStringAsFixed(2)}
+💳 *Payment Mode:* ${paymentMethod.toUpperCase()}
+================================$notesText
+_Thank you for your hard work and excellence at Container Barbershop!_
+'''.trim();
+
+      if (barberPhone.trim().isEmpty) {
+        if (context != null && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No phone number provided for WhatsApp share.')),
+          );
+        }
+        return;
+      }
+
+      String cleanPhone = barberPhone.replaceAll(RegExp(r'[^0-9]'), '');
+      if (cleanPhone.startsWith('0')) cleanPhone = '233${cleanPhone.substring(1)}';
+      final Uri url = Uri.parse('https://wa.me/$cleanPhone?text=${Uri.encodeComponent(message)}');
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      debugPrint('WhatsApp share barber payslip error: $e');
+      if (context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not share via WhatsApp: $e')),
+        );
+      }
+    }
+  }
 }
+
+

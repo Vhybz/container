@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../core/constants.dart';
@@ -17,7 +18,6 @@ import '../../services/user_provider.dart';
 import '../../services/sms_service.dart';
 import '../../models/barbershop_models.dart';
 import '../../services/barber_records_provider.dart';
-import '../../services/barbershop_service.dart';
 import '../../widgets/app_sidebar.dart';
 import '../../widgets/cart_item_tile.dart';
 import '../../widgets/main_app_bar.dart';
@@ -25,6 +25,7 @@ import '../../widgets/product_card.dart';
 import '../../widgets/responsive_layout.dart';
 import '../../widgets/role_pop_scope.dart';
 import '../../widgets/passcode_guard.dart';
+import '../../widgets/tender_dialog.dart';
 
 class BarberPos extends ConsumerStatefulWidget {
   const BarberPos({super.key});
@@ -61,6 +62,10 @@ class _BarberPosState extends ConsumerState<BarberPos> {
   String _historyDateFilter = 'All Time';
   DateTimeRange? _historyCustomRange;
 
+  // Keyboard shortcut focus nodes
+  final FocusNode _searchFocusNode = FocusNode();
+  final FocusNode _mainKeyboardFocusNode = FocusNode();
+
   @override
   void initState() {
     super.initState();
@@ -80,7 +85,50 @@ class _BarberPosState extends ConsumerState<BarberPos> {
     _childNameController.dispose();
     _parentPhoneController.dispose();
     _historySearchController.dispose();
+    _searchFocusNode.dispose();
+    _mainKeyboardFocusNode.dispose();
     super.dispose();
+  }
+
+  KeyEventResult _handleKeyEvent(KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    if (event.logicalKey == LogicalKeyboardKey.f1) {
+      _searchFocusNode.requestFocus();
+      _searchController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _searchController.text.length,
+      );
+      return KeyEventResult.handled;
+    } else if (event.logicalKey == LogicalKeyboardKey.f2) {
+      if (ref.read(cartProvider).isNotEmpty) {
+        _checkout();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cart is empty! Press F1 to search services.')),
+        );
+      }
+      return KeyEventResult.handled;
+    } else if (event.logicalKey == LogicalKeyboardKey.f4) {
+      if (ref.read(cartProvider).isNotEmpty) {
+        ref.read(cartProvider.notifier).clear();
+      }
+      return KeyEventResult.handled;
+    } else if (event.logicalKey == LogicalKeyboardKey.space) {
+      final primaryFocus = FocusManager.instance.primaryFocus;
+      if (primaryFocus == null ||
+          primaryFocus == _mainKeyboardFocusNode ||
+          primaryFocus.context?.widget is! EditableText) {
+        if (ref.read(cartProvider).isNotEmpty) {
+          _checkout();
+          return KeyEventResult.handled;
+        }
+      }
+    } else if (event.logicalKey == LogicalKeyboardKey.escape) {
+      _searchFocusNode.unfocus();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   void _addToCart(Product product, bool isWholesale) {
@@ -118,190 +166,202 @@ class _BarberPosState extends ConsumerState<BarberPos> {
     final String fullClientDisplay = '$clientName ($_clientGender • $_clientAgeCategory)';
     final String clientGenderSaved = _clientGender;
     final String clientAgeSaved = _clientAgeCategory;
-    final String paymentMethodSaved = _paymentMethod;
 
-    final saleItems = cartItems.map((item) {
-      return SaleItem(
-        product: item.product,
-        quantity: item.quantity,
-        priceAtSale: item.priceAtSale,
-        originalPrice: item.originalPrice,
-      );
-    }).toList();
-
-    final PaymentMethod mode = _paymentMethod == 'MoMo' 
-        ? PaymentMethod.mobileMoney 
-        : (_paymentMethod == 'Card' ? PaymentMethod.bankDeposit : PaymentMethod.cash);
-
-    final sale = SaleRecord(
-      id: 'INV-${DateTime.now().millisecondsSinceEpoch}',
-      branchCode: currentUser?.branchCode ?? 'MAIN',
-      items: saleItems,
+    // Open TenderDialog for Quick-Cash, Change Calculation & Auto-Split MoMo
+    await TenderDialog.show(
+      context,
       totalAmount: grandTotal,
-      totalDiscount: 0.0,
-      totalCost: subtotal * 0.7,
-      payments: [PaymentDetail(method: mode, amount: grandTotal)],
-      timestamp: DateTime.now(),
-      cashierName: '$_selectedBarber (Cashier: $cashierName)',
-      cashierId: currentUser?.id ?? 'N/A',
-      customerName: fullClientDisplay,
-      customerPhone: clientPhone.isNotEmpty ? clientPhone : null,
-      status: SaleStatus.completed,
-      isVerified: true,
-    );
+      customerName: clientName,
+      customerPhone: clientPhone,
+      onComplete: (tenderResult) async {
+        final saleItems = cartItems.map((item) {
+          return SaleItem(
+            product: item.product,
+            quantity: item.quantity,
+            priceAtSale: item.priceAtSale,
+            originalPrice: item.originalPrice,
+          );
+        }).toList();
 
-    // Trigger printing receipt
-    ReceiptService.printReceipt(sale, context: null);
-
-    // Save sale to state
-    await ref.read(saleHistoryProvider.notifier).addSale(sale);
-
-    // Resolve service names for records and SMS
-    final String serviceNames = saleItems
-        .where((i) => i.product.isService || i.product.category.toUpperCase().contains('BARBER'))
-        .map((i) => i.product.name)
-        .join(', ');
-    final String resolvedServiceName = serviceNames.isNotEmpty ? serviceNames : 'Haircut / Shave Service';
-
-    // Save permanent record to BarberRecords provider (preserved forever)
-    final String paymentMethodLabel = _paymentMethod;
-    final List<CartItem> serviceCartItems = cartItems
-        .where((i) => i.product.isService || i.product.category.toUpperCase().contains('BARBER') || i.product.category.toUpperCase().contains('HAIR') || i.product.category.toUpperCase().contains('BEARD'))
-        .toList();
-
-    if (serviceCartItems.isNotEmpty) {
-      for (final item in serviceCartItems) {
-        final double fixedComm = item.product.serviceCommission > 0
-            ? (item.product.serviceCommission * item.quantity)
-            : ref.read(barberRecordsProvider.notifier).resolveCommissionAmount(item.product.name, price: item.priceAtSale, product: item.product);
-        final double commRate = item.priceAtSale > 0 ? ((fixedComm / item.priceAtSale) * 100.0) : 40.0;
-
-        await ref.read(barberRecordsProvider.notifier).recordService(
-          customerName: clientName,
-          customerPhone: clientPhone,
-          service: item.product.name,
-          barber: _selectedBarber,
-          price: item.priceAtSale,
-          tip: item == serviceCartItems.first ? tip : 0.0,
-          paymentMethod: paymentMethodLabel,
-          attendant: cashierName,
-          saleId: sale.id,
-          source: 'POS',
-          notes: _clientAgeCategory == 'Kid' ? 'Kid cut (Parent: ${_parentPhoneController.text.trim()})' : null,
-          timestamp: sale.timestamp,
-          commissionRate: commRate,
-          commissionAmount: fixedComm,
-          product: item.product,
+        final sale = SaleRecord(
+          id: 'INV-${DateTime.now().millisecondsSinceEpoch}',
+          branchCode: currentUser?.branchCode ?? 'MAIN',
+          items: saleItems,
+          totalAmount: grandTotal,
+          totalDiscount: 0.0,
+          totalCost: subtotal * 0.7,
+          payments: tenderResult.payments,
+          timestamp: DateTime.now(),
+          cashierName: '$_selectedBarber (Cashier: $cashierName)',
+          cashierId: currentUser?.id ?? 'N/A',
+          customerName: fullClientDisplay,
+          customerPhone: clientPhone.isNotEmpty ? clientPhone : null,
+          status: SaleStatus.completed,
+          isVerified: true,
+          amountTendered: tenderResult.amountTendered,
+          changeDue: tenderResult.changeDue,
         );
-      }
-    } else {
-      final double fixedComm = ref.read(barberRecordsProvider.notifier).resolveCommissionAmount(resolvedServiceName, price: grandTotal);
-      final double commRate = grandTotal > 0 ? ((fixedComm / grandTotal) * 100.0) : 40.0;
 
-      await ref.read(barberRecordsProvider.notifier).recordService(
-        customerName: clientName,
-        customerPhone: clientPhone,
-        service: resolvedServiceName,
-        barber: _selectedBarber,
-        price: grandTotal,
-        tip: tip,
-        paymentMethod: paymentMethodLabel,
-        attendant: cashierName,
-        saleId: sale.id,
-        source: 'POS',
-        notes: _clientAgeCategory == 'Kid' ? 'Kid cut (Parent: ${_parentPhoneController.text.trim()})' : null,
-        timestamp: sale.timestamp,
-        commissionRate: commRate,
-        commissionAmount: fixedComm,
-      );
-    }
+        // Trigger printing receipt
+        ReceiptService.printReceipt(sale, context: null);
 
-    // Trigger instant post-haircut SMS to client if phone is provided
+        // Save sale to state
+        await ref.read(saleHistoryProvider.notifier).addSale(sale);
 
-    if (_clientAgeCategory == 'Kid') {
-      // Kid: send sweet SMS to parent's phone with child's name
-      final String childName = _childNameController.text.trim().isNotEmpty
-          ? _childNameController.text.trim()
-          : clientName;
-      final String parentPhone = _parentPhoneController.text.trim().isNotEmpty
-          ? _parentPhoneController.text.trim()
-          : clientPhone;
-      if (parentPhone.isNotEmpty) {
-        SmsService.sendKidHaircutSms(
-          childName: childName,
-          parentPhone: parentPhone,
-          serviceName: resolvedServiceName,
-          barberName: _selectedBarber,
-        );
-      }
-    } else {
-      // Adult: send normal post-haircut SMS
-      if (clientPhone.isNotEmpty) {
-        SmsService.sendPostHaircutSms(
-          name: clientName,
-          phone: clientPhone,
-          serviceName: resolvedServiceName,
-          barberName: _selectedBarber,
-        );
-      }
-    }
+        // Resolve service names for records and SMS
+        final String serviceNames = saleItems
+            .where((i) => i.product.isService || i.product.category.toUpperCase().contains('BARBER'))
+            .map((i) => i.product.name)
+            .join(', ');
+        final String resolvedServiceName = serviceNames.isNotEmpty ? serviceNames : 'Haircut / Shave Service';
 
-    // Clean cart and all checkout fields immediately after sale
-    ref.read(cartProvider.notifier).clear();
-    setState(() {
-      _clientNameController.clear();
-      _clientPhoneController.clear();
-      _childNameController.clear();
-      _parentPhoneController.clear();
-      _tipController.text = '0.0';
-      _clientGender = 'Male';
-      _clientAgeCategory = 'Adult';
-      _paymentMethod = 'Cash';
-      _selectedCustomer = null;
-    });
+        // Save permanent record to BarberRecords provider (preserved forever)
+        final String paymentMethodLabel = tenderResult.payments.isNotEmpty
+            ? tenderResult.payments.map((p) => p.method.name.toUpperCase()).join(' + ')
+            : 'CASH';
 
-    if (!mounted) return;
+        final List<CartItem> serviceCartItems = cartItems
+            .where((i) => i.product.isService || i.product.category.toUpperCase().contains('BARBER') || i.product.category.toUpperCase().contains('HAIR') || i.product.category.toUpperCase().contains('BEARD'))
+            .toList();
 
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.cut, color: Color(0xFF1565C0)),
-            SizedBox(width: 8),
-            Text('Barbershop Service Completed'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Invoice: ${sale.id}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-            Text('Barber Assigned: $_selectedBarber', style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text('Client: $clientName'),
-            Text('Category: $clientGenderSaved • $clientAgeSaved', style: const TextStyle(fontSize: 12, color: Colors.blue)),
-            if (clientPhone.isNotEmpty) Text('Phone: $clientPhone', style: const TextStyle(fontSize: 12)),
-            const SizedBox(height: 6),
-            Text('Total Paid: ${currencyFormat.format(grandTotal)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            if (tip > 0) Text('Includes Barber Tip: ${currencyFormat.format(tip)}', style: const TextStyle(fontSize: 12, color: Colors.green)),
-            Text('Payment Method: $paymentMethodSaved'),
-            const Divider(),
-            const Text('Receipt issued successfully.'),
-          ],
-        ),
-        actions: [
-          OutlinedButton.icon(
-            onPressed: () => ReceiptService.printReceipt(sale, context: context),
-            icon: const Icon(Icons.print_outlined, size: 18),
-            label: const Text('RE-PRINT RECEIPT'),
+        if (serviceCartItems.isNotEmpty) {
+          for (final item in serviceCartItems) {
+            final double fixedComm = item.product.serviceCommission > 0
+                ? (item.product.serviceCommission * item.quantity)
+                : ref.read(barberRecordsProvider.notifier).resolveCommissionAmount(item.product.name, price: item.priceAtSale, product: item.product);
+            final double commRate = item.priceAtSale > 0 ? ((fixedComm / item.priceAtSale) * 100.0) : 40.0;
+
+            await ref.read(barberRecordsProvider.notifier).recordService(
+              customerName: clientName,
+              customerPhone: clientPhone,
+              service: item.product.name,
+              barber: _selectedBarber,
+              price: item.priceAtSale,
+              tip: item == serviceCartItems.first ? tip : 0.0,
+              paymentMethod: paymentMethodLabel,
+              attendant: cashierName,
+              saleId: sale.id,
+              source: 'POS',
+              notes: _clientAgeCategory == 'Kid' ? 'Kid cut (Parent: ${_parentPhoneController.text.trim()})' : null,
+              timestamp: sale.timestamp,
+              commissionRate: commRate,
+              commissionAmount: fixedComm,
+              product: item.product,
+            );
+          }
+        } else {
+          final double fixedComm = ref.read(barberRecordsProvider.notifier).resolveCommissionAmount(resolvedServiceName, price: grandTotal);
+          final double commRate = grandTotal > 0 ? ((fixedComm / grandTotal) * 100.0) : 40.0;
+
+          await ref.read(barberRecordsProvider.notifier).recordService(
+            customerName: clientName,
+            customerPhone: clientPhone,
+            service: resolvedServiceName,
+            barber: _selectedBarber,
+            price: grandTotal,
+            tip: tip,
+            paymentMethod: paymentMethodLabel,
+            attendant: cashierName,
+            saleId: sale.id,
+            source: 'POS',
+            notes: _clientAgeCategory == 'Kid' ? 'Kid cut (Parent: ${_parentPhoneController.text.trim()})' : null,
+            timestamp: sale.timestamp,
+            commissionRate: commRate,
+            commissionAmount: fixedComm,
+          );
+        }
+
+        // Trigger instant post-haircut SMS to client if phone is provided
+        if (_clientAgeCategory == 'Kid') {
+          final String childName = _childNameController.text.trim().isNotEmpty
+              ? _childNameController.text.trim()
+              : clientName;
+          final String parentPhone = _parentPhoneController.text.trim().isNotEmpty
+              ? _parentPhoneController.text.trim()
+              : clientPhone;
+          if (parentPhone.isNotEmpty) {
+            SmsService.sendKidHaircutSms(
+              childName: childName,
+              parentPhone: parentPhone,
+              serviceName: resolvedServiceName,
+              barberName: _selectedBarber,
+            );
+          }
+        } else {
+          if (clientPhone.isNotEmpty) {
+            SmsService.sendPostHaircutSms(
+              name: clientName,
+              phone: clientPhone,
+              serviceName: resolvedServiceName,
+              barberName: _selectedBarber,
+            );
+          }
+        }
+
+        // Clean cart and all checkout fields immediately after sale
+        ref.read(cartProvider.notifier).clear();
+        setState(() {
+          _clientNameController.clear();
+          _clientPhoneController.clear();
+          _childNameController.clear();
+          _parentPhoneController.clear();
+          _tipController.text = '0.0';
+          _clientGender = 'Male';
+          _clientAgeCategory = 'Adult';
+          _paymentMethod = 'Cash';
+          _selectedCustomer = null;
+        });
+
+        if (!mounted) return;
+
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.cut, color: Color(0xFF1565C0)),
+                SizedBox(width: 8),
+                Text('Barbershop Service Completed'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Invoice: ${sale.id}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                Text('Barber Assigned: $_selectedBarber', style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text('Client: $clientName'),
+                Text('Category: $clientGenderSaved • $clientAgeSaved', style: const TextStyle(fontSize: 12, color: Colors.blue)),
+                if (clientPhone.isNotEmpty) Text('Phone: $clientPhone', style: const TextStyle(fontSize: 12)),
+                const SizedBox(height: 6),
+                Text('Total Paid: ${currencyFormat.format(grandTotal)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                if (sale.effectiveChange > 0.01)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: Text('Change Returned: ${currencyFormat.format(sale.effectiveChange)}', 
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green)),
+                  ),
+                if (tip > 0) Text('Includes Barber Tip: ${currencyFormat.format(tip)}', style: const TextStyle(fontSize: 12, color: Colors.green)),
+                Text('Payment Method: $paymentMethodLabel'),
+                const Divider(),
+                const Text('Receipt issued successfully.'),
+              ],
+            ),
+            actions: [
+              OutlinedButton.icon(
+                onPressed: () => ReceiptService.printReceipt(sale, context: context),
+                icon: const Icon(Icons.print_outlined, size: 18),
+                label: const Text('RE-PRINT RECEIPT'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1565C0), foregroundColor: Colors.white),
+                child: const Text('OK / NEW CLIENT'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1565C0), foregroundColor: Colors.white),
-            child: const Text('OK / NEW CLIENT'),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -622,24 +682,29 @@ class _BarberPosState extends ConsumerState<BarberPos> {
               onTap: (route) => MenuService.navigate(context, route, currentRoute),
             ),
           ),
-          body: Row(
-            children: [
-              if (isDesktop)
-                AppSidebar(
-                  userId: user.id,
-                  userName: user.name,
-                  userRole: user.activePrimaryRole.name.toUpperCase(),
-                  currentRoute: currentRoute,
-                  items: menuItems,
-                  onTap: (route) => MenuService.navigate(context, route, currentRoute),
-                ),
-              Expanded(
+          body: Focus(
+            focusNode: _mainKeyboardFocusNode,
+            autofocus: true,
+            onKeyEvent: (node, event) => _handleKeyEvent(event),
+            child: Row(
+              children: [
+                if (isDesktop)
+                  AppSidebar(
+                    userId: user.id,
+                    userName: user.name,
+                    userRole: user.activePrimaryRole.name.toUpperCase(),
+                    currentRoute: currentRoute,
+                    items: menuItems,
+                    onTap: (route) => MenuService.navigate(context, route, currentRoute),
+                  ),
+                Expanded(
                 child: _currentTab == 0
                     ? _buildPOSLayout(filteredProducts, categories, isWholesale, isMobile, isDesktop)
                     : _buildHistoryLayout(),
               ),
             ],
           ),
+        ),
           bottomNavigationBar: SafeArea(child: _buildFooter()),
         ),
       ),
@@ -686,10 +751,28 @@ class _BarberPosState extends ConsumerState<BarberPos> {
                   height: 42,
                   child: TextField(
                     controller: _searchController,
+                    focusNode: _searchFocusNode,
                     onChanged: (v) => setState(() {}),
                     decoration: InputDecoration(
-                      hintText: 'Search service or grooming product...',
+                      hintText: 'Search service or grooming product... [F1]',
                       prefixIcon: const Icon(Icons.search, size: 18),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 16),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {});
+                              },
+                            )
+                          : Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              margin: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade200,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text('F1', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                            ),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.m)),
                       filled: true,

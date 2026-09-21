@@ -20,6 +20,7 @@ import '../../widgets/role_pop_scope.dart';
 import '../../widgets/passcode_guard.dart';
 import '../../services/barber_records_provider.dart';
 import '../../models/barbershop_models.dart';
+import '../../widgets/barber_settlement_dialog.dart';
 
 class SalaryManagementScreen extends ConsumerWidget {
   const SalaryManagementScreen({super.key});
@@ -2428,13 +2429,42 @@ class SalaryManagementScreen extends ConsumerWidget {
                             ),
                             title: Text(s.barberName, style: const TextStyle(fontWeight: FontWeight.bold)),
                             subtitle: Text('${s.totalServices} cuts • Gross: ₵${s.grossSales.toStringAsFixed(0)} • Fixed Comm: ₵${s.totalCommission.toStringAsFixed(2)}'),
-                            trailing: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.end,
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text('₵${s.totalCommission.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 15)),
-                                if (s.totalTips > 0)
-                                  Text('+₵${s.totalTips.toStringAsFixed(2)} tip', style: TextStyle(fontSize: 10, color: Colors.amber.shade900)),
+                                Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text('₵${s.totalCommission.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 15)),
+                                    if (s.totalTips > 0)
+                                      Text('+₵${s.totalTips.toStringAsFixed(2)} tip', style: TextStyle(fontSize: 10, color: Colors.amber.shade900)),
+                                  ],
+                                ),
+                                const SizedBox(width: 10),
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green.shade800,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                  ),
+                                  icon: const Icon(Icons.payments_outlined, size: 12),
+                                  label: const Text('Settle', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)),
+                                  onPressed: () {
+                                    final allUsers = ref.read(userProvider);
+                                    final matching = allUsers.where((u) => '${u.firstName} ${u.surname}'.toLowerCase() == s.barberName.toLowerCase() || u.firstName.toLowerCase() == s.barberName.toLowerCase()).firstOrNull;
+                                    BarberSettlementDialog.show(
+                                      context: context,
+                                      ref: ref,
+                                      barberName: s.barberName,
+                                      barberPhone: matching?.phone,
+                                      initialFilter: 'This Month',
+                                    );
+                                  },
+                                ),
                               ],
                             ),
                             onTap: () => _showStaffCommissionDetailsDialog(context, s.barberName, s.records),

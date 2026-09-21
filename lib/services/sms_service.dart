@@ -172,6 +172,9 @@ class SmsService {
       message += '\nPaid: GHS ${sale.amountPaid.toStringAsFixed(2)}\nBalance Due: GHS ${sale.balance.toStringAsFixed(2)}';
     } else {
       message += '\nStatus: Paid';
+      if (sale.effectiveChange > 0.01) {
+        message += '\nChange: GHS ${sale.effectiveChange.toStringAsFixed(2)}';
+      }
     }
 
     if (discountAmount != null && discountAmount > 0) {
