@@ -28,6 +28,7 @@ import '../../core/uuid_utils.dart';
 import '../../models/expense_model.dart';
 import '../../services/daily_reminder_service.dart';
 import '../../services/daily_briefing_service.dart';
+import '../../services/weekly_reminder_service.dart';
 
 class AdminDashboard extends ConsumerStatefulWidget {
   const AdminDashboard({super.key});
@@ -54,9 +55,10 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
     _pageController = PageController(initialPage: 0);
     _startTimer();
     
-    // Check for Daily End-of-Day SMS Reminder
+    // Check for Daily & Weekly SMS Reminders
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(dailyReminderServiceProvider).checkAndSendDailySummary();
+      ref.read(weeklyReminderServiceProvider).checkAndSendWeeklySummary();
     });
   }
 
@@ -675,6 +677,20 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
           label: const Text('WhatsApp Daily Close'),
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF25D366),
+            foregroundColor: Colors.white,
+            elevation: 1,
+            padding: EdgeInsets.symmetric(
+              horizontal: isMobile ? 12 : 20, 
+              vertical: isMobile ? 10 : 15
+            ),
+          ),
+        ),
+        ElevatedButton.icon(
+          onPressed: () => WeeklyReminderService.showWeeklySmsModal(context, ref),
+          icon: const Icon(Icons.sms_rounded, size: 18),
+          label: const Text('Weekly SMS to Admin'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF1565C0),
             foregroundColor: Colors.white,
             elevation: 1,
             padding: EdgeInsets.symmetric(

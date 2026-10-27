@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "ms" "\0"
+            VALUE "CompanyName", "Container Stores" "\0"
+            VALUE "FileDescription", "Container Business Manager" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "ms" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "ms.exe" "\0"
-            VALUE "ProductName", "ms" "\0"
+            VALUE "InternalName", "Container" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Container Stores. All rights reserved." "\0"
+            VALUE "OriginalFilename", "Container.exe" "\0"
+            VALUE "ProductName", "Container Business Manager" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

@@ -41,6 +41,7 @@ class _PharmacyDashboardState extends ConsumerState<PharmacyDashboard> with Sing
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider);
     final theme = Theme.of(context);
+    final isMobile = ResponsiveLayout.isMobile(context);
     final isDesktop = ResponsiveLayout.isDesktop(context);
     const currentRoute = '/pharmacy';
     final menuItems = ref.watch(menuItemsProvider);
@@ -129,58 +130,120 @@ class _PharmacyDashboardState extends ConsumerState<PharmacyDashboard> with Sing
                       color: const Color(0xFF2E7D32),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       child: Padding(
-                        padding: const EdgeInsets.all(AppSpacing.l),
-                        child: Row(
-                          children: [
-                            const CircleAvatar(
-                              radius: 28,
-                              backgroundColor: Colors.white24,
-                              child: Icon(Icons.local_pharmacy, color: Colors.white, size: 32),
-                            ),
-                            const SizedBox(width: AppSpacing.m),
-                            Expanded(
-                              child: Column(
+                        padding: EdgeInsets.all(isMobile ? AppSpacing.m : AppSpacing.l),
+                        child: isMobile
+                            ? Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
-                                children: const [
-                                  Text(
-                                    'EMMANUEL CHEMIST',
-                                    style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                                children: [
+                                  Row(
+                                    children: [
+                                      const CircleAvatar(
+                                        radius: 22,
+                                        backgroundColor: Colors.white24,
+                                        child: Icon(Icons.local_pharmacy, color: Colors.white, size: 24),
+                                      ),
+                                      const SizedBox(width: AppSpacing.m),
+                                      const Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'EMMANUEL CHEMIST',
+                                              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                                            ),
+                                            SizedBox(height: 2),
+                                            Text(
+                                              'Location: Opposite Kaabere Main Clinic • GPS: BJ 0003-5661',
+                                              style: TextStyle(color: Colors.white70, fontSize: 11),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  SizedBox(height: 4),
-                                  Text(
-                                    'Location: Opposite Kaabere Main Clinic • GPS: BJ 0003-5661 • Email: ea0005917@gmail.com',
-                                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                                  const SizedBox(height: AppSpacing.m),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton.icon(
+                                      onPressed: () => Navigator.pushNamed(context, '/pharmacy/pos'),
+                                      icon: const Icon(Icons.point_of_sale),
+                                      label: const Text('OPEN PHARMACY POS'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.white,
+                                        foregroundColor: const Color(0xFF2E7D32),
+                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Row(
+                                children: [
+                                  const CircleAvatar(
+                                    radius: 28,
+                                    backgroundColor: Colors.white24,
+                                    child: Icon(Icons.local_pharmacy, color: Colors.white, size: 32),
+                                  ),
+                                  const SizedBox(width: AppSpacing.m),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: const [
+                                        Text(
+                                          'EMMANUEL CHEMIST',
+                                          style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                                        ),
+                                        SizedBox(height: 4),
+                                        Text(
+                                          'Location: Opposite Kaabere Main Clinic • GPS: BJ 0003-5661 • Email: ea0005917@gmail.com',
+                                          style: TextStyle(color: Colors.white70, fontSize: 12),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  ElevatedButton.icon(
+                                    onPressed: () => Navigator.pushNamed(context, '/pharmacy/pos'),
+                                    icon: const Icon(Icons.point_of_sale),
+                                    label: const Text('OPEN PHARMACY POS'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.white,
+                                      foregroundColor: const Color(0xFF2E7D32),
+                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                                    ),
                                   ),
                                 ],
                               ),
-                            ),
-                            ElevatedButton.icon(
-                              onPressed: () => Navigator.pushNamed(context, '/pharmacy/pos'),
-                              icon: const Icon(Icons.point_of_sale),
-                              label: const Text('OPEN PHARMACY POS'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: const Color(0xFF2E7D32),
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                              ),
-                            ),
-                          ],
-                        ),
                       ),
                     ),
                     const SizedBox(height: AppSpacing.l),
-                    Row(
-                      children: [
-                        Expanded(child: _buildStatCard('Prescriptions Today', todayRxCount.toString(), Icons.receipt_long, Colors.blue)),
-                        const SizedBox(width: AppSpacing.m),
-                        Expanded(child: _buildStatCard('Expiring / Low Stock', '$expiringLowStockCount Items', Icons.warning_amber, expiringLowStockCount > 0 ? Colors.orange : Colors.green)),
-                        const SizedBox(width: AppSpacing.m),
-                        Expanded(child: _buildStatCard('Rx Revenue Today', currencyFormat.format(todayPharmRevenue), Icons.payments, Colors.green)),
-                      ],
-                    ),
+                    if (isMobile)
+                      Column(
+                        children: [
+                          _buildStatCard('Prescriptions Today', todayRxCount.toString(), Icons.receipt_long, Colors.blue),
+                          const SizedBox(height: AppSpacing.s),
+                          Row(
+                            children: [
+                              Expanded(child: _buildStatCard('Expiring / Low Stock', '$expiringLowStockCount Items', Icons.warning_amber, expiringLowStockCount > 0 ? Colors.orange : Colors.green)),
+                              const SizedBox(width: AppSpacing.s),
+                              Expanded(child: _buildStatCard('Rx Revenue Today', currencyFormat.format(todayPharmRevenue), Icons.payments, Colors.green)),
+                            ],
+                          ),
+                        ],
+                      )
+                    else
+                      Row(
+                        children: [
+                          Expanded(child: _buildStatCard('Prescriptions Today', todayRxCount.toString(), Icons.receipt_long, Colors.blue)),
+                          const SizedBox(width: AppSpacing.m),
+                          Expanded(child: _buildStatCard('Expiring / Low Stock', '$expiringLowStockCount Items', Icons.warning_amber, expiringLowStockCount > 0 ? Colors.orange : Colors.green)),
+                          const SizedBox(width: AppSpacing.m),
+                          Expanded(child: _buildStatCard('Rx Revenue Today', currencyFormat.format(todayPharmRevenue), Icons.payments, Colors.green)),
+                        ],
+                      ),
                     const SizedBox(height: AppSpacing.l),
                     TabBar(
                       controller: _tabController,
+                      isScrollable: isMobile,
                       labelColor: theme.colorScheme.primary,
                       unselectedLabelColor: Colors.grey,
                       indicatorColor: theme.colorScheme.primary,
@@ -240,6 +303,7 @@ class _PharmacyDashboardState extends ConsumerState<PharmacyDashboard> with Sing
 
   Widget _buildBatchTrackingTab(ThemeData theme, List<Product> pharmacyProducts) {
     final now = DateTime.now();
+    final isMobile = MediaQuery.of(context).size.width < 600;
 
     return Card(
       child: Padding(
@@ -247,18 +311,36 @@ class _PharmacyDashboardState extends ConsumerState<PharmacyDashboard> with Sing
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Active Drug Catalog & Expiration Tracking', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                ElevatedButton.icon(
-                  onPressed: () => Navigator.pushNamed(context, '/admin/stock'),
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('Add / Intake Drug Stock'),
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), foregroundColor: Colors.white),
-                ),
-              ],
-            ),
+            if (isMobile)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Active Drug Catalog & Expiration Tracking', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => Navigator.pushNamed(context, '/admin/stock'),
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Add / Intake Drug Stock'),
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), foregroundColor: Colors.white),
+                    ),
+                  ),
+                ],
+              )
+            else
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Active Drug Catalog & Expiration Tracking', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  ElevatedButton.icon(
+                    onPressed: () => Navigator.pushNamed(context, '/admin/stock'),
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Add / Intake Drug Stock'),
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), foregroundColor: Colors.white),
+                  ),
+                ],
+              ),
             const SizedBox(height: AppSpacing.m),
             Expanded(
               child: pharmacyProducts.isEmpty
@@ -310,24 +392,44 @@ class _PharmacyDashboardState extends ConsumerState<PharmacyDashboard> with Sing
   }
 
   Widget _buildPrescriptionsTab(ThemeData theme, List<SaleRecord> todayPharmSales) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.m),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Recent Pharmacy Dispensing Logs', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                ElevatedButton.icon(
-                  onPressed: () => Navigator.pushNamed(context, '/pharmacy/pos'),
-                  icon: const Icon(Icons.point_of_sale),
-                  label: const Text('Dispense at Pharmacy POS'),
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), foregroundColor: Colors.white),
-                ),
-              ],
-            ),
+            if (isMobile)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Recent Pharmacy Dispensing Logs', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => Navigator.pushNamed(context, '/pharmacy/pos'),
+                      icon: const Icon(Icons.point_of_sale),
+                      label: const Text('Dispense at Pharmacy POS'),
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), foregroundColor: Colors.white),
+                    ),
+                  ),
+                ],
+              )
+            else
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Recent Pharmacy Dispensing Logs', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  ElevatedButton.icon(
+                    onPressed: () => Navigator.pushNamed(context, '/pharmacy/pos'),
+                    icon: const Icon(Icons.point_of_sale),
+                    label: const Text('Dispense at Pharmacy POS'),
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), foregroundColor: Colors.white),
+                  ),
+                ],
+              ),
             const SizedBox(height: AppSpacing.m),
             Expanded(
               child: todayPharmSales.isEmpty

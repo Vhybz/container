@@ -13,6 +13,7 @@ import '../../models/expense_model.dart';
 import '../../services/menu_service.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/user_provider.dart';
+import '../../core/image_picker_helper.dart';
 
 class ExpenseManagementScreen extends ConsumerWidget {
   const ExpenseManagementScreen({super.key});
@@ -460,8 +461,7 @@ class ExpenseManagementScreen extends ConsumerWidget {
   Widget _buildReceiptPicker(BuildContext context, Uint8List? bytes, Function(Uint8List, String) onPicked) {
     return InkWell(
       onTap: () async {
-        final picker = ImagePicker();
-        final image = await picker.pickImage(source: ImageSource.gallery);
+        final image = await ImagePickerHelper.pickAndCompressImage(source: ImageSource.gallery);
         if (image != null) {
           final b = await image.readAsBytes();
           onPicked(b, image.name);

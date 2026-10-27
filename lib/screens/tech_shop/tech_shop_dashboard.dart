@@ -118,6 +118,7 @@ class _TechShopDashboardState extends ConsumerState<TechShopDashboard> with Sing
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider);
     final theme = Theme.of(context);
+    final isMobile = ResponsiveLayout.isMobile(context);
     final isDesktop = ResponsiveLayout.isDesktop(context);
     const currentRoute = '/tech';
     final menuItems = ref.watch(menuItemsProvider);
@@ -208,62 +209,124 @@ class _TechShopDashboardState extends ConsumerState<TechShopDashboard> with Sing
                       color: const Color(0xFFE65100),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.m)),
                       child: Padding(
-                        padding: const EdgeInsets.all(AppSpacing.l),
-                        child: Row(
-                          children: [
-                            const CircleAvatar(
-                              radius: 28,
-                              backgroundColor: Colors.white24,
-                              child: Icon(Icons.phone_android, color: Colors.white, size: 32),
-                            ),
-                            const SizedBox(width: AppSpacing.m),
-                            Expanded(
-                              child: Column(
+                        padding: EdgeInsets.all(isMobile ? AppSpacing.m : AppSpacing.l),
+                        child: isMobile
+                            ? Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
-                                children: const [
-                                  Text(
-                                    'Tech POS & Device Operations',
-                                    style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                                children: [
+                                  Row(
+                                    children: [
+                                      const CircleAvatar(
+                                        radius: 22,
+                                        backgroundColor: Colors.white24,
+                                        child: Icon(Icons.phone_android, color: Colors.white, size: 24),
+                                      ),
+                                      const SizedBox(width: AppSpacing.m),
+                                      const Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Tech POS & Device Operations',
+                                              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                                            ),
+                                            SizedBox(height: 2),
+                                            Text(
+                                              'Sell devices with IMEI tracking, accessories, repairs & warranties',
+                                              style: TextStyle(color: Colors.white70, fontSize: 11),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  SizedBox(height: 4),
-                                  Text(
-                                    'Sell devices with IMEI tracking, accessories, repair work orders & digital warranty issuance',
-                                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                                  const SizedBox(height: AppSpacing.m),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton.icon(
+                                      onPressed: () => Navigator.pushNamed(context, '/tech/pos'),
+                                      icon: const Icon(Icons.point_of_sale),
+                                      label: const Text('OPEN TECH POS'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.white,
+                                        foregroundColor: const Color(0xFFE65100),
+                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Row(
+                                children: [
+                                  const CircleAvatar(
+                                    radius: 28,
+                                    backgroundColor: Colors.white24,
+                                    child: Icon(Icons.phone_android, color: Colors.white, size: 32),
+                                  ),
+                                  const SizedBox(width: AppSpacing.m),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: const [
+                                        Text(
+                                          'Tech POS & Device Operations',
+                                          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                                        ),
+                                        SizedBox(height: 4),
+                                        Text(
+                                          'Sell devices with IMEI tracking, accessories, repair work orders & digital warranty issuance',
+                                          style: TextStyle(color: Colors.white70, fontSize: 13),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  ElevatedButton.icon(
+                                    onPressed: () => Navigator.pushNamed(context, '/tech/pos'),
+                                    icon: const Icon(Icons.point_of_sale),
+                                    label: const Text('OPEN TECH POS'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.white,
+                                      foregroundColor: const Color(0xFFE65100),
+                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                                    ),
                                   ),
                                 ],
                               ),
-                            ),
-                            ElevatedButton.icon(
-                              onPressed: () => Navigator.pushNamed(context, '/tech/pos'),
-                              icon: const Icon(Icons.point_of_sale),
-                              label: const Text('OPEN TECH POS'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: const Color(0xFFE65100),
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                              ),
-                            ),
-                          ],
-                        ),
                       ),
                     ),
                     const SizedBox(height: AppSpacing.l),
 
                     // Stat Cards
-                    Row(
-                      children: [
-                        Expanded(child: _buildStatCard('Devices in Stock', '${totalDeviceUnits.toInt()} Units', Icons.smartphone, Colors.orange)),
-                        const SizedBox(width: AppSpacing.m),
-                        Expanded(child: _buildStatCard('Active Repairs', '${tickets.where((t) => t.status != "Delivered" && t.status != "Completed").length} Tickets', Icons.build_outlined, Colors.blue)),
-                        const SizedBox(width: AppSpacing.m),
-                        Expanded(child: _buildStatCard('Today\'s Revenue', currencyFormat.format(todayRevenue), Icons.monetization_on, Colors.green)),
-                      ],
-                    ),
+                    if (isMobile)
+                      Column(
+                        children: [
+                          _buildStatCard('Devices in Stock', '${totalDeviceUnits.toInt()} Units', Icons.smartphone, Colors.orange),
+                          const SizedBox(height: AppSpacing.s),
+                          Row(
+                            children: [
+                              Expanded(child: _buildStatCard('Active Repairs', '${tickets.where((t) => t.status != "Delivered" && t.status != "Completed").length} Tickets', Icons.build_outlined, Colors.blue)),
+                              const SizedBox(width: AppSpacing.s),
+                              Expanded(child: _buildStatCard('Today\'s Revenue', currencyFormat.format(todayRevenue), Icons.monetization_on, Colors.green)),
+                            ],
+                          ),
+                        ],
+                      )
+                    else
+                      Row(
+                        children: [
+                          Expanded(child: _buildStatCard('Devices in Stock', '${totalDeviceUnits.toInt()} Units', Icons.smartphone, Colors.orange)),
+                          const SizedBox(width: AppSpacing.m),
+                          Expanded(child: _buildStatCard('Active Repairs', '${tickets.where((t) => t.status != "Delivered" && t.status != "Completed").length} Tickets', Icons.build_outlined, Colors.blue)),
+                          const SizedBox(width: AppSpacing.m),
+                          Expanded(child: _buildStatCard('Today\'s Revenue', currencyFormat.format(todayRevenue), Icons.monetization_on, Colors.green)),
+                        ],
+                      ),
                     const SizedBox(height: AppSpacing.l),
 
                     // Tabs
                     TabBar(
                       controller: _tabController,
+                      isScrollable: isMobile,
                       labelColor: theme.colorScheme.primary,
                       unselectedLabelColor: Colors.grey,
                       indicatorColor: theme.colorScheme.primary,
@@ -366,24 +429,43 @@ class _TechShopDashboardState extends ConsumerState<TechShopDashboard> with Sing
 
   Widget _buildRepairsTab(ThemeData theme) {
     final tickets = ref.watch(repairTicketProvider);
+    final isMobile = MediaQuery.of(context).size.width < 600;
 
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.m),
         child: Column(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Active Phone Repair Tickets', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                ElevatedButton.icon(
-                  onPressed: () => _showCreateWorkOrderDialog(context),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Create Work Order'),
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE65100), foregroundColor: Colors.white),
-                ),
-              ],
-            ),
+            if (isMobile)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Active Phone Repair Tickets', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _showCreateWorkOrderDialog(context),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Create Work Order'),
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE65100), foregroundColor: Colors.white),
+                    ),
+                  ),
+                ],
+              )
+            else
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Active Phone Repair Tickets', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  ElevatedButton.icon(
+                    onPressed: () => _showCreateWorkOrderDialog(context),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Create Work Order'),
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE65100), foregroundColor: Colors.white),
+                  ),
+                ],
+              ),
             const SizedBox(height: AppSpacing.m),
             Expanded(
               child: tickets.isEmpty

@@ -5,6 +5,8 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../core/uuid_utils.dart';
 import '../models/product.dart';
+import '../models/tech_shop_models.dart';
+import 'tech_shop_service.dart';
 import 'supabase_product_service.dart';
 import 'user_provider.dart';
 import '../models/user_model.dart';
@@ -194,6 +196,24 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
         ? product
         : product.copyWith(branchCode: user?.branchCode);
     
+    if (productWithBranch.imeiList != null && productWithBranch.imeiList!.isNotEmpty) {
+      final imeiNotifier = ref.read(imeiInventoryProvider.notifier);
+      final existingImeis = ref.read(imeiInventoryProvider).map((r) => r.imei).toSet();
+      for (final imei in productWithBranch.imeiList!) {
+        final trimmed = imei.trim();
+        if (trimmed.isNotEmpty && !existingImeis.contains(trimmed)) {
+          imeiNotifier.registerIMEI(
+            IMEIRecord(
+              imei: trimmed,
+              deviceModel: productWithBranch.name,
+              status: 'In Stock',
+              warrantyDurationMonths: 12,
+            ),
+          );
+        }
+      }
+    }
+
     state.whenData((products) {
       final newList = [...products.where((p) => p.id != productWithBranch.id), productWithBranch];
       state = AsyncValue.data(newList);
@@ -224,6 +244,24 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
         oldData: oldProduct?.toJson(),
         newData: updatedProduct.toJson(),
       );
+
+      if (updatedProduct.imeiList != null && updatedProduct.imeiList!.isNotEmpty) {
+        final imeiNotifier = ref.read(imeiInventoryProvider.notifier);
+        final existingImeis = ref.read(imeiInventoryProvider).map((r) => r.imei).toSet();
+        for (final imei in updatedProduct.imeiList!) {
+          final trimmed = imei.trim();
+          if (trimmed.isNotEmpty && !existingImeis.contains(trimmed)) {
+            imeiNotifier.registerIMEI(
+              IMEIRecord(
+                imei: trimmed,
+                deviceModel: updatedProduct.name,
+                status: 'In Stock',
+                warrantyDurationMonths: 12,
+              ),
+            );
+          }
+        }
+      }
 
       state.whenData((products) {
         final newList = products.map((p) => p.id == updatedProduct.id ? updatedProduct : p).toList();
@@ -275,7 +313,14 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
     });
   }
 
-  Future<void> updateStock(String id, double quantityChange, {String reason = 'ADJUSTMENT', String? referenceId}) async {
+  Future<void> updateStock(
+    String id, 
+    double quantityChange, {
+    String reason = 'ADJUSTMENT', 
+    String? referenceId,
+    List<String>? newImeis,
+    bool? requiresImei,
+  }) async {
     final products = state.value;
     final now = DateTime.now();
     final user = ref.read(currentUserProvider);
@@ -285,9 +330,13 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
       if (products != null) {
         product = products.where((p) => p.id == id).firstOrNull;
       }
-      
       if (product == null) {
-        product = await _service.getProductById(id);
+        try {
+          product = await _service.getProductById(id);
+        } catch (e) {
+          debugPrint('Unable to fetch product $id from network (offline): $e');
+          return;
+        }
       }
 
       double currentDailyAdded = product.dailyStockAdded;
@@ -301,27 +350,100 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
       final newQuantity = product.stockQuantity + quantityChange;
       final newDailyAdded = quantityChange > 0 ? (currentDailyAdded + quantityChange) : currentDailyAdded;
       
+      final List<String> currentImeis = List<String>.from(product.imeiList ?? []);
+      if (newImeis != null && newImeis.isNotEmpty) {
+        final imeiNotifier = ref.read(imeiInventoryProvider.notifier);
+        final existingImeis = ref.read(imeiInventoryProvider).map((r) => r.imei).toSet();
+        for (final imei in newImeis) {
+          final trimmed = imei.trim();
+          if (trimmed.isNotEmpty) {
+            if (!currentImeis.contains(trimmed)) {
+              currentImeis.add(trimmed);
+            }
+            if (!existingImeis.contains(trimmed)) {
+              imeiNotifier.registerIMEI(
+                IMEIRecord(
+                  imei: trimmed,
+                  deviceModel: product.name,
+                  status: 'In Stock',
+                  warrantyDurationMonths: 12,
+                ),
+              );
+            }
+          }
+        }
+      }
+      final bool updatedRequiresImei = requiresImei ?? (product.requiresImei || currentImeis.isNotEmpty);
+
       final updatedProduct = product.copyWith(
         stockQuantity: newQuantity,
         dailyStockAdded: newDailyAdded,
         lastStockUpdate: now,
+        imeiList: currentImeis,
+        requiresImei: updatedRequiresImei,
       );
 
-      final connectivity = kIsWeb ? [ConnectivityResult.wifi] : await Connectivity().checkConnectivity();
-      if (kIsWeb || !connectivity.contains(ConnectivityResult.none)) {
-        await SupabaseConfig.client.rpc('increment_stock', params: {
-          'p_id': id,
-          'p_amount': quantityChange,
-        });
-        
-        await SupabaseConfig.client
-            .from('products')
-            .update({
-              'daily_stock_added': updatedProduct.dailyStockAdded,
-              'last_stock_update': updatedProduct.lastStockUpdate?.toIso8601String(),
-            })
-            .eq('id', id);
-      } else {
+      // 1. OPTIMISTIC UI: Update local state & cache FIRST
+      if (products != null) {
+        final updatedList = products.map((p) => p.id == id ? updatedProduct : p).toList();
+        state = AsyncValue.data(updatedList);
+        _saveToCache(updatedList);
+      }
+
+      // 2. REMOTE SYNC WITH OFFLINE FALLBACK
+      try {
+        final connectivity = await Connectivity().checkConnectivity();
+        if (!connectivity.contains(ConnectivityResult.none)) {
+          try {
+            await SupabaseConfig.client.rpc('increment_stock', params: {
+              'p_id': id,
+              'p_amount': quantityChange,
+            });
+          } catch (rpcError) {
+            debugPrint('Product Engine increment_stock RPC notice: $rpcError');
+          }
+          
+          final updatePayload = <String, dynamic>{
+            'stock_quantity': newQuantity,
+            'daily_stock_added': updatedProduct.dailyStockAdded,
+            'last_stock_update': updatedProduct.lastStockUpdate?.toIso8601String(),
+          };
+          if (newImeis != null || requiresImei != null) {
+            updatePayload['imei_list'] = updatedProduct.imeiList;
+            updatePayload['requires_imei'] = updatedProduct.requiresImei;
+          }
+
+          await SupabaseConfig.client
+              .from('products')
+              .update(updatePayload)
+              .eq('id', id);
+
+          try {
+            final historyEntry = StockHistory(
+              id: UuidUtils.generate(),
+              branchCode: user?.branchCode,
+              productId: id,
+              changeAmount: quantityChange,
+              newQuantity: newQuantity,
+              reason: reason,
+              referenceId: referenceId,
+              timestamp: now,
+            );
+            await SupabaseConfig.client.from('stock_history').insert(historyEntry.toJson());
+          } catch (_) {}
+        } else {
+          await OfflineSyncService.addToQueue(
+            actionType: 'UPDATE_PRODUCT_STOCK',
+            data: {
+              'id': id,
+              'change_amount': quantityChange,
+              'timestamp': now.toIso8601String(),
+            },
+          );
+          await OfflineSyncService.addToQueue(actionType: 'UPDATE_PRODUCT', data: updatedProduct.toJson());
+        }
+      } catch (networkError) {
+        debugPrint('Stock sync failed (offline fallback active): $networkError');
         await OfflineSyncService.addToQueue(
           actionType: 'UPDATE_PRODUCT_STOCK',
           data: {
@@ -333,36 +455,17 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
         await OfflineSyncService.addToQueue(actionType: 'UPDATE_PRODUCT', data: updatedProduct.toJson());
       }
       
-      await AuditService.log(
-        ref: ref,
-        action: 'STOCK_ADJUSTED',
-        entityType: 'PRODUCT',
-        entityId: id,
-        newData: {'change': quantityChange, 'new_total': newQuantity, 'reason': reason},
-      );
-
-      final historyEntry = StockHistory(
-        id: UuidUtils.generate(),
-        branchCode: user?.branchCode,
-        productId: id,
-        changeAmount: quantityChange,
-        newQuantity: newQuantity,
-        reason: reason,
-        referenceId: referenceId,
-        timestamp: now,
-      );
-
-      if (kIsWeb) {
-        await SupabaseConfig.client.from('stock_history').insert(historyEntry.toJson());
-      } else {
-        await OfflineSyncService.addToQueue(actionType: 'STOCK_HISTORY', data: historyEntry.toJson());
-      }
-
-      if (products != null) {
-        state = AsyncValue.data(products.map((p) => p.id == id ? updatedProduct : p).toList());
-      }
+      try {
+        await AuditService.log(
+          ref: ref,
+          action: 'STOCK_ADJUSTED',
+          entityType: 'PRODUCT',
+          entityId: id,
+          newData: {'change': quantityChange, 'new_total': newQuantity, 'reason': reason, ...? (newImeis != null ? {'added_imeis': newImeis} : null)},
+        );
+      } catch (_) {}
     } catch (e) {
-      rethrow;
+      debugPrint('updateStock error: $e');
     }
   }
 
@@ -396,7 +499,9 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
           }
           return p;
         }).toList());
-      } catch (e) {}
+      } catch (e) {
+        debugPrint('Apply promotion error: $e');
+      }
     });
   }
 
@@ -420,7 +525,9 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
           promoStartDate: null,
           promoEndDate: null,
         )).toList());
-      } catch (e) {}
+      } catch (e) {
+        debugPrint('Clear promotion error: $e');
+      }
     });
   }
 
@@ -441,7 +548,9 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
           promoStartDate: null,
           promoEndDate: null,
         ) : p).toList());
-      } catch (e) {}
+      } catch (e) {
+        debugPrint('Remove promotion error: $e');
+      }
     });
   }
 
@@ -457,7 +566,9 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
           await OfflineSyncService.addToQueue(actionType: 'UPDATE_PRODUCT', data: updatedProduct.toJson());
         }
         state = AsyncValue.data(products.map((p) => (selectedIds == null || selectedIds.contains(p.id)) ? p.copyWith(isUnlimited: isUnlimited) : p).toList());
-      } catch (e) {}
+      } catch (e) {
+        debugPrint('Set unlimited status error: $e');
+      }
     });
   }
 
@@ -475,7 +586,9 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
           );
         }
         state = AsyncValue.data(products.map((p) => p.copyWith(stockQuantity: 0)).toList());
-      } catch (e) {}
+      } catch (e) {
+        debugPrint('Clear all stock error: $e');
+      }
     });
   }
 

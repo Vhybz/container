@@ -219,12 +219,16 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
               ? item.quantity * item.product.effectivePiecesPerPack
               : item.quantity;
 
-          await ref.read(productsFutureProvider.notifier).updateStock(
-            item.product.id, 
-            -deductionQty, 
-            reason: 'SALE', 
-            referenceId: saleWithBranch.id,
-          );
+          try {
+            await ref.read(productsFutureProvider.notifier).updateStock(
+              item.product.id, 
+              -deductionQty, 
+              reason: 'SALE', 
+              referenceId: saleWithBranch.id,
+            );
+          } catch (e) {
+            debugPrint('Offline stock deduction notice: $e');
+          }
         }
       }
     }

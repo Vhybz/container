@@ -20,8 +20,16 @@ class SupabaseUserService extends SupabaseBaseService {
       ];
 
   Future<List<UserAccount>> getUsers() async {
-    final response = await selectSorted('users', filters: {'is_deleted': false});
-    return response.map((json) => UserAccount.fromJson(json)).toList();
+    try {
+      final response = await selectSorted('users');
+      return response
+          .map((json) => UserAccount.fromJson(json))
+          .where((u) => !u.isDeleted)
+          .toList();
+    } catch (e) {
+      debugPrint('SupabaseUserService getUsers error: $e');
+      return [];
+    }
   }
 
   Future<void> addUser(UserAccount account) async {
@@ -56,6 +64,81 @@ class SupabaseUserService extends SupabaseBaseService {
       final response = await client.from('users').select().eq('id', id).single();
       return UserAccount.fromJson(response);
     } catch (e) {
+      return null;
+    }
+  }
+
+  Future<UserAccount?> getUserByIdOrEmail(String id, String email) async {
+    try {
+      // 1. Try by Auth UID first
+      final response = await client.from('users').select().eq('id', id).maybeSingle();
+      if (response != null) {
+        return UserAccount.fromJson(response);
+      }
+
+      // 2. Fallback: Try by Email (case-insensitive)
+      final emailClean = email.trim().toLowerCase();
+      final emailResponse = await client
+          .from('users')
+          .select()
+          .ilike('email', emailClean)
+          .maybeSingle();
+
+      if (emailResponse != null) {
+        final oldData = Map<String, dynamic>.from(emailResponse);
+        final oldId = oldData['id'] as String;
+
+        try {
+          await client.from('users').update({'id': id}).eq('id', oldId);
+          oldData['id'] = id;
+          return UserAccount.fromJson(oldData);
+        } catch (e) {
+          debugPrint('Failed to update user ID in public.users: $e');
+          try {
+            await client.from('users').delete().eq('id', oldId);
+            oldData['id'] = id;
+            await client.from('users').insert(oldData);
+            return UserAccount.fromJson(oldData);
+          } catch (err) {
+            debugPrint('Failed to re-insert user with new Auth ID: $err');
+            oldData['id'] = id;
+            return UserAccount.fromJson(oldData);
+          }
+        }
+      }
+
+      // 3. Fallback: Auto-create default profile for authenticated user if none exists in public.users
+      try {
+        final newUser = UserAccount(
+          id: id,
+          firstName: emailClean.split('@').first,
+          surname: 'User',
+          email: emailClean,
+          role: UserRole.admin,
+          status: AccountStatus.approved,
+          enabledPermissions: {
+            '/admin',
+            '/admin/sales', 
+            '/admin/expenses', 
+            '/admin/customers', 
+            '/admin/debts', 
+            '/admin/stock', 
+            '/admin/product-report',
+            '/admin/staff',
+            '/admin/salaries',
+            '/cashier', 
+            '/settings'
+          },
+        );
+        await addUser(newUser);
+        return newUser;
+      } catch (autoErr) {
+        debugPrint('Auto-create profile error: $autoErr');
+      }
+
+      return null;
+    } catch (e) {
+      debugPrint('getUserByIdOrEmail Error: $e');
       return null;
     }
   }
@@ -97,7 +180,7 @@ class SupabaseUserService extends SupabaseBaseService {
       await client.storage.from('user-profiles').uploadBinary(
             path,
             bytes,
-            fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+            fileOptions: const FileOptions(cacheControl: '31536000', upsert: true),
           );
       return client.storage.from('user-profiles').getPublicUrl(path);
     } catch (e) {

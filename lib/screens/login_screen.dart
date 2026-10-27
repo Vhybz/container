@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../core/constants.dart';
 import '../core/app_strings.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +8,8 @@ import '../models/user_model.dart';
 import '../services/user_provider.dart';
 import '../services/auth_provider.dart';
 import '../services/audit_service.dart';
+import '../services/offline_auth_vault.dart';
+import '../core/error_handler.dart';
 import 'auth/password_recovery_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -31,7 +34,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       return;
     }
 
-    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email)) {
+    if (!RegExp(r'^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email)) {
       _showMessage(AppStrings.invalidEmailTitle, AppStrings.invalidEmailMessage);
       return;
     }
@@ -49,8 +52,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         try {
           userAccount = ref.read(userProvider).firstWhere((u) => u.id == response.user!.id);
         } catch (_) {
-          // 2. Fallback: Fetch directly from Supabase if not in local state yet
-          userAccount = await notifier.fetchUserById(response.user!.id);
+          // 2. Fallback: Fetch directly from Supabase (by Auth ID or Email)
+          userAccount = await notifier.fetchUserByIdOrEmail(response.user!.id, email);
         }
 
         if (userAccount == null) {
@@ -81,7 +84,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           return;
         }
 
-        // Successful login
+        // Successful online login -> Save credentials to encrypted local offline vault
+        await OfflineAuthVault.storeCredentials(email, password, userAccount);
+
         ref.read(currentUserIdProvider.notifier).state = userAccount.id;
 
         // 3. Log Audit Event
@@ -124,9 +129,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
     } catch (e) {
       if (mounted) {
-        String title = AppStrings.loginFailedTitle;
         String errorMessage = e.toString();
-        
+
+        final bool isNetworkError = errorMessage.contains('network') || 
+                   errorMessage.contains('SocketException') || 
+                   errorMessage.contains('Failed host lookup') ||
+                   errorMessage.contains('handshake') ||
+                   errorMessage.contains('errno = 7') ||
+                   errorMessage.contains('ClientException') ||
+                   errorMessage.contains('TimeoutException');
+
+        // Check if offline login is possible for cached user
+        if (isNetworkError && await _tryOfflineLogin(email, password)) {
+          return;
+        }
+
         // Handle common Supabase Auth and Network errors gracefully
         if (errorMessage.contains('Invalid login credentials')) {
           errorMessage = AppStrings.invalidCredentialsError;
@@ -134,18 +151,86 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           errorMessage = AppStrings.emailNotConfirmedError;
         } else if (errorMessage.contains('User not found')) {
           errorMessage = AppStrings.userNotFoundError;
-        } else if (errorMessage.contains('network') || 
-                   errorMessage.contains('SocketException') || 
-                   errorMessage.contains('Failed host lookup') ||
-                   errorMessage.contains('handshake') ||
-                   errorMessage.contains('errno = 7')) {
+        } else if (isNetworkError) {
           errorMessage = AppStrings.networkError;
         }
 
-        _showMessage(title, errorMessage, isError: true);
+        if (mounted) {
+          ErrorHandler.handleError(context, e, customMessage: errorMessage);
+        }
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<bool> _tryOfflineLogin(String email, String password) async {
+    // 1. Try salted SHA-256 hash vault check first
+    final vaultUser = await OfflineAuthVault.verifyOffline(email, password);
+    UserAccount? targetUser = vaultUser;
+
+    // 2. Fallback to cached userProvider list
+    if (targetUser == null) {
+      final cachedUsers = ref.read(userProvider);
+      targetUser = cachedUsers.where((u) => u.email.trim().toLowerCase() == email.trim().toLowerCase()).firstOrNull;
+    }
+
+    if (targetUser != null) {
+      if (targetUser.status == AccountStatus.pending) {
+        _showMessage(AppStrings.approvalPendingTitle, AppStrings.approvalPendingMessage, isWarning: true);
+        return true;
+      }
+      if (targetUser.status == AccountStatus.suspended) {
+        _showMessage(AppStrings.accountSuspendedTitle, AppStrings.accountSuspendedMessage, isError: true);
+        return true;
+      }
+
+      _loginUserOffline(targetUser);
+      return true;
+    }
+    return false;
+  }
+
+  void _loginUserOffline(UserAccount userAccount) {
+    ref.read(currentUserIdProvider.notifier).state = userAccount.id;
+    ref.read(sessionUserProfileProvider.notifier).state = userAccount;
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Logged in offline as ${userAccount.name} (${userAccount.activePrimaryRole.display})'),
+          backgroundColor: Colors.teal,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+
+      switch (userAccount.activePrimaryRole) {
+        case UserRole.admin:
+          Navigator.pushReplacementNamed(context, '/admin');
+          break;
+        case UserRole.superAdmin:
+          Navigator.pushReplacementNamed(context, '/admin/super');
+          break;
+        case UserRole.pharmacist:
+          Navigator.pushReplacementNamed(context, '/pharmacy');
+          break;
+        case UserRole.barber:
+          Navigator.pushReplacementNamed(context, '/barbershop');
+          break;
+        case UserRole.phoneSales:
+        case UserRole.phoneSalesGuy:
+          Navigator.pushReplacementNamed(context, '/tech');
+          break;
+        case UserRole.secretary:
+          Navigator.pushReplacementNamed(context, '/barbershop');
+          break;
+        case UserRole.cashier:
+          Navigator.pushReplacementNamed(context, '/cashier');
+          break;
+        case UserRole.butcher:
+          Navigator.pushReplacementNamed(context, '/butcher');
+          break;
+      }
     }
   }
 
@@ -193,14 +278,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         child: Container(
           width: double.infinity,
           height: double.infinity,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: isDark 
-                ? [const Color(0xFF121212), const Color(0xFF000000)]
-                : [theme.colorScheme.primary, HSLColor.fromColor(theme.colorScheme.primary).withLightness(0.15).toColor()],
-            ),
+          decoration: const BoxDecoration(
+            gradient: AppGradients.splashAuthBackdrop,
           ),
           child: Center(
             child: SingleChildScrollView(
@@ -250,21 +329,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     Text(
                       AppStrings.loginTitle,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: isMobile ? 24 : 28, 
+                      style: GoogleFonts.oswald(
+                        fontSize: isMobile ? 26 : 30, 
                         fontWeight: FontWeight.bold, 
-                        color: theme.colorScheme.primary,
+                        color: AppColors.primarySlate,
                         letterSpacing: 1.2,
                       ),
                     ),
                     Text(
                       AppStrings.loginSubtitle,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: GoogleFonts.inter(
                         fontSize: 10, 
                         fontWeight: FontWeight.w600, 
-                        color: theme.colorScheme.primary.withValues(alpha: 0.8), 
-                      letterSpacing: 2.5,
+                        color: AppColors.electricSapphire, 
+                        letterSpacing: 2.5,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -306,18 +385,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     const SizedBox(height: AppSpacing.xl),
                     SizedBox(
                       width: double.infinity,
-                      height: 55,
+                      height: 52,
                       child: ElevatedButton(
                         onPressed: _isLoading ? null : _handleLogin,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: theme.colorScheme.primary,
+                          backgroundColor: AppColors.electricSapphire,
                           foregroundColor: Colors.white,
-                          elevation: 2,
+                          elevation: 3,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.s)),
                         ),
                         child: _isLoading 
                             ? const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)))
-                            : const Text(AppStrings.loginButton, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                            : Text('LOGIN', style: GoogleFonts.oswald(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
                       ),
                     ),
                     const SizedBox(height: AppSpacing.l),
@@ -332,19 +411,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               MaterialPageRoute(builder: (context) => PasswordRecoveryScreen()),
                             );
                           },
-                          child: const Text('Forgot Password?', style: TextStyle(fontWeight: FontWeight.bold)),
+                          child: Text(
+                            'Forgot Password?',
+                            style: GoogleFonts.inter(color: AppColors.electricSapphire, fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
                         ),
-                        const SizedBox(width: 10),
-                        Text(AppStrings.noAccountText, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 13)),
+                        const SizedBox(width: 6),
+                        Text(AppStrings.noAccountText, style: GoogleFonts.inter(color: AppColors.textLight, fontSize: 13)),
                         TextButton(
                           onPressed: () => Navigator.pushNamed(context, '/signup'),
                           child: Text(
                             AppStrings.registerLink,
-                            style: TextStyle(
+                            style: GoogleFonts.inter(
                               fontWeight: FontWeight.bold,
-                              color: theme.colorScheme.primary,
+                              color: AppColors.electricSapphire,
                               fontSize: 13,
-                            )
+                            ),
                           ),
                         ),
                       ],

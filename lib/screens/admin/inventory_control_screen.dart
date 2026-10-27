@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/constants.dart';
+import '../../core/image_picker_helper.dart';
 import '../../widgets/main_app_bar.dart';
 import '../../widgets/product_card.dart';
 import '../../services/product_service.dart';
@@ -15,9 +16,9 @@ import '../../services/menu_service.dart';
 import '../../services/user_provider.dart';
 import '../../models/user_model.dart';
 import '../../widgets/passcode_guard.dart';
-
 import '../../services/product_seeder.dart';
-
+import '../../models/tech_shop_models.dart';
+import '../../services/tech_shop_service.dart';
 import '../../widgets/role_pop_scope.dart';
 
 class InventoryControlScreen extends ConsumerStatefulWidget {
@@ -34,35 +35,9 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
 
   String _getSector(Product p) {
     final cat = p.category.toUpperCase();
-    if (p.requiresPrescription ||
-        cat.contains('PHARM') ||
-        cat.contains('DRUG') ||
-        cat.contains('MED') ||
-        cat.contains('ANTIMALARIAL') ||
-        cat.contains('ANTIBIOTIC') ||
-        cat.contains('ANALGESIC') ||
-        cat.contains('NSAID') ||
-        cat.contains('COUGH') ||
-        cat.contains('COLD') ||
-        cat.contains('CARDIOVASCULAR') ||
-        cat.contains('GASTRO') ||
-        cat.contains('CONTRACEPTIVE') ||
-        cat.contains('SUPPLEMENT') ||
-        cat.contains('TOPICAL') ||
-        cat.contains('SEDATIVE') ||
-        cat.contains('GENERAL MEDICATION')) {
-      return 'pharmacy';
-    }
-    if (p.isService ||
-        cat.contains('BARBER') ||
-        cat.contains('HAIR') ||
-        cat.contains('BEARD') ||
-        cat.contains('GROOM') ||
-        cat.contains('SALON') ||
-        cat.contains('STYL') ||
-        cat.contains('CARE PRODUCTS')) {
-      return 'barber';
-    }
+    final name = p.name.toUpperCase();
+
+    // 1. Tech / Phones Sector check
     if (p.requiresImei ||
         cat.contains('PHONE') ||
         cat.contains('TECH') ||
@@ -79,10 +54,28 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
         cat.contains('WEARABLE') ||
         cat.contains('MOUNT') ||
         cat.contains('HOLDER') ||
-        cat.contains('REPAIR')) {
+        cat.contains('REPAIR') ||
+        name.contains('IPHONE') ||
+        name.contains('SAMSUNG') ||
+        name.contains('AIRPODS') ||
+        name.contains('GIG')) {
       return 'phones';
     }
-    return 'general';
+
+    // 2. Barbershop / Grooming Sector check
+    if (p.isService ||
+        cat.contains('BARBER') ||
+        cat.contains('HAIR') ||
+        cat.contains('BEARD') ||
+        cat.contains('GROOM') ||
+        cat.contains('SALON') ||
+        cat.contains('STYL') ||
+        cat.contains('CARE PRODUCTS')) {
+      return 'barber';
+    }
+
+    // 3. All non-tech, non-barber products (drugs, pharmaceuticals, custom medicine categories) belong to pharmacy!
+    return 'pharmacy';
   }
 
   @override
@@ -938,6 +931,9 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
     ];
 
     String selectedCategory = categories.first;
+    final imeiInputController = TextEditingController();
+    final List<String> pendingImeis = [];
+    bool trackImei = _selectedSector == 'phones' || selectedCategory.toLowerCase().contains('phone') || selectedCategory.toLowerCase().contains('smart');
 
     final List<String> unitOptions = [
       'pcs', 'tablets', 'capsules', 'bottles', 'packs', 'boxes', 'mils', 'service', 'unit'
@@ -1077,8 +1073,7 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(16),
                                 onTap: () async {
-                                  final picker = ImagePicker();
-                                  final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+                                  final XFile? image = await ImagePickerHelper.pickAndCompressImage(source: ImageSource.gallery);
                                   if (image != null) {
                                     final bytes = await image.readAsBytes();
                                     setState(() {
@@ -1395,6 +1390,87 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                                 ),
                               ),
                             ],
+
+                            // IMEI / Serial Tracking Section
+                            if (!isService) ...[
+                              const SizedBox(height: 12),
+                              _buildFormSectionHeader(context, 'Device Tracking (IMEI / Serial)', Icons.qr_code_scanner_outlined, sectorColor),
+                              SwitchListTile.adaptive(
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('Track IMEI / Serial Numbers', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                subtitle: const Text('Require unique IMEI registration on POS sale & stock tracking', style: TextStyle(fontSize: 11)),
+                                value: trackImei,
+                                activeTrackColor: sectorColor,
+                                onChanged: (val) => setState(() => trackImei = val),
+                              ),
+                              if (trackImei) ...[
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: imeiInputController,
+                                        decoration: InputDecoration(
+                                          labelText: 'Enter or Paste IMEI / Serial',
+                                          hintText: 'e.g. 354892019283741 (comma/space/newline separated)',
+                                          isDense: true,
+                                          prefixIcon: const Icon(Icons.qr_code, size: 20),
+                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                        ),
+                                        onSubmitted: (val) {
+                                          if (val.trim().isNotEmpty) {
+                                            final split = val.split(RegExp(r'[\s,;\n]+')).where((s) => s.trim().isNotEmpty).map((s) => s.trim());
+                                            setState(() {
+                                              for (final imei in split) {
+                                                if (!pendingImeis.contains(imei)) pendingImeis.add(imei);
+                                              }
+                                              imeiInputController.clear();
+                                              if (stockController.text.isEmpty || stockController.text == '0') {
+                                                stockController.text = pendingImeis.length.toString();
+                                              }
+                                            });
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    FilledButton.tonal(
+                                      onPressed: () {
+                                        final val = imeiInputController.text;
+                                        if (val.trim().isNotEmpty) {
+                                          final split = val.split(RegExp(r'[\s,;\n]+')).where((s) => s.trim().isNotEmpty).map((s) => s.trim());
+                                          setState(() {
+                                            for (final imei in split) {
+                                              if (!pendingImeis.contains(imei)) pendingImeis.add(imei);
+                                            }
+                                            imeiInputController.clear();
+                                            if (stockController.text.isEmpty || stockController.text == '0') {
+                                              stockController.text = pendingImeis.length.toString();
+                                            }
+                                          });
+                                        }
+                                      },
+                                      child: const Text('Add'),
+                                    ),
+                                  ],
+                                ),
+                                if (pendingImeis.isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 6,
+                                    children: pendingImeis.map((imei) => Chip(
+                                      label: Text(imei, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+                                      deleteIcon: const Icon(Icons.close, size: 14),
+                                      onDeleted: () => setState(() => pendingImeis.remove(imei)),
+                                      backgroundColor: sectorColor.withValues(alpha: 0.1),
+                                    )).toList(),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text('${pendingImeis.length} IMEI(s) staged for initial stock', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: sectorColor)),
+                                ],
+                              ],
+                            ],
                           ],
                         ),
                       ),
@@ -1443,10 +1519,15 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                                 final qty = double.tryParse(stockController.text) ?? 0.0;
                                 final alertQty = double.tryParse(alertQuantityController.text) ?? 5.0;
 
+                                final customCat = otherCategoryController.text.trim();
+                                final finalCategory = selectedCategory == 'Other'
+                                    ? (customCat.isEmpty ? 'General Medication' : customCat)
+                                    : selectedCategory;
+
                                 final newProduct = Product(
                                   id: UuidUtils.generate(),
                                   branchCode: branchController.text.trim().isEmpty ? 'MAIN' : branchController.text.trim(),
-                                  category: selectedCategory == 'Other' ? otherCategoryController.text.trim() : selectedCategory,
+                                  category: finalCategory,
                                   name: nameController.text.trim(),
                                   unit: unitController.text.trim(),
                                   retailPrice: price,
@@ -1457,11 +1538,19 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                                   lowStockThreshold: alertQty,
                                   imageUrl: finalImageUrl,
                                   batchExpiryDate: selectedExpiryDate,
+                                  requiresPrescription: _selectedSector == 'pharmacy' || selectedExpiryDate != null,
                                   isService: isService,
                                   isUnlimited: isService,
+                                  imeiList: pendingImeis.isNotEmpty ? pendingImeis : null,
+                                  requiresImei: trackImei || pendingImeis.isNotEmpty,
                                 );
 
                                 await ref.read(productsFutureProvider.notifier).addProduct(newProduct);
+                                for (final imei in pendingImeis) {
+                                  ref.read(imeiInventoryProvider.notifier).registerIMEI(
+                                    IMEIRecord(imei: imei, deviceModel: newProduct.name, status: 'In Stock'),
+                                  );
+                                }
                                 if (context.mounted) Navigator.pop(context);
                               }
                             },
@@ -1565,6 +1654,9 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
     String? imageName;
     bool isUploading = false;
     DateTime? selectedExpiryDate = product.batchExpiryDate;
+    final imeiInputController = TextEditingController();
+    final List<String> currentImeis = List<String>.from(product.imeiList ?? []);
+    bool trackImei = product.requiresImei || currentImeis.isNotEmpty || sector == 'phones';
 
     final Color sectorColor = sector == 'pharmacy'
         ? const Color(0xFF2E7D32)
@@ -1684,8 +1776,7 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(16),
                                 onTap: () async {
-                                  final picker = ImagePicker();
-                                  final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+                                  final XFile? image = await ImagePickerHelper.pickAndCompressImage(source: ImageSource.gallery);
                                   if (image != null) {
                                     final bytes = await image.readAsBytes();
                                     setState(() {
@@ -1980,6 +2071,81 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                                 ),
                               ),
                             ],
+
+                            // IMEI / Serial Tracking Section
+                            if (!isService) ...[
+                              const SizedBox(height: 12),
+                              _buildFormSectionHeader(context, 'Device Tracking (IMEI / Serial)', Icons.qr_code_scanner_outlined, sectorColor),
+                              SwitchListTile.adaptive(
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('Track IMEI / Serial Numbers', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                subtitle: const Text('Require unique IMEI registration on POS sale & stock tracking', style: TextStyle(fontSize: 11)),
+                                value: trackImei,
+                                activeTrackColor: sectorColor,
+                                onChanged: (val) => setState(() => trackImei = val),
+                              ),
+                              if (trackImei) ...[
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: imeiInputController,
+                                        decoration: InputDecoration(
+                                          labelText: 'Add IMEI / Serial',
+                                          hintText: 'e.g. 354892019283741 (comma/space/newline separated)',
+                                          isDense: true,
+                                          prefixIcon: const Icon(Icons.qr_code, size: 20),
+                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                        ),
+                                        onSubmitted: (val) {
+                                          if (val.trim().isNotEmpty) {
+                                            final split = val.split(RegExp(r'[\s,;\n]+')).where((s) => s.trim().isNotEmpty).map((s) => s.trim());
+                                            setState(() {
+                                              for (final imei in split) {
+                                                if (!currentImeis.contains(imei)) currentImeis.add(imei);
+                                              }
+                                              imeiInputController.clear();
+                                            });
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    FilledButton.tonal(
+                                      onPressed: () {
+                                        final val = imeiInputController.text;
+                                        if (val.trim().isNotEmpty) {
+                                          final split = val.split(RegExp(r'[\s,;\n]+')).where((s) => s.trim().isNotEmpty).map((s) => s.trim());
+                                          setState(() {
+                                            for (final imei in split) {
+                                              if (!currentImeis.contains(imei)) currentImeis.add(imei);
+                                            }
+                                            imeiInputController.clear();
+                                          });
+                                        }
+                                      },
+                                      child: const Text('Add'),
+                                    ),
+                                  ],
+                                ),
+                                if (currentImeis.isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 6,
+                                    children: currentImeis.map((imei) => Chip(
+                                      label: Text(imei, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+                                      deleteIcon: const Icon(Icons.close, size: 14),
+                                      onDeleted: () => setState(() => currentImeis.remove(imei)),
+                                      backgroundColor: sectorColor.withValues(alpha: 0.1),
+                                    )).toList(),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text('${currentImeis.length} IMEI(s) registered for this product', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: sectorColor)),
+                                ],
+                              ],
+                            ],
                           ],
                         ),
                       ),
@@ -2043,9 +2209,18 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                                   batchExpiryDate: selectedExpiryDate,
                                   isService: isService,
                                   isUnlimited: isService || product.isUnlimited,
+                                  imeiList: currentImeis,
+                                  requiresImei: trackImei || currentImeis.isNotEmpty,
                                 );
 
                                 await ref.read(productsFutureProvider.notifier).updateProduct(updatedProduct);
+                                for (final imei in currentImeis) {
+                                  if (product.imeiList == null || !product.imeiList!.contains(imei)) {
+                                    ref.read(imeiInventoryProvider.notifier).registerIMEI(
+                                      IMEIRecord(imei: imei, deviceModel: updatedProduct.name, status: 'In Stock'),
+                                    );
+                                  }
+                                }
                                 if (context.mounted) Navigator.pop(context);
                               }
                             },
@@ -2587,8 +2762,15 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
   void _showUpdateStockDialog(BuildContext context, WidgetRef ref, Product product) {
     final formKey = GlobalKey<FormState>();
     final stockController = TextEditingController();
+    final imeiInputController = TextEditingController();
     final theme = Theme.of(context);
     final String productUnit = product.unit.isNotEmpty ? product.unit : 'pcs';
+    bool trackImei = product.requiresImei || 
+        product.category.toLowerCase().contains('phone') || 
+        product.category.toLowerCase().contains('smart') || 
+        (product.imeiList != null && product.imeiList!.isNotEmpty);
+    final List<String> pendingImeis = [];
+    final List<String> existingImeis = List<String>.from(product.imeiList ?? []);
 
     showDialog(
       context: context,
@@ -2611,7 +2793,7 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
           content: Form(
             key: formKey,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 400),
+              constraints: const BoxConstraints(maxWidth: 440),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2686,6 +2868,113 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                       ),
                     ],
                   ),
+                  const SizedBox(height: 12),
+                  const Divider(),
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Row(
+                      children: [
+                        Icon(Icons.qr_code_scanner, size: 18, color: Color(0xFFE65100)),
+                        SizedBox(width: 8),
+                        Text('Track IMEI / Serial Numbers', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      ],
+                    ),
+                    subtitle: const Text('Record individual phone IMEIs for POS and warranty', style: TextStyle(fontSize: 11)),
+                    value: trackImei,
+                    activeTrackColor: const Color(0xFFE65100),
+                    onChanged: (val) => setState(() => trackImei = val),
+                  ),
+                  if (trackImei) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: imeiInputController,
+                            decoration: InputDecoration(
+                              labelText: 'Add New IMEI / Serial',
+                              hintText: 'e.g. 359123456789012 (comma/space/newline separated)',
+                              isDense: true,
+                              prefixIcon: const Icon(Icons.qr_code, size: 18),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            onSubmitted: (val) {
+                              if (val.trim().isNotEmpty) {
+                                final split = val.split(RegExp(r'[\s,;\n]+')).where((s) => s.trim().isNotEmpty).map((s) => s.trim());
+                                setState(() {
+                                  for (final imei in split) {
+                                    if (!pendingImeis.contains(imei) && !existingImeis.contains(imei)) {
+                                      pendingImeis.add(imei);
+                                    }
+                                  }
+                                  imeiInputController.clear();
+                                  if (pendingImeis.isNotEmpty) {
+                                    stockController.text = pendingImeis.length.toString();
+                                  }
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.tonal(
+                          onPressed: () {
+                            final val = imeiInputController.text;
+                            if (val.trim().isNotEmpty) {
+                              final split = val.split(RegExp(r'[\s,;\n]+')).where((s) => s.trim().isNotEmpty).map((s) => s.trim());
+                              setState(() {
+                                for (final imei in split) {
+                                  if (!pendingImeis.contains(imei) && !existingImeis.contains(imei)) {
+                                    pendingImeis.add(imei);
+                                  }
+                                }
+                                imeiInputController.clear();
+                                if (pendingImeis.isNotEmpty) {
+                                  stockController.text = pendingImeis.length.toString();
+                                }
+                              });
+                            }
+                          },
+                          child: const Text('Add'),
+                        ),
+                      ],
+                    ),
+                    if (pendingImeis.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text('New IMEIs to Add (${pendingImeis.length}):', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.green)),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: pendingImeis.map((imei) => Chip(
+                          label: Text(imei, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                          deleteIcon: const Icon(Icons.close, size: 14),
+                          onDeleted: () => setState(() {
+                            pendingImeis.remove(imei);
+                            if (stockController.text == (pendingImeis.length + 1).toString()) {
+                              stockController.text = pendingImeis.length.toString();
+                            }
+                          }),
+                          backgroundColor: Colors.green.withValues(alpha: 0.15),
+                        )).toList(),
+                      ),
+                    ],
+                    if (existingImeis.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text('Existing Saved IMEIs in Stock (${existingImeis.length}):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: theme.colorScheme.onSurfaceVariant)),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: existingImeis.take(10).map((imei) => Chip(
+                          label: Text(imei, style: const TextStyle(fontSize: 10)),
+                          backgroundColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                        )).toList(),
+                      ),
+                      if (existingImeis.length > 10)
+                        Text('+ ${existingImeis.length - 10} more saved IMEIs', style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic)),
+                    ],
+                  ],
                 ],
               ),
             ),
@@ -2699,9 +2988,26 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
               onPressed: () {
                 if (formKey.currentState!.validate()) {
                   final change = double.tryParse(stockController.text) ?? 0.0;
-                  if (change != 0) {
-                    ref.read(productsFutureProvider.notifier).updateStock(product.id, change);
+                  if (change != 0 || pendingImeis.isNotEmpty || trackImei != product.requiresImei) {
+                    ref.read(productsFutureProvider.notifier).updateStock(
+                      product.id, 
+                      change,
+                      newImeis: pendingImeis.isNotEmpty ? pendingImeis : null,
+                      requiresImei: trackImei,
+                    );
+                    for (final imei in pendingImeis) {
+                      ref.read(imeiInventoryProvider.notifier).registerIMEI(
+                        IMEIRecord(imei: imei, deviceModel: product.name, status: 'In Stock'),
+                      );
+                    }
                     Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Stock updated for ${product.name}${pendingImeis.isNotEmpty ? " (${pendingImeis.length} new IMEIs saved)" : ""}'),
+                        backgroundColor: const Color(0xFFE65100),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
                   }
                 }
               },

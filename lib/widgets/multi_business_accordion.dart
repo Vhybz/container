@@ -169,11 +169,13 @@ class _MultiBusinessAccordionState extends ConsumerState<MultiBusinessAccordion>
         backgroundColor: color.withValues(alpha: 0.15),
         child: Icon(icon, color: color),
       ),
-      title: Row(
+      title: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        runSpacing: 4,
         children: [
-          Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: color)),
-          if (badgeText != null) ...[
-            const SizedBox(width: 8),
+          Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: color)),
+          if (badgeText != null)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
@@ -183,14 +185,15 @@ class _MultiBusinessAccordionState extends ConsumerState<MultiBusinessAccordion>
               ),
               child: Text(badgeText, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
             ),
-          ],
         ],
       ),
-      subtitle: Text(subtitle, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 11, color: Colors.grey), maxLines: 2, overflow: TextOverflow.ellipsis),
     );
   }
 
   Widget _buildPharmacyBody(ThemeData theme, double todayPharmRevenue, int expiringCount) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.m),
       child: Column(
@@ -203,29 +206,50 @@ class _MultiBusinessAccordionState extends ConsumerState<MultiBusinessAccordion>
             ],
           ),
           const SizedBox(height: AppSpacing.m),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => widget.onNavigate?.call('/pharmacy'),
-                icon: const Icon(Icons.dashboard_outlined),
-                label: const Text('VIEW PHARMACY DASHBOARD'),
-              ),
-              const SizedBox(width: AppSpacing.m),
-              ElevatedButton.icon(
-                onPressed: () => widget.onNavigate?.call('/pharmacy/pos'),
-                icon: const Icon(Icons.point_of_sale),
-                label: const Text('OPEN PHARMACY POS'),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), foregroundColor: Colors.white),
-              ),
-            ],
-          ),
+          if (isMobile)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => widget.onNavigate?.call('/pharmacy/pos'),
+                  icon: const Icon(Icons.point_of_sale),
+                  label: const Text('OPEN PHARMACY POS'),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), foregroundColor: Colors.white),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => widget.onNavigate?.call('/pharmacy'),
+                  icon: const Icon(Icons.dashboard_outlined),
+                  label: const Text('VIEW PHARMACY DASHBOARD'),
+                ),
+              ],
+            )
+          else
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => widget.onNavigate?.call('/pharmacy'),
+                  icon: const Icon(Icons.dashboard_outlined),
+                  label: const Text('VIEW PHARMACY DASHBOARD'),
+                ),
+                const SizedBox(width: AppSpacing.m),
+                ElevatedButton.icon(
+                  onPressed: () => widget.onNavigate?.call('/pharmacy/pos'),
+                  icon: const Icon(Icons.point_of_sale),
+                  label: const Text('OPEN PHARMACY POS'),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), foregroundColor: Colors.white),
+                ),
+              ],
+            ),
         ],
       ),
     );
   }
 
   Widget _buildBarbershopBody(ThemeData theme, double todayBarberRevenue, int barberServicesCount) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.m),
       child: Column(
@@ -238,29 +262,50 @@ class _MultiBusinessAccordionState extends ConsumerState<MultiBusinessAccordion>
             ],
           ),
           const SizedBox(height: AppSpacing.m),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => widget.onNavigate?.call('/barbershop'),
-                icon: const Icon(Icons.dashboard_outlined),
-                label: const Text('VIEW BARBERSHOP DASHBOARD'),
-              ),
-              const SizedBox(width: AppSpacing.m),
-              ElevatedButton.icon(
-                onPressed: () => widget.onNavigate?.call('/barbershop/pos'),
-                icon: const Icon(Icons.point_of_sale),
-                label: const Text('OPEN BARBERSHOP POS'),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1565C0), foregroundColor: Colors.white),
-              ),
-            ],
-          ),
+          if (isMobile)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => widget.onNavigate?.call('/barbershop/pos'),
+                  icon: const Icon(Icons.point_of_sale),
+                  label: const Text('OPEN BARBERSHOP POS'),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1565C0), foregroundColor: Colors.white),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => widget.onNavigate?.call('/barbershop'),
+                  icon: const Icon(Icons.dashboard_outlined),
+                  label: const Text('VIEW BARBERSHOP DASHBOARD'),
+                ),
+              ],
+            )
+          else
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => widget.onNavigate?.call('/barbershop'),
+                  icon: const Icon(Icons.dashboard_outlined),
+                  label: const Text('VIEW BARBERSHOP DASHBOARD'),
+                ),
+                const SizedBox(width: AppSpacing.m),
+                ElevatedButton.icon(
+                  onPressed: () => widget.onNavigate?.call('/barbershop/pos'),
+                  icon: const Icon(Icons.point_of_sale),
+                  label: const Text('OPEN BARBERSHOP POS'),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1565C0), foregroundColor: Colors.white),
+                ),
+              ],
+            ),
         ],
       ),
     );
   }
 
   Widget _buildTechShopBody(ThemeData theme, double todayTechRevenue, int devicesInStock) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.m),
       child: Column(
@@ -273,29 +318,50 @@ class _MultiBusinessAccordionState extends ConsumerState<MultiBusinessAccordion>
             ],
           ),
           const SizedBox(height: AppSpacing.m),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => widget.onNavigate?.call('/tech'),
-                icon: const Icon(Icons.dashboard_outlined),
-                label: const Text('VIEW TECH DASHBOARD'),
-              ),
-              const SizedBox(width: AppSpacing.m),
-              ElevatedButton.icon(
-                onPressed: () => widget.onNavigate?.call('/tech/pos'),
-                icon: const Icon(Icons.point_of_sale),
-                label: const Text('OPEN TECH POS'),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE65100), foregroundColor: Colors.white),
-              ),
-            ],
-          ),
+          if (isMobile)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => widget.onNavigate?.call('/tech/pos'),
+                  icon: const Icon(Icons.point_of_sale),
+                  label: const Text('OPEN TECH POS'),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE65100), foregroundColor: Colors.white),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => widget.onNavigate?.call('/tech'),
+                  icon: const Icon(Icons.dashboard_outlined),
+                  label: const Text('VIEW TECH DASHBOARD'),
+                ),
+              ],
+            )
+          else
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => widget.onNavigate?.call('/tech'),
+                  icon: const Icon(Icons.dashboard_outlined),
+                  label: const Text('VIEW TECH DASHBOARD'),
+                ),
+                const SizedBox(width: AppSpacing.m),
+                ElevatedButton.icon(
+                  onPressed: () => widget.onNavigate?.call('/tech/pos'),
+                  icon: const Icon(Icons.point_of_sale),
+                  label: const Text('OPEN TECH POS'),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE65100), foregroundColor: Colors.white),
+                ),
+              ],
+            ),
         ],
       ),
     );
   }
 
   Widget _buildAdminBody(ThemeData theme, double totalTodayCrossRevenue, int activeStaffCount) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.m),
       child: Column(
@@ -308,23 +374,42 @@ class _MultiBusinessAccordionState extends ConsumerState<MultiBusinessAccordion>
             ],
           ),
           const SizedBox(height: AppSpacing.m),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => widget.onNavigate?.call('/admin/staff'),
-                icon: const Icon(Icons.people),
-                label: const Text('MANAGE STAFF'),
-              ),
-              const SizedBox(width: AppSpacing.m),
-              ElevatedButton.icon(
-                onPressed: () => widget.onNavigate?.call('/admin'),
-                icon: const Icon(Icons.admin_panel_settings),
-                label: const Text('OPEN ADMIN COMMAND CENTER'),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.purple, foregroundColor: Colors.white),
-              ),
-            ],
-          ),
+          if (isMobile)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => widget.onNavigate?.call('/admin'),
+                  icon: const Icon(Icons.admin_panel_settings),
+                  label: const Text('OPEN ADMIN COMMAND CENTER'),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.purple, foregroundColor: Colors.white),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => widget.onNavigate?.call('/admin/staff'),
+                  icon: const Icon(Icons.people),
+                  label: const Text('MANAGE STAFF'),
+                ),
+              ],
+            )
+          else
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => widget.onNavigate?.call('/admin/staff'),
+                  icon: const Icon(Icons.people),
+                  label: const Text('MANAGE STAFF'),
+                ),
+                const SizedBox(width: AppSpacing.m),
+                ElevatedButton.icon(
+                  onPressed: () => widget.onNavigate?.call('/admin'),
+                  icon: const Icon(Icons.admin_panel_settings),
+                  label: const Text('OPEN ADMIN COMMAND CENTER'),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.purple, foregroundColor: Colors.white),
+                ),
+              ],
+            ),
         ],
       ),
     );

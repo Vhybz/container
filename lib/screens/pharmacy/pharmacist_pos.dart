@@ -18,6 +18,7 @@ import '../../services/user_provider.dart';
 import '../../services/sms_service.dart';
 import '../../services/pharmacy_service.dart';
 import '../../widgets/app_sidebar.dart';
+import '../../widgets/pos_transaction_history_view.dart';
 import '../../widgets/cart_item_tile.dart';
 import '../../widgets/main_app_bar.dart';
 import '../../widgets/product_card.dart';
@@ -43,12 +44,82 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
   final TextEditingController _prescriptionController = TextEditingController();
 
   String _selectedCategory = 'All';
+  String _selectedSortMode = 'FEFO Expiry';
   String _paymentMethod = 'Cash';
   Customer? _selectedCustomer;
   int _currentTab = 0; // 0 = New Sale, 1 = History
   bool _prescriptionExpanded = false;
   bool _sendPrescriptionSms = true;
   bool _includePrescriptionOnReceipt = true;
+  String _selectedDoctor = 'OTC / Self-Prescribed';
+  bool _isCustomDoctor = false;
+  bool _isProcessingCheckout = false;
+
+  final TextEditingController _activeDosageController = TextEditingController();
+  final Map<String, String> _drugDosages = {};
+  String? _selectedDrugId;
+
+  void _syncFullPrescriptionText(List<CartItem> cartItems) {
+    if (_drugDosages.isEmpty) {
+      _prescriptionController.text = '';
+      return;
+    }
+    final lines = <String>[];
+    for (final item in cartItems) {
+      final dosage = _drugDosages[item.product.id]?.trim();
+      if (dosage != null && dosage.isNotEmpty) {
+        final qtyStr = item.quantity % 1 == 0 ? item.quantity.toInt().toString() : item.quantity.toString();
+        lines.add('• ${item.product.name} (x$qtyStr): $dosage');
+      }
+    }
+    _prescriptionController.text = lines.join('\n');
+  }
+
+  void _selectAndPrescribeDrug(String drugId, List<CartItem> cartItems) {
+    setState(() {
+      _prescriptionExpanded = true;
+      _selectedDrugId = drugId;
+      _activeDosageController.text = _drugDosages[drugId] ?? '';
+    });
+  }
+
+  void _applyDosageToAllMeds(List<CartItem> cartItems) {
+    final dosage = _activeDosageController.text.trim();
+    if (dosage.isEmpty) return;
+    setState(() {
+      for (final item in cartItems) {
+        _drugDosages[item.product.id] = dosage;
+      }
+      _syncFullPrescriptionText(cartItems);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Dosage applied to all ${cartItems.length} medications on checkout.'),
+        duration: const Duration(seconds: 2),
+        backgroundColor: const Color(0xFF2E7D32),
+      ),
+    );
+  }
+
+  void _selectNextDrug(List<CartItem> cartItems) {
+    if (cartItems.isEmpty) return;
+    int currentIndex = -1;
+    if (_selectedDrugId != null && _selectedDrugId != 'ALL') {
+      currentIndex = cartItems.indexWhere((ci) => ci.product.id == _selectedDrugId);
+    }
+    final nextIndex = (currentIndex + 1) % cartItems.length;
+    final nextDrug = cartItems[nextIndex];
+    setState(() {
+      _selectedDrugId = nextDrug.product.id;
+      _activeDosageController.text = _drugDosages[nextDrug.product.id] ?? '';
+    });
+  }
+
+  String _getDrugName(String? id, List<CartItem> cartItems) {
+    if (id == null || id == 'ALL') return 'All Medications';
+    final item = cartItems.where((ci) => ci.product.id == id).firstOrNull;
+    return item != null ? item.product.name : 'Medication';
+  }
 
   @override
   void initState() {
@@ -68,6 +139,7 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
     _doctorController.dispose();
     _rxNumberController.dispose();
     _prescriptionController.dispose();
+    _activeDosageController.dispose();
     super.dispose();
   }
 
@@ -284,12 +356,12 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                                           borderRadius: BorderRadius.circular(6),
                                           border: Border.all(color: Colors.purple.shade200),
                                         ),
-                                        child: const Row(
+                                        child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Icon(Icons.receipt_long_rounded, size: 12, color: Colors.purple),
-                                            SizedBox(width: 3),
-                                            Text('Rx Required', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.purple)),
+                                            const Icon(Icons.receipt_long_rounded, size: 12, color: Colors.purple),
+                                            const SizedBox(width: 3),
+                                            const Text('Rx Required', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.purple)),
                                           ],
                                         ),
                                       ),
@@ -349,7 +421,8 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                             ),
                             // Editable Quantity Display
                             Expanded(
-                              child: Center(
+                              child: Align(
+                                alignment: Alignment.center,
                                 child: IntrinsicWidth(
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
@@ -519,14 +592,14 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                       // Multi-Tier Options (Full Pack / Full Box)
                       if (pcsPerPack > 1) ...[
                         const SizedBox(height: 16),
-                        const Row(
+                        Row(
                           children: [
-                            Expanded(child: Divider(color: Color(0xFFE2E8F0))),
-                            Padding(
+                            const Expanded(child: Divider(color: Color(0xFFE2E8F0))),
+                            const Padding(
                               padding: EdgeInsets.symmetric(horizontal: 8),
                               child: Text('OR BULK TIERS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
                             ),
-                            Expanded(child: Divider(color: Color(0xFFE2E8F0))),
+                            const Expanded(child: Divider(color: Color(0xFFE2E8F0))),
                           ],
                         ),
                         const SizedBox(height: 10),
@@ -721,273 +794,338 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
   }
 
   void _checkout() async {
+    if (_isProcessingCheckout) return;
     final cartItems = ref.read(cartProvider);
     if (cartItems.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cart is empty!')));
       return;
     }
 
-    final prescriptionText = _prescriptionController.text.trim();
-    final hasPrescription = prescriptionText.isNotEmpty;
-    final patientPhone = _patientPhoneController.text.trim().isNotEmpty 
-        ? _patientPhoneController.text.trim() 
-        : (_selectedCustomer?.phone.trim() ?? '');
+    setState(() => _isProcessingCheckout = true);
 
-    // If pharmacist chose to send SMS for prescription, ensure a recipient phone is present
-    if (hasPrescription && _sendPrescriptionSms && patientPhone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please provide the patient phone number to send prescription via SMS, or untick "Send via SMS".'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      setState(() => _prescriptionExpanded = true);
-      return;
-    }
+    try {
+      // Ensure prescription text is compiled and synced from dosage inputs before checkout
+      _syncFullPrescriptionText(cartItems);
+      String prescriptionText = _prescriptionController.text.trim();
+      if (prescriptionText.isEmpty && _activeDosageController.text.trim().isNotEmpty) {
+        final activeDose = _activeDosageController.text.trim();
+        for (final item in cartItems) {
+          _drugDosages[item.product.id] = activeDose;
+        }
+        _syncFullPrescriptionText(cartItems);
+        prescriptionText = _prescriptionController.text.trim();
+      }
 
-    final currentUser = ref.read(currentUserProvider);
-    final String cashierName = currentUser != null ? '${currentUser.firstName} ${currentUser.surname}' : 'Pharmacist';
-    final subtotal = ref.read(cartProvider.notifier).subtotal;
+      // If "Send via SMS" is checked and prescription text is still empty, auto-generate cart medication summary
+      if (_sendPrescriptionSms && prescriptionText.isEmpty && cartItems.isNotEmpty) {
+        final lines = <String>[];
+        for (final item in cartItems) {
+          final qtyStr = item.quantity % 1 == 0 ? item.quantity.toInt().toString() : item.quantity.toString();
+          lines.add('• ${item.product.name} (x$qtyStr): Take as directed by pharmacist');
+        }
+        prescriptionText = lines.join('\n');
+      }
 
-    final saleItems = cartItems.map((item) {
-      return SaleItem(
-        product: item.product,
-        quantity: item.quantity,
-        priceAtSale: item.priceAtSale,
-        originalPrice: item.originalPrice,
-      );
-    }).toList();
+      final hasPrescription = prescriptionText.isNotEmpty;
+      String patientPhone = _patientPhoneController.text.trim().isNotEmpty 
+          ? _patientPhoneController.text.trim() 
+          : (_selectedCustomer?.phone.trim() ?? '');
 
-    final PaymentMethod mode = _paymentMethod == 'MoMo' 
-        ? PaymentMethod.mobileMoney 
-        : (_paymentMethod == 'Card' ? PaymentMethod.bankDeposit : PaymentMethod.cash);
-
-    final patientName = _patientController.text.trim().isNotEmpty 
-        ? _patientController.text.trim() 
-        : (_selectedCustomer?.name ?? 'Walk-In Patient');
-    final doctorName = _doctorController.text.trim().isNotEmpty ? _doctorController.text.trim() : null;
-    final rxNum = _rxNumberController.text.trim().isNotEmpty ? _rxNumberController.text.trim() : null;
-
-    final sale = SaleRecord(
-      id: 'INV-${DateTime.now().millisecondsSinceEpoch}',
-      branchCode: currentUser?.branchCode ?? 'MAIN',
-      items: saleItems,
-      totalAmount: subtotal,
-      totalDiscount: 0.0,
-      totalCost: subtotal * 0.7,
-      payments: [PaymentDetail(method: mode, amount: subtotal)],
-      timestamp: DateTime.now(),
-      cashierName: cashierName,
-      cashierId: currentUser?.id ?? 'N/A',
-      customerName: _selectedCustomer?.name ?? (patientName != 'Walk-In Patient' ? patientName : null),
-      customerPhone: patientPhone.isNotEmpty ? patientPhone : null,
-      status: SaleStatus.completed,
-      isVerified: true,
-      prescription: hasPrescription ? prescriptionText : null,
-      includePrescriptionOnReceipt: _includePrescriptionOnReceipt,
-      sendPrescriptionSms: _sendPrescriptionSms,
-      patientName: patientName,
-      doctorName: doctorName,
-      rxNumber: rxNum,
-    );
-
-    // If print on receipt is true (or general receipt), trigger printing dialog
-    if (_includePrescriptionOnReceipt || !hasPrescription) {
-      ReceiptService.printReceipt(sale, context: null);
-    }
-
-    // Save sale to state
-    await ref.read(saleHistoryProvider.notifier).addSale(sale);
-
-    // Send prescription via SMS if selected
-    bool smsSentSuccess = false;
-    if (hasPrescription && _sendPrescriptionSms && patientPhone.isNotEmpty) {
-      smsSentSuccess = await SmsService.sendPrescriptionSms(
-        phone: patientPhone,
-        patientName: patientName,
-        prescription: prescriptionText,
-        rxNumber: rxNum,
-        doctorName: doctorName,
-        pharmacistName: cashierName,
-        branchName: currentUser?.branchCode != null ? 'Emmanuel Chemist (${currentUser!.branchCode})' : 'Emmanuel Chemist',
-      );
-    }
-
-    // Record prescription in prescription history provider
-    if (hasPrescription) {
-      ref.read(prescriptionsProvider.notifier).recordPrescription(
-        PrescriptionRecord(
-          id: 'RX-${DateTime.now().millisecondsSinceEpoch}',
-          rxNumber: rxNum ?? 'RX-${sale.id}',
-          patientName: patientName,
-          doctorName: doctorName,
-          medications: [prescriptionText],
-          dispensedAt: DateTime.now(),
-          status: 'Dispensed',
-        ),
-      );
-    }
-
-    // Clean cart and checkout state immediately after sale
-    ref.read(cartProvider.notifier).clear();
-    setState(() {
-      _selectedCustomer = null;
-      _patientController.clear();
-      _patientPhoneController.clear();
-      _doctorController.clear();
-      _rxNumberController.clear();
-      _prescriptionController.clear();
-      _prescriptionExpanded = false;
-      _paymentMethod = 'Cash';
-    });
-
-    if (!mounted) return;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.check_circle, color: Color(0xFF2E7D32)),
-            SizedBox(width: 8),
-            Text('Dispense Successful'),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Invoice: ${sale.id}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-              Text('Total Paid: ${currencyFormat.format(subtotal)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              Text('Payment Method: $_paymentMethod'),
-              if (hasPrescription) ...[
-                const Divider(),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.teal.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: Colors.teal.shade300),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.medication_liquid, size: 16, color: Colors.teal),
-                          SizedBox(width: 4),
-                          Text('Prescription Prescribed (Rx)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.teal)),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text('Patient: $patientName', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                      if (doctorName != null) Text('Doctor: $doctorName', style: const TextStyle(fontSize: 11)),
-                      if (rxNum != null) Text('Rx No: $rxNum', style: const TextStyle(fontSize: 11)),
-                      const SizedBox(height: 2),
-                      Text(prescriptionText, style: const TextStyle(fontSize: 11)),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 4,
-                        children: [
-                          if (_includePrescriptionOnReceipt)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(color: Colors.teal.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(4)),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.receipt_long, size: 12, color: Colors.teal),
-                                  SizedBox(width: 3),
-                                  Text('Printed on Receipt', style: TextStyle(fontSize: 10, color: Colors.teal, fontWeight: FontWeight.bold)),
-                                ],
-                              ),
-                            ),
-                          if (_sendPrescriptionSms)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(color: Colors.blue.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(4)),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.sms, size: 12, color: Colors.blue),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    smsSentSuccess ? 'SMS Sent to $patientPhone' : 'SMS Queued for $patientPhone',
-                                    style: const TextStyle(fontSize: 10, color: Colors.blue, fontWeight: FontWeight.bold),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
+      // If patient phone is empty, offer an optional quick prompt so patient can receive SMS
+      if (patientPhone.isEmpty && mounted) {
+        final phoneEntered = await showDialog<String>(
+          context: context,
+          builder: (ctx) {
+            final promptPhoneController = TextEditingController();
+            return AlertDialog(
+              title: Row(
+                children: [
+                  const Icon(Icons.sms_outlined, color: Color(0xFF2E7D32)),
+                  const SizedBox(width: 8),
+                  const Text('Send SMS Receipt / Rx?', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Enter patient phone number for free SMS receipt & dosage instructions, or tap Skip.'),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: promptPhoneController,
+                    autofocus: true,
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[\d+]')),
+                      LengthLimitingTextInputFormatter(16),
                     ],
+                    decoration: const InputDecoration(
+                      labelText: 'Patient Phone Number',
+                      hintText: 'e.g. 0244123456 or +233244123456',
+                      prefixIcon: Icon(Icons.phone),
+                      border: OutlineInputBorder(),
+                    ),
                   ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, ''),
+                  child: const Text('Skip (No SMS)'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, promptPhoneController.text.trim()),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), foregroundColor: Colors.white),
+                  child: const Text('Send SMS'),
                 ),
               ],
-              const Divider(),
-              Text(
-                _includePrescriptionOnReceipt
-                    ? 'Receipt sent to printer & inventory updated.'
-                    : 'Inventory updated successfully.',
-                style: const TextStyle(fontSize: 11, color: Colors.grey),
-              ),
+            );
+          },
+        );
+        if (phoneEntered != null && phoneEntered.trim().isNotEmpty) {
+          patientPhone = phoneEntered.trim();
+          _patientPhoneController.text = patientPhone;
+        }
+      }
+
+      final currentUser = ref.read(currentUserProvider);
+      final String cashierName = currentUser != null ? '${currentUser.firstName} ${currentUser.surname}' : 'Pharmacist';
+      final subtotal = ref.read(cartProvider.notifier).subtotal;
+
+      final saleItems = cartItems.map((item) {
+        return SaleItem(
+          product: item.product,
+          quantity: item.quantity,
+          priceAtSale: item.priceAtSale,
+          originalPrice: item.originalPrice,
+        );
+      }).toList();
+
+      final PaymentMethod mode = _paymentMethod == 'MoMo' 
+          ? PaymentMethod.mobileMoney 
+          : (_paymentMethod == 'Card' ? PaymentMethod.bankDeposit : PaymentMethod.cash);
+
+      final patientName = _patientController.text.trim().isNotEmpty 
+          ? _patientController.text.trim() 
+          : (_selectedCustomer?.name ?? 'Walk-In Patient');
+      final doctorName = _doctorController.text.trim().isNotEmpty ? _doctorController.text.trim() : null;
+      final rxNum = _rxNumberController.text.trim().isNotEmpty ? _rxNumberController.text.trim() : null;
+
+      final sale = SaleRecord(
+        id: 'INV-${DateTime.now().millisecondsSinceEpoch}',
+        branchCode: currentUser?.branchCode ?? 'MAIN',
+        items: saleItems,
+        totalAmount: subtotal,
+        totalDiscount: 0.0,
+        totalCost: subtotal * 0.7,
+        payments: [PaymentDetail(method: mode, amount: subtotal)],
+        timestamp: DateTime.now(),
+        cashierName: cashierName,
+        cashierId: currentUser?.id ?? 'N/A',
+        customerName: _selectedCustomer?.name ?? (patientName != 'Walk-In Patient' ? patientName : null),
+        customerPhone: patientPhone.isNotEmpty ? patientPhone : null,
+        status: SaleStatus.completed,
+        isVerified: true,
+        prescription: hasPrescription ? prescriptionText : null,
+        includePrescriptionOnReceipt: _includePrescriptionOnReceipt,
+        sendPrescriptionSms: _sendPrescriptionSms,
+        patientName: patientName,
+        doctorName: doctorName,
+        rxNumber: rxNum,
+      );
+
+      // Save sale to local state
+      await ref.read(saleHistoryProvider.notifier).addSale(sale);
+
+      // Record prescription in prescription history provider
+      if (hasPrescription) {
+        ref.read(prescriptionsProvider.notifier).recordPrescription(
+          PrescriptionRecord(
+            id: 'RX-${DateTime.now().millisecondsSinceEpoch}',
+            rxNumber: rxNum ?? 'RX-${sale.id}',
+            patientName: patientName,
+            doctorName: doctorName,
+            medications: [prescriptionText],
+            dispensedAt: DateTime.now(),
+            status: 'Dispensed',
+          ),
+        );
+      }
+
+      final pharmacyBranch = currentUser?.branchCode != null ? 'Emmanuel Chemist (${currentUser!.branchCode})' : 'Emmanuel Chemist';
+
+      bool receiptSmsSuccess = false;
+      bool rxSmsSuccess = false;
+
+      // Send Prescription SMS Receipt & Clinical Rx SMS in parallel
+      if (patientPhone.isNotEmpty) {
+        debugPrint('Pharmacy POS: Sending Receipt & Prescription SMS to $patientPhone...');
+        final smsResults = await Future.wait([
+          SmsService.sendReceiptSms(
+            sale,
+            branchName: pharmacyBranch,
+            customPhone: patientPhone,
+          ),
+          if (hasPrescription || _sendPrescriptionSms)
+            SmsService.sendPrescriptionSms(
+              phone: patientPhone,
+              patientName: patientName,
+              prescription: prescriptionText,
+              rxNumber: rxNum,
+              doctorName: doctorName,
+              pharmacistName: cashierName,
+              branchName: pharmacyBranch,
+            ),
+        ]);
+        receiptSmsSuccess = smsResults.isNotEmpty ? smsResults[0] : false;
+        if (smsResults.length > 1) {
+          rxSmsSuccess = smsResults[1];
+        } else {
+          rxSmsSuccess = receiptSmsSuccess;
+        }
+      }
+
+      // Trigger printing receipt
+      if (_includePrescriptionOnReceipt || !hasPrescription) {
+        try {
+          ReceiptService.printReceipt(sale, context: null);
+        } catch (e) {
+          debugPrint('Pharmacy POS Print Notice: $e');
+        }
+      }
+
+      // Clean cart and checkout state immediately after sale
+      ref.read(cartProvider.notifier).clear();
+      setState(() {
+        _selectedCustomer = null;
+        _patientController.clear();
+        _patientPhoneController.clear();
+        _doctorController.clear();
+        _selectedDoctor = 'OTC / Self-Prescribed';
+        _isCustomDoctor = false;
+        _rxNumberController.clear();
+        _prescriptionController.clear();
+        _activeDosageController.clear();
+        _drugDosages.clear();
+        _selectedDrugId = null;
+        _prescriptionExpanded = false;
+        _paymentMethod = 'Cash';
+      });
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Color(0xFF2E7D32)),
+              const SizedBox(width: 8),
+              const Text('Dispense Successful'),
             ],
           ),
-        ),
-        actions: [
-          OutlinedButton.icon(
-            onPressed: () => ReceiptService.printReceipt(sale, context: context),
-            icon: const Icon(Icons.print_outlined, size: 18),
-            label: const Text('PRINT RECEIPT'),
-          ),
-          ElevatedButton.icon(
-            onPressed: () => ReceiptService.shareReceiptViaWhatsApp(
-              sale,
-              context: context,
-              customerPhone: patientPhone.isNotEmpty ? patientPhone : null,
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF25D366),
-              foregroundColor: Colors.white,
-            ),
-            icon: const Icon(Icons.share, size: 18),
-            label: const Text('SHARE ON WHATSAPP'),
-          ),
-          if (hasPrescription && patientPhone.isNotEmpty)
-            TextButton.icon(
-              onPressed: () async {
-                final sent = await SmsService.sendPrescriptionSms(
-                  phone: patientPhone,
-                  patientName: patientName,
-                  prescription: prescriptionText,
-                  rxNumber: rxNum,
-                  doctorName: doctorName,
-                  pharmacistName: cashierName,
-                  branchName: currentUser?.branchCode != null ? 'Emmanuel Chemist (${currentUser!.branchCode})' : 'Emmanuel Chemist',
-                );
-                if (ctx.mounted) {
-                  ScaffoldMessenger.of(ctx).showSnackBar(
-                    SnackBar(
-                      content: Text(sent ? 'Prescription SMS resent successfully!' : 'Failed to resend SMS.'),
-                      backgroundColor: sent ? Colors.green : Colors.red,
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Invoice: ${sale.id}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                Text('Total Paid: ${currencyFormat.format(subtotal)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text('Payment Method: $_paymentMethod'),
+                if (hasPrescription) ...[
+                  const Divider(),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.teal.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.teal.shade300),
                     ),
-                  );
-                }
-              },
-              icon: const Icon(Icons.sms_outlined, size: 16),
-              label: const Text('RESEND RX SMS', style: TextStyle(fontSize: 11)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.medication_liquid, size: 16, color: Colors.teal),
+                            const SizedBox(width: 4),
+                            const Text('Prescription Prescribed (Rx)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.teal)),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text('Patient: $patientName', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                        if (doctorName != null) Text('Doctor: $doctorName', style: const TextStyle(fontSize: 11)),
+                        if (rxNum != null) Text('Rx No: $rxNum', style: const TextStyle(fontSize: 11)),
+                        const SizedBox(height: 2),
+                        Text(prescriptionText, style: const TextStyle(fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                ],
+                const Divider(),
+                if (patientPhone.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      (rxSmsSuccess || receiptSmsSuccess) 
+                          ? 'SMS Receipt & Prescription sent to $patientPhone.' 
+                          : 'SMS Dispatch triggered to $patientPhone.',
+                      style: TextStyle(fontSize: 11, color: (rxSmsSuccess || receiptSmsSuccess) ? Colors.teal : Colors.blue, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                const Text('Inventory updated successfully.', style: TextStyle(fontSize: 11, color: Colors.grey)),
+              ],
             ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), foregroundColor: Colors.white),
-            child: const Text('OK / NEW SALE'),
           ),
-        ],
-      ),
-    );
+          actions: [
+            if (hasPrescription && patientPhone.isNotEmpty)
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final sent = await SmsService.sendPrescriptionSms(
+                    phone: patientPhone,
+                    patientName: patientName,
+                    prescription: prescriptionText,
+                    rxNumber: rxNum,
+                    doctorName: doctorName,
+                    pharmacistName: cashierName,
+                    branchName: pharmacyBranch,
+                  );
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(
+                        backgroundColor: sent ? const Color(0xFF2E7D32) : Colors.red,
+                        content: Text(sent ? 'Rx SMS sent to $patientPhone!' : 'Failed to send Rx SMS to $patientPhone. Check API balance or network.'),
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.sms_outlined, size: 18),
+                label: const Text('RESEND RX SMS'),
+              ),
+            OutlinedButton.icon(
+              onPressed: () => ReceiptService.printReceipt(sale, context: context),
+              icon: const Icon(Icons.print_outlined, size: 18),
+              label: const Text('PRINT RECEIPT'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32), foregroundColor: Colors.white),
+              child: const Text('OK / NEW SALE'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Checkout Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessingCheckout = false);
+      }
+    }
   }
 
   void _saveAsDebt() async {
@@ -999,7 +1137,27 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
       if (_selectedCustomer == null) return;
     }
 
-    final prescriptionText = _prescriptionController.text.trim();
+    _syncFullPrescriptionText(cartItems);
+    String prescriptionText = _prescriptionController.text.trim();
+    if (prescriptionText.isEmpty && _activeDosageController.text.trim().isNotEmpty) {
+      final activeDose = _activeDosageController.text.trim();
+      for (final item in cartItems) {
+        _drugDosages[item.product.id] = activeDose;
+      }
+      _syncFullPrescriptionText(cartItems);
+      prescriptionText = _prescriptionController.text.trim();
+    }
+
+    // If "Send via SMS" is checked and prescription text is still empty, auto-generate cart medication summary
+    if (_sendPrescriptionSms && prescriptionText.isEmpty && cartItems.isNotEmpty) {
+      final lines = <String>[];
+      for (final item in cartItems) {
+        final qtyStr = item.quantity % 1 == 0 ? item.quantity.toInt().toString() : item.quantity.toString();
+        lines.add('• ${item.product.name} (x$qtyStr): Take as directed by pharmacist');
+      }
+      prescriptionText = lines.join('\n');
+    }
+
     final hasPrescription = prescriptionText.isNotEmpty;
     final patientPhone = _patientPhoneController.text.trim().isNotEmpty 
         ? _patientPhoneController.text.trim() 
@@ -1046,22 +1204,35 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
 
     await ref.read(saleHistoryProvider.notifier).addSale(sale);
 
-    // If print on receipt is enabled, print receipt
-    if (_includePrescriptionOnReceipt && hasPrescription) {
-      ReceiptService.printReceipt(sale, context: null);
+    // Send Prescription SMS Receipt if phone is provided (before print layout)
+    if (patientPhone.isNotEmpty) {
+      final pharmacyBranch = currentUser?.branchCode != null ? 'Emmanuel Chemist (${currentUser!.branchCode})' : 'Emmanuel Chemist';
+      await SmsService.sendReceiptSms(
+        sale,
+        branchName: pharmacyBranch,
+        customPhone: patientPhone,
+      );
+
+      if (hasPrescription || _sendPrescriptionSms) {
+        await SmsService.sendPrescriptionSms(
+          phone: patientPhone,
+          patientName: patientName,
+          prescription: prescriptionText,
+          rxNumber: rxNum,
+          doctorName: doctorName,
+          pharmacistName: currentUser?.name ?? 'Pharmacist',
+          branchName: pharmacyBranch,
+        );
+      }
     }
 
-    // If send prescription SMS is selected and prescription exists
-    if (hasPrescription && _sendPrescriptionSms && patientPhone.isNotEmpty) {
-      SmsService.sendPrescriptionSms(
-        phone: patientPhone,
-        patientName: patientName,
-        prescription: prescriptionText,
-        rxNumber: rxNum,
-        doctorName: doctorName,
-        pharmacistName: currentUser?.name ?? 'Pharmacist',
-        branchName: currentUser?.branchCode != null ? 'Emmanuel Chemist (${currentUser!.branchCode})' : 'Emmanuel Chemist',
-      );
+    // Trigger printing receipt after SMS dispatch
+    if (_includePrescriptionOnReceipt && hasPrescription) {
+      try {
+        ReceiptService.printReceipt(sale, context: null);
+      } catch (e) {
+        debugPrint('Pharmacy POS Debt Print Notice: $e');
+      }
     }
 
     // Record in prescription history provider
@@ -1086,8 +1257,13 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
       _patientController.clear();
       _patientPhoneController.clear();
       _doctorController.clear();
+      _selectedDoctor = 'OTC / Self-Prescribed';
+      _isCustomDoctor = false;
       _rxNumberController.clear();
       _prescriptionController.clear();
+      _activeDosageController.clear();
+      _drugDosages.clear();
+      _selectedDrugId = null;
       _prescriptionExpanded = false;
       _paymentMethod = 'Cash';
     });
@@ -1143,7 +1319,8 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                       const SizedBox(height: 12),
                       Expanded(
                         child: filtered.isEmpty
-                            ? Center(
+                            ? Align(
+                                alignment: Alignment.center,
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
@@ -1160,27 +1337,28 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                                   ],
                                 ),
                               )
-                            : ListView.separated(
+                            : ListView.builder(
+                                shrinkWrap: true,
                                 itemCount: filtered.length,
-                                separatorBuilder: (context, sepIndex) => Divider(key: ValueKey('div_$sepIndex')),
                                 itemBuilder: (context, index) {
                                   final c = filtered[index];
-                                  return ListTile(
-                                    leading: const CircleAvatar(child: Icon(Icons.person)),
-                                    title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                    subtitle: Text(c.phone),
-                                     onTap: () {
-                                       setState(() {
-                                         _selectedCustomer = c;
-                                         if (_patientController.text.trim().isEmpty) {
-                                           _patientController.text = c.name;
-                                         }
-                                         if (_patientPhoneController.text.trim().isEmpty) {
-                                           _patientPhoneController.text = c.phone;
-                                         }
-                                       });
-                                       Navigator.pop(ctx);
-                                     },
+                                  return Column(
+                                    children: [
+                                      ListTile(
+                                        leading: const CircleAvatar(child: Icon(Icons.person)),
+                                        title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                        subtitle: Text(c.phone),
+                                        onTap: () {
+                                          setState(() {
+                                            _selectedCustomer = c;
+                                            _patientController.text = c.name;
+                                            _patientPhoneController.text = c.phone;
+                                          });
+                                          Navigator.pop(ctx);
+                                        },
+                                      ),
+                                      const Divider(height: 1),
+                                    ],
                                   );
                                 },
                               ),
@@ -1209,11 +1387,11 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.person_add_outlined, color: Color(0xFF2E7D32)),
-            SizedBox(width: 8),
-            Text('Register New Customer'),
+            const Icon(Icons.person_add_outlined, color: Color(0xFF2E7D32)),
+            const SizedBox(width: 8),
+            const Text('Register New Customer'),
           ],
         ),
         content: Column(
@@ -1227,6 +1405,10 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
             TextField(
               controller: phoneCtrl,
               keyboardType: TextInputType.phone,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[\d+]')),
+                LengthLimitingTextInputFormatter(16),
+              ],
               decoration: const InputDecoration(labelText: 'Phone Number', prefixIcon: Icon(Icons.phone_outlined)),
             ),
           ],
@@ -1247,12 +1429,8 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
               ref.read(customerProvider.notifier).addCustomer(newCust);
               setState(() {
                 _selectedCustomer = newCust;
-                if (_patientController.text.trim().isEmpty) {
-                  _patientController.text = newCust.name;
-                }
-                if (_patientPhoneController.text.trim().isEmpty) {
-                  _patientPhoneController.text = newCust.phone;
-                }
+                _patientController.text = newCust.name;
+                _patientPhoneController.text = newCust.phone;
               });
               Navigator.pop(ctx);
               if (parentContext.mounted) Navigator.pop(parentContext);
@@ -1272,47 +1450,55 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final user = ref.watch(currentUserProvider);
-    if (user == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (user == null) return Scaffold(body: Align(alignment: Alignment.center, child: CircularProgressIndicator()));
 
     final isDesktop = ResponsiveLayout.isDesktop(context);
     final isMobile = ResponsiveLayout.isMobile(context);
     final isWholesale = ref.watch(isWholesaleProvider);
     final menuItems = MenuService.getMenuItemsForUser(user);
     final productsAsync = ref.watch(productsFutureProvider);
+    final rawProducts = productsAsync.value ?? [];
 
-    // Prioritize database products if they exist
-    List<Product> productsList = [];
-
-    if (productsAsync.hasValue) {
-      final dbProducts = productsAsync.value!
-          .where((p) => !p.isDeleted)
-          .where((p) {
+    final productsList = rawProducts
+        .where((p) => !p.isDeleted)
+        .where((p) {
             final cat = p.category.toUpperCase();
-            return p.requiresPrescription ||
-                   cat.contains('PHARM') || 
-                   cat.contains('MED') || 
-                   cat.contains('DRUG') || 
-                   cat.contains('ANTIMALARIAL') || 
-                   cat.contains('ANTIBIOTIC') || 
-                   cat.contains('ANALGESIC') || 
-                   cat.contains('NSAID') || 
-                   cat.contains('COUGH') || 
-                   cat.contains('COLD') || 
-                   cat.contains('CARDIOVASCULAR') || 
-                   cat.contains('GASTRO') || 
-                   cat.contains('CONTRACEPTIVE') || 
-                   cat.contains('SUPPLEMENT') || 
-                   cat.contains('TOPICAL') || 
-                   cat.contains('SEDATIVE') || 
-                   cat.contains('GENERAL');
+            final name = p.name.toUpperCase();
+
+            // 1. Strict Exclusions (No smartphones, tech, repairs, or barber services in Pharmacy POS)
+            final isTechOrPhone = p.requiresImei || 
+                cat.contains('PHONE') || 
+                cat.contains('SMART') || 
+                cat.contains('TECH') || 
+                cat.contains('DEVICE') || 
+                cat.contains('REPAIR') || 
+                cat.contains('ACCESSOR') || 
+                cat.contains('AUDIO') || 
+                cat.contains('CHARGER') || 
+                name.contains('IPHONE') || 
+                name.contains('SAMSUNG') || 
+                name.contains('12 PRO') ||
+                name.contains('12 MINI') ||
+                name.contains('13 PRO') ||
+                name.contains('IPHONE XR') ||
+                name.contains('GIG');
+
+            final isBarberStuff = cat.contains('BARBER') || 
+                cat.contains('HAIR') || 
+                cat.contains('BEARD') || 
+                cat.contains('GROOM') || 
+                cat.contains('SALON') || 
+                name.contains('KIDS 1-') ||
+                name.contains('KIDS 10-');
+
+            if (isTechOrPhone || isBarberStuff) return false;
+
+            // All non-tech, non-barber items (including any custom categories created in Stock Control) are included
+            return true;
           })
           .toList();
-      
-      final activeProds = productsAsync.value!.where((p) => !p.isDeleted).toList();
-      productsList = dbProducts.isNotEmpty ? dbProducts : activeProds;
-    }
 
-    final categories = ['All', ...{...productsList.map((p) => p.category.toUpperCase())}];
+    final List<String> categories = ['All', ...productsList.map((p) => p.category.toUpperCase()).toSet()];
 
     final Map<String, int> categoryCounts = {
       'All': productsList.length,
@@ -1328,15 +1514,25 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
       return matchesCategory && matchesSearch;
     }).toList();
 
-    // Pharmacy FEFO (First-Expired, First-Out) Sorting Rule:
-    // Prioritize products with expiry dates ascending (earliest expiring stock first)
+    // Sorting Rule based on _selectedSortMode:
     filteredProducts.sort((a, b) {
-      if (a.batchExpiryDate != null && b.batchExpiryDate != null) {
-        return a.batchExpiryDate!.compareTo(b.batchExpiryDate!);
+      if (_selectedSortMode == 'Name (A-Z)') {
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      } else if (_selectedSortMode == 'Price (Low-High)') {
+        return a.retailPrice.compareTo(b.retailPrice);
+      } else if (_selectedSortMode == 'Price (High-Low)') {
+        return b.retailPrice.compareTo(a.retailPrice);
+      } else if (_selectedSortMode == 'Stock (Low-High)') {
+        return a.stockQuantity.compareTo(b.stockQuantity);
+      } else {
+        // Default FEFO: First-Expired, First-Out
+        if (a.batchExpiryDate != null && b.batchExpiryDate != null) {
+          return a.batchExpiryDate!.compareTo(b.batchExpiryDate!);
+        }
+        if (a.batchExpiryDate != null) return -1;
+        if (b.batchExpiryDate != null) return 1;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
       }
-      if (a.batchExpiryDate != null) return -1;
-      if (b.batchExpiryDate != null) return 1;
-      return a.name.compareTo(b.name);
     });
 
     const currentRoute = '/pharmacy/pos';
@@ -1385,6 +1581,46 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
             ],
           ),
           bottomNavigationBar: SafeArea(child: _buildFooter()),
+          floatingActionButton: (isMobile && _currentTab == 0)
+              ? SafeArea(
+                  child: FloatingActionButton.extended(
+                    onPressed: () => _showMobileCart(),
+                    label: Text('Cart (${ref.watch(cartProvider).length})'),
+                    icon: const Icon(Icons.shopping_cart_checkout),
+                    backgroundColor: const Color(0xFF2E7D32),
+                    foregroundColor: Colors.white,
+                  ),
+                )
+              : null,
+        ),
+      ),
+    );
+  }
+
+  void _showMobileCart() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.88,
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Expanded(child: _buildCartSection()),
+          ],
         ),
       ),
     );
@@ -1418,7 +1654,7 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                     children: [
                       const Icon(Icons.local_pharmacy_rounded, color: Colors.white, size: 24),
                       const SizedBox(width: 10),
-                      const Expanded(
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -1473,18 +1709,50 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                // Category Filter Rail with live item counts
-                CategoryFilterRail(
-                  categories: categories,
-                  selectedCategory: _selectedCategory,
-                  categoryCounts: categoryCounts,
-                  onSelectCategory: (cat) => setState(() => _selectedCategory = cat),
+                // Category Filter Rail with Live Item Counts & Sort Options
+                Row(
+                  children: [
+                    Expanded(
+                      child: CategoryFilterRail(
+                        categories: categories,
+                        selectedCategory: _selectedCategory,
+                        categoryCounts: categoryCounts,
+                        onSelectCategory: (cat) => setState(() => _selectedCategory = cat),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: theme.dividerColor),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _selectedSortMode,
+                          isDense: true,
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
+                          items: const [
+                            DropdownMenuItem(value: 'FEFO Expiry', child: Text('Sort: FEFO Expiry')),
+                            DropdownMenuItem(value: 'Name (A-Z)', child: Text('Sort: Name (A-Z)')),
+                            DropdownMenuItem(value: 'Price (Low-High)', child: Text('Sort: Price (Low-High)')),
+                            DropdownMenuItem(value: 'Price (High-Low)', child: Text('Sort: Price (High-Low)')),
+                            DropdownMenuItem(value: 'Stock (Low-High)', child: Text('Sort: Stock (Low-High)')),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) setState(() => _selectedSortMode = val);
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 // Product Cards Grid
                 Expanded(
                   child: products.isEmpty
-                      ? Center(child: Text('No medications match your search', style: TextStyle(color: theme.colorScheme.onSurfaceVariant)))
+                      ? Align(alignment: Alignment.center, child: Text('No medications match your search', style: TextStyle(color: theme.colorScheme.onSurfaceVariant)))
                       : GridView.builder(
                           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: crossAxisCount,
@@ -1555,7 +1823,15 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
               const Spacer(),
               if (cartItems.isNotEmpty)
                 IconButton(
-                  onPressed: () => cartNotifier.clear(),
+                  onPressed: () {
+                    cartNotifier.clear();
+                    setState(() {
+                      _drugDosages.clear();
+                      _selectedDrugId = null;
+                      _activeDosageController.clear();
+                      _prescriptionController.clear();
+                    });
+                  },
                   icon: const Icon(Icons.delete_sweep_rounded, color: Colors.red),
                 ),
             ],
@@ -1577,7 +1853,11 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
               if (_selectedCustomer != null)
                 IconButton(
                   icon: const Icon(Icons.close, size: 18, color: Colors.red),
-                  onPressed: () => setState(() => _selectedCustomer = null),
+                  onPressed: () => setState(() {
+                    _selectedCustomer = null;
+                    _patientController.clear();
+                    _patientPhoneController.clear();
+                  }),
                 ),
               IconButton(
                 icon: const Icon(Icons.add_circle_outline, size: 18),
@@ -1589,34 +1869,137 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
         ),
         Divider(height: 1, color: theme.dividerColor),
         Expanded(
-          child: ListView(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s, vertical: AppSpacing.xs),
-            children: [
-              if (cartItems.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 28),
-                  child: Center(
-                    child: Text('Cart is empty', style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
-                  ),
-                )
-              else
-                ...List.generate(cartItems.length, (index) {
-                  final item = cartItems[index];
-                  return CartItemTile(
-                    category: item.product.category,
-                    name: item.product.name,
-                    qty: item.quantity % 1 == 0 ? item.quantity.toInt().toString() : item.quantity.toStringAsFixed(1),
-                    weight: '${item.quantity} ${item.product.unit}',
-                    amount: '₵${item.total.toStringAsFixed(2)}',
-                    onDelete: () => cartNotifier.removeItem(index),
-                    onIncrement: () => cartNotifier.updateQuantity(index, item.quantity + 1),
-                    onDecrement: () => cartNotifier.updateQuantity(index, item.quantity - 1),
+            child: Column(
+              children: [
+                if (cartItems.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 28),
+                    child: Align(
+                      alignment: Alignment.center,
+                      child: Text('Cart is empty', style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
+                    ),
+                  )
+                else
+                  ...List.generate(cartItems.length, (index) {
+                    final item = cartItems[index];
+                  final drugId = item.product.id;
+                  final hasDosage = _drugDosages.containsKey(drugId) && _drugDosages[drugId]!.trim().isNotEmpty;
+                  final isCurrentSelected = _prescriptionExpanded && _selectedDrugId == drugId;
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 4),
+                    decoration: BoxDecoration(
+                      color: isCurrentSelected 
+                          ? const Color(0xFF2E7D32).withValues(alpha: 0.05) 
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isCurrentSelected 
+                            ? const Color(0xFF2E7D32).withValues(alpha: 0.4) 
+                            : Colors.transparent,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        CartItemTile(
+                          category: item.product.category,
+                          name: item.product.name,
+                          qty: item.quantity % 1 == 0 ? item.quantity.toInt().toString() : item.quantity.toStringAsFixed(1),
+                          weight: '${item.quantity} ${item.product.unit}',
+                          amount: '₵${item.total.toStringAsFixed(2)}',
+                          onDelete: () {
+                            setState(() {
+                              _drugDosages.remove(drugId);
+                              if (_selectedDrugId == drugId) {
+                                _selectedDrugId = null;
+                                _activeDosageController.clear();
+                              }
+                              _syncFullPrescriptionText(cartItems.where((ci) => ci.product.id != drugId).toList());
+                            });
+                            cartNotifier.removeItem(index);
+                          },
+                          onIncrement: () => cartNotifier.updateQuantity(index, item.quantity + 1),
+                          onDecrement: () {
+                            if (item.quantity <= 1) {
+                              setState(() {
+                                _drugDosages.remove(drugId);
+                                if (_selectedDrugId == drugId) {
+                                  _selectedDrugId = null;
+                                  _activeDosageController.clear();
+                                }
+                                _syncFullPrescriptionText(cartItems.where((ci) => ci.product.id != drugId).toList());
+                              });
+                            }
+                            cartNotifier.updateQuantity(index, item.quantity - 1);
+                          },
+                        ),
+                        // Direct Drug Prescription Trigger Chip
+                        Padding(
+                          padding: const EdgeInsets.only(left: 48, bottom: 6, right: 12),
+                          child: InkWell(
+                            onTap: () => _selectAndPrescribeDrug(drugId, cartItems),
+                            borderRadius: BorderRadius.circular(6),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: hasDosage 
+                                    ? const Color(0xFF2E7D32).withValues(alpha: 0.1) 
+                                    : (isCurrentSelected ? const Color(0xFF2E7D32).withValues(alpha: 0.12) : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: hasDosage 
+                                      ? const Color(0xFF2E7D32).withValues(alpha: 0.3) 
+                                      : (isCurrentSelected ? const Color(0xFF2E7D32) : theme.dividerColor.withValues(alpha: 0.4)),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    hasDosage ? Icons.check_circle_rounded : Icons.medication_liquid_outlined,
+                                    size: 13,
+                                    color: hasDosage ? const Color(0xFF2E7D32) : theme.colorScheme.primary,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Flexible(
+                                    child: Text(
+                                      hasDosage 
+                                          ? 'Rx: ${_drugDosages[drugId]}' 
+                                          : 'Prescribe Dosage for this drug',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: hasDosage ? FontWeight.bold : FontWeight.w600,
+                                        color: hasDosage 
+                                            ? const Color(0xFF2E7D32) 
+                                            : (isCurrentSelected ? const Color(0xFF2E7D32) : theme.colorScheme.onSurfaceVariant),
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    hasDosage ? Icons.edit_outlined : Icons.chevron_right_rounded, 
+                                    size: 13, 
+                                    color: hasDosage ? const Color(0xFF2E7D32) : Colors.grey,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   );
                 }),
               _buildPrescriptionSection(cartItems, theme),
             ],
           ),
         ),
+      ),
         // Summary & Actions (Pinned at bottom, guaranteed no overflow)
         Container(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.m, vertical: 10),
@@ -1650,13 +2033,15 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                 width: double.infinity,
                 height: 46,
                 child: ElevatedButton(
-                  onPressed: cartItems.isEmpty ? null : _checkout,
+                  onPressed: (cartItems.isEmpty || _isProcessingCheckout) ? null : _checkout,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF2E7D32),
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.m)),
                   ),
-                  child: const Text('PROCEED TO PAYMENT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  child: _isProcessingCheckout
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Text('PROCEED TO PAYMENT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 ),
               ),
               const SizedBox(height: 6),
@@ -1823,82 +2208,171 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Quick helper row
+                  // 1. Drug Selection Chips Row
+                  const Text('Select Drug to Prescribe:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                  const SizedBox(height: 6),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _drugSelectPill(
+                          label: 'All Checkout Meds (${cartItems.length})',
+                          isSelected: _selectedDrugId == null || _selectedDrugId == 'ALL',
+                          isPrescribed: cartItems.isNotEmpty && cartItems.every((ci) => _drugDosages.containsKey(ci.product.id) && _drugDosages[ci.product.id]!.trim().isNotEmpty),
+                          onTap: () {
+                            setState(() {
+                              _selectedDrugId = 'ALL';
+                              _activeDosageController.text = '';
+                            });
+                          },
+                        ),
+                        ...cartItems.map((ci) {
+                          final isSelected = _selectedDrugId == ci.product.id;
+                          final hasDose = _drugDosages.containsKey(ci.product.id) && _drugDosages[ci.product.id]!.trim().isNotEmpty;
+                          return _drugSelectPill(
+                            label: ci.product.name,
+                            isSelected: isSelected,
+                            isPrescribed: hasDose,
+                            onTap: () => _selectAndPrescribeDrug(ci.product.id, cartItems),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // 2. Active Drug Header & Action Controls
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Dosage Instructions:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                      InkWell(
-                        onTap: () {
-                          // Auto-fill cart products
-                          final lines = cartItems.map((ci) {
-                            final qty = ci.quantity % 1 == 0 ? ci.quantity.toInt().toString() : ci.quantity.toString();
-                            return '• ${ci.product.name} (x$qty): ';
-                          }).join('\n');
-                          setState(() {
-                            if (_prescriptionController.text.trim().isEmpty) {
-                              _prescriptionController.text = lines;
-                            } else {
-                              _prescriptionController.text += '\n$lines';
-                            }
-                          });
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF2E7D32).withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.playlist_add, size: 13, color: Color(0xFF2E7D32)),
-                              SizedBox(width: 3),
-                              Text('Load Cart Items', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF2E7D32))),
-                            ],
-                          ),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Icon(
+                              _selectedDrugId == null || _selectedDrugId == 'ALL' 
+                                  ? Icons.layers_outlined 
+                                  : Icons.medication_liquid_rounded, 
+                              size: 14, 
+                              color: const Color(0xFF2E7D32),
+                            ),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                _selectedDrugId == null || _selectedDrugId == 'ALL'
+                                    ? 'Prescribing for: All Medications'
+                                    : 'Prescribing: ${_getDrugName(_selectedDrugId, cartItems)}',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Color(0xFF2E7D32)),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
+                      if (cartItems.length > 1) ...[
+                        if (_selectedDrugId != null && _selectedDrugId != 'ALL')
+                          InkWell(
+                            onTap: () => _applyDosageToAllMeds(cartItems),
+                            borderRadius: BorderRadius.circular(4),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.copy_all_rounded, size: 12, color: Colors.blue),
+                                  const SizedBox(width: 3),
+                                  const Text('Apply to All Meds', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.blue)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        const SizedBox(width: 6),
+                        InkWell(
+                          onTap: () => _selectNextDrug(cartItems),
+                          borderRadius: BorderRadius.circular(4),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text('Next Med', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold)),
+                                const SizedBox(width: 2),
+                                const Icon(Icons.arrow_forward_rounded, size: 11),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
 
-                  // Prescription Text Field
+                  // 3. Active Dosage Input
                   TextField(
-                    controller: _prescriptionController,
+                    controller: _activeDosageController,
                     minLines: 2,
                     maxLines: 3,
                     style: const TextStyle(fontSize: 11.5),
                     decoration: InputDecoration(
-                      hintText: 'e.g. Take 2 tablets 3 times daily after meals for 5 days...',
+                      hintText: _selectedDrugId == null || _selectedDrugId == 'ALL'
+                          ? 'e.g. 2 tabs 3 times daily after meals for 5 days (applies to all meds)...'
+                          : 'Dosage for ${_getDrugName(_selectedDrugId, cartItems)}...',
                       hintStyle: TextStyle(fontSize: 11, color: Colors.grey.shade400),
                       isDense: true,
                       contentPadding: const EdgeInsets.all(8),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
                     ),
-                    onChanged: (v) => setState(() {}),
+                    onChanged: (v) {
+                      setState(() {
+                        final val = v.trim();
+                        if (_selectedDrugId != null && _selectedDrugId != 'ALL') {
+                          if (val.isEmpty) {
+                            _drugDosages.remove(_selectedDrugId!);
+                          } else {
+                            _drugDosages[_selectedDrugId!] = val;
+                          }
+                        } else {
+                          for (final ci in cartItems) {
+                            if (val.isEmpty) {
+                              _drugDosages.remove(ci.product.id);
+                            } else {
+                              _drugDosages[ci.product.id] = val;
+                            }
+                          }
+                        }
+                        _syncFullPrescriptionText(cartItems);
+                      });
+                    },
                   ),
                   const SizedBox(height: 6),
 
-                  // Quick frequency chips
+                  // 4. Quick frequency chips
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: [
-                        _dosageChip('2 tabs 3x daily'),
-                        _dosageChip('1 tab 2x daily'),
-                        _dosageChip('1 cap daily'),
-                        _dosageChip('5ml 3x daily'),
-                        _dosageChip('After meals'),
-                        _dosageChip('Before bedtime'),
-                        _dosageChip('For 5 days'),
-                        _dosageChip('For 7 days'),
+                        _dosageChip('2 tabs 3x daily', cartItems),
+                        _dosageChip('1 tab 2x daily', cartItems),
+                        _dosageChip('1 cap daily', cartItems),
+                        _dosageChip('5ml 3x daily', cartItems),
+                        _dosageChip('After meals', cartItems),
+                        _dosageChip('Before bedtime', cartItems),
+                        _dosageChip('For 5 days', cartItems),
+                        _dosageChip('For 7 days', cartItems),
                       ],
                     ),
                   ),
                   const SizedBox(height: 8),
 
-                  // Patient Name & Phone Row
+                  // 5. Patient Name & Phone Row
                   Row(
                     children: [
                       Expanded(
@@ -1923,12 +2397,12 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                           style: const TextStyle(fontSize: 11),
                           keyboardType: TextInputType.phone,
                           inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                            LengthLimitingTextInputFormatter(10),
+                            FilteringTextInputFormatter.allow(RegExp(r'[\d+]')),
+                            LengthLimitingTextInputFormatter(16),
                           ],
                           decoration: const InputDecoration(
                             labelText: 'Patient Phone',
-                            hintText: '10 digits (SMS)',
+                            hintText: 'e.g. 0244123456 (SMS)',
                             isDense: true,
                             prefixIcon: Icon(Icons.phone, size: 14),
                             contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
@@ -1940,39 +2414,115 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                   ),
                   const SizedBox(height: 6),
 
-                  // Doctor Name & Rx Serial No Row
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _doctorController,
-                          style: const TextStyle(fontSize: 11),
-                          decoration: const InputDecoration(
-                            labelText: 'Doctor / Prescriber',
-                            hintText: 'Dr. Name',
-                            isDense: true,
-                            contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                  // 6. Doctor / Prescriber & Rx Serial No Row
+                  Consumer(
+                    builder: (context, ref, _) {
+                      final currentUser = ref.watch(currentUserProvider);
+                      final allUsers = ref.watch(userProvider);
+
+                      final Set<String> prescriberOptions = {
+                        'OTC / Self-Prescribed',
+                        if (currentUser != null) '${currentUser.firstName} ${currentUser.surname}',
+                        if (currentUser != null) 'Dr. ${currentUser.surname}',
+                        ...allUsers.map((u) => '${u.firstName} ${u.surname}'),
+                        'Dr. Appiah',
+                        'Dr. Mensah',
+                        'Dr. Owusu',
+                        '+ Custom Prescriber / Doctor...',
+                      };
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  initialValue: prescriberOptions.contains(_selectedDoctor) ? _selectedDoctor : '+ Custom Prescriber / Doctor...',
+                                  isDense: true,
+                                  isExpanded: true,
+                                  style: const TextStyle(fontSize: 11, color: Colors.black87),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Doctor / Prescriber',
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                                  ),
+                                  items: prescriberOptions.map((opt) {
+                                    return DropdownMenuItem<String>(
+                                      value: opt,
+                                      child: Text(
+                                        opt,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: opt.startsWith('+') ? FontWeight.bold : FontWeight.normal,
+                                          color: opt.startsWith('+') ? const Color(0xFF2E7D32) : Colors.black87,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: (val) {
+                                    if (val == null) return;
+                                    setState(() {
+                                      _selectedDoctor = val;
+                                      if (val == '+ Custom Prescriber / Doctor...') {
+                                        _isCustomDoctor = true;
+                                        if (_doctorController.text.trim().isEmpty) {
+                                          _doctorController.text = 'Popo';
+                                        }
+                                      } else {
+                                        _isCustomDoctor = false;
+                                        _doctorController.text = val;
+                                      }
+                                    });
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: TextField(
+                                  controller: _rxNumberController,
+                                  style: const TextStyle(fontSize: 11),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Rx Serial No',
+                                    hintText: 'e.g. RX-2026-01',
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: TextField(
-                          controller: _rxNumberController,
-                          style: const TextStyle(fontSize: 11),
-                          decoration: const InputDecoration(
-                            labelText: 'Rx Serial No',
-                            hintText: 'e.g. RX-2026-01',
-                            isDense: true,
-                            contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-                          ),
-                        ),
-                      ),
-                    ],
+                          if (_isCustomDoctor) ...[
+                            const SizedBox(height: 6),
+                            TextField(
+                              controller: _doctorController,
+                              style: const TextStyle(fontSize: 11),
+                              autofocus: true,
+                              decoration: InputDecoration(
+                                labelText: 'Custom Prescriber / Doctor Name',
+                                hintText: 'Enter doctor / prescriber name e.g. Popo',
+                                isDense: true,
+                                prefixIcon: const Icon(Icons.person_add_alt_1, size: 14),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                                suffixIcon: IconButton(
+                                  icon: const Icon(Icons.close, size: 14),
+                                  onPressed: () => setState(() {
+                                    _isCustomDoctor = false;
+                                    _selectedDoctor = 'OTC / Self-Prescribed';
+                                    _doctorController.clear();
+                                  }),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      );
+                    },
                   ),
                   const SizedBox(height: 8),
 
-                  // Delivery Options (SMS or Receipt or Both)
+                  // 7. Delivery Options (SMS or Receipt or Both)
                   Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
@@ -2003,8 +2553,8 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                                     ),
                                     const Icon(Icons.sms_outlined, size: 14, color: Colors.blue),
                                     const SizedBox(width: 4),
-                                    const Expanded(
-                                      child: Text('Send via SMS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                    Expanded(
+                                      child: const Text('Send via SMS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                                     ),
                                   ],
                                 ),
@@ -2023,8 +2573,8 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                                     ),
                                     const Icon(Icons.receipt_long_outlined, size: 14, color: Colors.teal),
                                     const SizedBox(width: 4),
-                                    const Expanded(
-                                      child: Text('Print on Receipt', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                    Expanded(
+                                      child: const Text('Print on Receipt', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                                     ),
                                   ],
                                 ),
@@ -2037,6 +2587,40 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
                       ],
                     ),
                   ),
+
+                  // 8. Compiled Prescription Summary Preview (if any prescribed)
+                  if (_prescriptionController.text.trim().isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2E7D32).withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFF2E7D32).withValues(alpha: 0.2)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.receipt_long_rounded, size: 12, color: Color(0xFF2E7D32)),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Compiled Prescription (${_drugDosages.length} of ${cartItems.length} meds prescribed):',
+                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF2E7D32)),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _prescriptionController.text,
+                            style: TextStyle(fontSize: 10.5, color: theme.colorScheme.onSurface),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -2046,17 +2630,26 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
     );
   }
 
-  Widget _dosageChip(String text) {
+  Widget _dosageChip(String text, List<CartItem> cartItems) {
     return Padding(
       padding: const EdgeInsets.only(right: 4),
       child: InkWell(
         onTap: () {
           setState(() {
-            if (_prescriptionController.text.trim().isEmpty) {
-              _prescriptionController.text = text;
+            if (_activeDosageController.text.trim().isEmpty) {
+              _activeDosageController.text = text;
             } else {
-              _prescriptionController.text += ' $text';
+              _activeDosageController.text += ' $text';
             }
+            final newDosage = _activeDosageController.text.trim();
+            if (_selectedDrugId != null && _selectedDrugId != 'ALL') {
+              _drugDosages[_selectedDrugId!] = newDosage;
+            } else {
+              for (final ci in cartItems) {
+                _drugDosages[ci.product.id] = newDosage;
+              }
+            }
+            _syncFullPrescriptionText(cartItems);
           });
         },
         borderRadius: BorderRadius.circular(4),
@@ -2067,6 +2660,61 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
             borderRadius: BorderRadius.circular(4),
           ),
           child: Text(text, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w500)),
+        ),
+      ),
+    );
+  }
+
+  Widget _drugSelectPill({
+    required String label,
+    required bool isSelected,
+    required bool isPrescribed,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? const Color(0xFF2E7D32)
+                : (isPrescribed ? const Color(0xFF2E7D32).withValues(alpha: 0.1) : Colors.grey.withValues(alpha: 0.12)),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isSelected
+                  ? const Color(0xFF2E7D32)
+                  : (isPrescribed ? const Color(0xFF2E7D32).withValues(alpha: 0.4) : Colors.grey.withValues(alpha: 0.25)),
+              width: isSelected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isPrescribed ? Icons.check_circle_rounded : Icons.medication_liquid_rounded,
+                size: 12,
+                color: isSelected ? Colors.white : (isPrescribed ? const Color(0xFF2E7D32) : Colors.grey.shade600),
+              ),
+              const SizedBox(width: 4),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 140),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                    color: isSelected ? Colors.white : (isPrescribed ? const Color(0xFF2E7D32) : Colors.black87),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2131,12 +2779,12 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
           color: Colors.teal.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(4),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            Icon(Icons.receipt_long_outlined, size: 12, color: Colors.teal),
-            SizedBox(width: 4),
+            const Icon(Icons.receipt_long_outlined, size: 12, color: Colors.teal),
+            const SizedBox(width: 4),
             Expanded(
-              child: Text(
+              child: const Text(
                 'Delivery: Printed on Receipt only (No SMS)',
                 style: TextStyle(fontSize: 9.5, color: Colors.teal, fontWeight: FontWeight.bold),
               ),
@@ -2152,12 +2800,12 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
           color: Colors.grey.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(4),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            Icon(Icons.archive_outlined, size: 12, color: Colors.grey),
-            SizedBox(width: 4),
+            const Icon(Icons.archive_outlined, size: 12, color: Colors.grey),
+            const SizedBox(width: 4),
             Expanded(
-              child: Text(
+              child: const Text(
                 'Delivery: Pharmacy Record only (No SMS or Receipt print)',
                 style: TextStyle(fontSize: 9.5, color: Colors.grey),
               ),
@@ -2169,82 +2817,11 @@ class _PharmacistPosState extends ConsumerState<PharmacistPos> {
   }
 
   Widget _buildHistoryLayout() {
-    final salesHistory = ref.watch(saleHistoryProvider);
-
-    return Padding(
-      padding: const EdgeInsets.all(AppSpacing.m),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Pharmacy Dispensing History', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          const SizedBox(height: AppSpacing.m),
-          Expanded(
-            child: salesHistory.isEmpty
-                ? const Center(child: Text('No dispensing records found.'))
-                : ListView.separated(
-                    itemCount: salesHistory.length,
-                    separatorBuilder: (context, sepIndex) => Divider(key: ValueKey('div_$sepIndex')),
-                    itemBuilder: (context, index) {
-                      final sale = salesHistory[index];
-                      final hasPrescription = sale.prescription != null && sale.prescription!.trim().isNotEmpty;
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: hasPrescription ? Colors.teal : const Color(0xFF2E7D32),
-                          child: Icon(hasPrescription ? Icons.medication_rounded : Icons.receipt, color: Colors.white),
-                        ),
-                        title: Row(
-                          children: [
-                            Text('Invoice ${sale.id}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                            if (hasPrescription) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: Colors.teal.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: const Text('Rx Prescribed', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.teal)),
-                              ),
-                            ],
-                          ],
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('${DateFormat('MMM dd, yyyy HH:mm').format(sale.timestamp)} • Patient: ${sale.customerName ?? "Walk-In"}'),
-                            if (hasPrescription)
-                              Text(
-                                'Rx: ${sale.prescription}',
-                                style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.teal.shade700),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                          ],
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text('GHS ${sale.totalAmount.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF2E7D32))),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              icon: const Icon(Icons.share, size: 18, color: Color(0xFF25D366)),
-                              tooltip: 'Share WhatsApp Receipt',
-                              onPressed: () => ReceiptService.shareReceiptViaWhatsApp(sale, context: context, customerPhone: sale.customerPhone),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.print_outlined, size: 18),
-                              tooltip: 'Print Receipt',
-                              onPressed: () => ReceiptService.printReceipt(sale, context: context),
-                            ),
-                          ],
-                        ),
-                        onTap: () => ReceiptService.printReceipt(sale, context: context),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
+    return PosTransactionHistoryView(
+      onSwitchToNewSale: () => setState(() => _currentTab = 0),
+      filterCategory: 'PHARMACY',
     );
   }
 }
+
+

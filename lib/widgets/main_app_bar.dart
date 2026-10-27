@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../core/constants.dart';
 import '../services/notification_service.dart';
@@ -83,10 +84,10 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
       child: Container(
         padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF0F172A) : roleColor,
-          border: Border(
+          color: AppColors.primarySlate,
+          border: const Border(
             bottom: BorderSide(
-              color: isDark ? const Color(0xFF1E293B) : Colors.black.withValues(alpha: 0.12),
+              color: Color(0xFF1E293B),
               width: 1,
             ),
           ),
@@ -134,7 +135,7 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
                 ),
 
                 // 3. Right Actions (Critical Apps)
-                const SizedBox(width: 4),
+                SizedBox(width: isMobile ? 2 : 4),
                 _buildRoundButton(
                   context, 
                   Icons.lock_outline_rounded, 
@@ -142,26 +143,27 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
                     HapticFeedback.mediumImpact();
                     ref.read(passcodeUnlockedProvider.notifier).state = false;
                   },
-                  size: isMobile ? 36 : 42,
-                  iconSize: isMobile ? 18 : 20,
+                  size: isMobile ? 32 : 42,
+                  iconSize: isMobile ? 16 : 20,
                   tooltip: 'Lock System',
                 ),
-                const SizedBox(width: 4),
-                _buildRoundButton(
-                  context, 
-                  Icons.calculate_outlined, 
-                  () => showDialog(context: context, builder: (context) => const CalculatorDialog()),
-                  size: isMobile ? 36 : 42,
-                  iconSize: isMobile ? 18 : 20,
-                  tooltip: 'Quick Calculator',
-                ),
-                const SizedBox(width: 4),
+                if (!isMobile) ...[
+                  const SizedBox(width: 4),
+                  _buildRoundButton(
+                    context, 
+                    Icons.calculate_outlined, 
+                    () => showDialog(context: context, builder: (context) => const CalculatorDialog()),
+                    size: 42,
+                    iconSize: 20,
+                    tooltip: 'Quick Calculator',
+                  ),
+                ],
+                SizedBox(width: isMobile ? 2 : 4),
                 _buildShiftButton(context, ref, isMobile),
-                const SizedBox(width: 4),
                 if (widget.actions != null) ...widget.actions!,
-                const SizedBox(width: 4),
+                SizedBox(width: isMobile ? 2 : 4),
                 _buildNotificationButton(context, unreadCount, () => _showNotificationsDialog(context, ref, notifications), isMobile),
-                const SizedBox(width: 4),
+                SizedBox(width: isMobile ? 2 : 4),
                 _buildProfileAvatar(context, ref, roleColor, isMobile),
               ],
             ),
@@ -266,26 +268,28 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
             Flexible(
               child: Text(
                 widget.title,
-                style: TextStyle(
-                  fontSize: isMobile ? 16 : 18,
-                  fontWeight: FontWeight.w900,
+                style: GoogleFonts.oswald(
+                  fontSize: isMobile ? 15 : 19,
+                  fontWeight: FontWeight.bold,
                   color: Colors.white,
-                  letterSpacing: -0.5,
+                  letterSpacing: isMobile ? 0.3 : 0.8,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            const SizedBox(width: 8),
-            const CloudSyncIndicator(),
+            const SizedBox(width: 4),
+            CloudSyncIndicator(compact: isMobile),
           ],
         ),
         Text(
           user != null 
-            ? '${user.firstName} • ${user.activePrimaryRole.name.toUpperCase()} • $branchText'
+            ? (isMobile 
+                ? '${user.firstName} • ${user.activePrimaryRole.name.toUpperCase()}'
+                : '${user.firstName} • ${user.activePrimaryRole.name.toUpperCase()} • $branchText')
             : branchText,
           style: TextStyle(
-            fontSize: 9,
+            fontSize: isMobile ? 8.5 : 9,
             color: Colors.white.withValues(alpha: 0.6),
             fontWeight: FontWeight.w600,
           ),

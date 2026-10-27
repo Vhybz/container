@@ -9,6 +9,7 @@ import '../services/product_service.dart';
 import '../services/expense_provider.dart';
 import '../services/branch_provider.dart';
 import '../services/auth_provider.dart';
+import '../services/pwa_install_service.dart';
 import 'account_switch_dialog.dart';
 
 class SidebarItem {
@@ -64,20 +65,7 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     
-    final bgGradient = isDark 
-        ? const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF18181B), Color(0xFF0F0F12)],
-          )
-        : LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              theme.colorScheme.primary,
-              Color.lerp(theme.colorScheme.primary, Colors.black, 0.28) ?? const Color(0xFF2E090F),
-            ],
-          );
+    const bgGradient = AppGradients.splashAuthBackdrop;
 
     final filteredItems = widget.items
         .where((item) => item.label.toLowerCase().contains(_searchQuery.toLowerCase()))
@@ -636,6 +624,20 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
       padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
       child: Row(
         children: [
+          if (PwaInstallService.canInstall()) ...[
+            IconButton(
+              onPressed: () => PwaInstallService.promptInstall(),
+              icon: const Icon(Icons.install_mobile_rounded, color: Colors.amber, size: 19),
+              tooltip: 'Install App (PWA)',
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.amber.withValues(alpha: 0.15),
+                padding: const EdgeInsets.all(10),
+                shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+                side: BorderSide(color: Colors.amber.withValues(alpha: 0.3)),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
           IconButton(
             onPressed: () => _handleRefresh(context, ref),
             icon: const Icon(Icons.refresh_rounded, color: Colors.white70, size: 19),

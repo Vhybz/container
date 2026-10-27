@@ -153,6 +153,15 @@ class SettingsScreen extends ConsumerWidget {
                           'Security',
                           Icons.security_outlined,
                           [
+                            SwitchListTile(
+                              secondary: const Icon(Icons.pin_outlined),
+                              title: const Text('4-Digit Security PIN'),
+                              subtitle: const Text('Require 4-digit PIN when opening POS and sensitive administrative areas'),
+                              value: appSettings.requirePasscode,
+                              activeThumbColor: theme.colorScheme.primary,
+                              onChanged: (v) => ref.read(appSettingsProvider.notifier).toggleRequirePasscode(v),
+                            ),
+                            const Divider(height: 1),
                             ListTile(
                               leading: const Icon(Icons.lock_outline),
                               title: const Text('Update Password'),

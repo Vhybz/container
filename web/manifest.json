@@ -1,12 +1,12 @@
 {
-    "name": "Multi-Business Manager",
-    "short_name": "MultiBusiness",
-    "start_url": ".",
+    "name": "Container Multi-Business Stores",
+    "short_name": "Container POS",
+    "start_url": "/",
     "display": "standalone",
-    "background_color": "#1565C0",
-    "theme_color": "#1565C0",
-    "description": "Multi-Sector Management App for Pharmacy, Barbershop, and Phone & Accessories Shop",
-    "orientation": "portrait-primary",
+    "background_color": "#0F172A",
+    "theme_color": "#2563EB",
+    "description": "Multi-Sector Store Management System for Pharmacy, Barbershop, Tech & Retail",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {

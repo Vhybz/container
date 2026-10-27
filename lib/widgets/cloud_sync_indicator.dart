@@ -6,10 +6,12 @@ import '../services/sync_provider.dart';
 
 class CloudSyncIndicator extends ConsumerStatefulWidget {
   final double size;
+  final bool compact;
 
   const CloudSyncIndicator({
     super.key,
     this.size = 18.0,
+    this.compact = false,
   });
 
   @override
@@ -91,19 +93,54 @@ class _CloudSyncIndicatorState extends ConsumerState<CloudSyncIndicator>
 
     if (isOffline) {
       tooltip = 'Offline (Local changes saved)';
-      iconColor = Colors.amberAccent;
-      borderColor = Colors.amberAccent.withValues(alpha: 0.4);
-      bgColor = Colors.amber.withValues(alpha: 0.15);
+      iconColor = const Color(0xFFFF5252); // Bright Red when offline
+      borderColor = Colors.redAccent.withValues(alpha: 0.5);
+      bgColor = Colors.red.withValues(alpha: 0.2);
     } else if (isSyncing) {
       tooltip = 'Syncing data with cloud...';
-      iconColor = Colors.cyanAccent;
-      borderColor = Colors.cyanAccent.withValues(alpha: 0.5);
-      bgColor = Colors.cyanAccent.withValues(alpha: 0.15);
+      iconColor = const Color(0xFFFF9100); // Bright Orange when syncing
+      borderColor = Colors.orangeAccent.withValues(alpha: 0.5);
+      bgColor = Colors.orange.withValues(alpha: 0.2);
     } else {
       tooltip = 'Cloud Synced • Tap to refresh';
-      iconColor = Colors.white.withValues(alpha: 0.9);
-      borderColor = Colors.white.withValues(alpha: 0.2);
-      bgColor = Colors.white.withValues(alpha: 0.1);
+      iconColor = const Color(0xFF00E676); // Bright Green when online & synced
+      borderColor = Colors.greenAccent.withValues(alpha: 0.5);
+      bgColor = Colors.green.withValues(alpha: 0.2);
+    }
+
+    if (widget.compact) {
+      return Tooltip(
+        message: tooltip,
+        waitDuration: const Duration(milliseconds: 300),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _handleTap(isSyncing, isOffline),
+            borderRadius: BorderRadius.circular(12),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              padding: const EdgeInsets.all(5),
+              decoration: BoxDecoration(
+                color: bgColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: borderColor, width: 0.9),
+              ),
+              child: isOffline
+                  ? Icon(Icons.cloud_off_rounded, size: widget.size * 0.85, color: iconColor)
+                  : isSyncing
+                      ? SizedBox(
+                          width: widget.size * 0.85,
+                          height: widget.size * 0.85,
+                          child: RotationTransition(
+                            turns: _animationController,
+                            child: Icon(Icons.sync_rounded, size: widget.size * 0.85, color: iconColor),
+                          ),
+                        )
+                      : Icon(Icons.cloud_done_rounded, size: widget.size * 0.85, color: iconColor),
+            ),
+          ),
+        ),
+      );
     }
 
     return Tooltip(
@@ -116,11 +153,11 @@ class _CloudSyncIndicatorState extends ConsumerState<CloudSyncIndicator>
           borderRadius: BorderRadius.circular(12),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 300),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
             decoration: BoxDecoration(
               color: bgColor,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: borderColor, width: 0.8),
+              border: Border.all(color: borderColor, width: 0.9),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -130,6 +167,15 @@ class _CloudSyncIndicatorState extends ConsumerState<CloudSyncIndicator>
                     Icons.cloud_off_rounded,
                     size: widget.size,
                     color: iconColor,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Offline',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: iconColor,
+                    ),
                   ),
                 ] else if (isSyncing) ...[
                   SizedBox(
@@ -154,11 +200,29 @@ class _CloudSyncIndicatorState extends ConsumerState<CloudSyncIndicator>
                       ],
                     ),
                   ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Syncing',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: iconColor,
+                    ),
+                  ),
                 ] else ...[
                   Icon(
                     Icons.cloud_done_rounded,
                     size: widget.size,
                     color: iconColor,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Synced',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: iconColor,
+                    ),
                   ),
                 ],
               ],

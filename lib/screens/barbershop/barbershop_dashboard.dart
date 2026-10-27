@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../core/constants.dart';
@@ -22,6 +23,8 @@ import '../../widgets/main_app_bar.dart';
 import '../../widgets/responsive_layout.dart';
 import '../../widgets/role_pop_scope.dart';
 import '../../widgets/barber_settlement_dialog.dart';
+import '../../services/barber_management_provider.dart';
+import '../../widgets/barber_management_dialog.dart';
 
 class BarbershopDashboard extends ConsumerStatefulWidget {
   const BarbershopDashboard({super.key});
@@ -56,6 +59,18 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
     super.dispose();
   }
 
+  List<String> _getCompiledBarberNames(List<UserAccount> staff) {
+    final allRecords = ref.watch(barberRecordsProvider);
+    final queue = ref.watch(barberQueueProvider);
+    ref.watch(barberManagementProvider); // Rebuild when barbers change
+
+    return ref.read(barberManagementProvider.notifier).getCompiledBarbers(
+      staff: staff,
+      records: allRecords,
+      queue: queue,
+    );
+  }
+
   void _showAddQueueDialog(BuildContext context, List<Product> services, List<UserAccount> staff) {
     final nameController = TextEditingController();
     final phoneController = TextEditingController();
@@ -71,10 +86,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
         ? haircutServices.map((s) => s.name).toList() 
         : ['Executive Haircut', 'Kids Haircut', 'Beard Grooming & Oil', 'Hair Dye / Blackening', 'Facial Scrub & Steam'];
 
-    final barberStaff = staff.where((u) => u.role == UserRole.secretary || u.role == UserRole.admin).toList();
-    final List<String> barberNames = barberStaff.isNotEmpty 
-        ? barberStaff.map((u) => '${u.firstName} ${u.surname}').toList() 
-        : ['King Mojo'];
+    final List<String> barberNames = _getCompiledBarberNames(staff);
 
     String? selectedService = serviceNames.first;
     String? selectedBarber = barberNames.first;
@@ -169,10 +181,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
         ? haircutServices.map((s) => s.name).toList() 
         : ['Executive Haircut', 'Kids Haircut', 'Beard Grooming & Oil', 'Hair Dye / Blackening', 'Facial Scrub & Steam'];
 
-    final barberStaff = staff.where((u) => u.role == UserRole.secretary || u.role == UserRole.admin).toList();
-    final List<String> barberNames = barberStaff.isNotEmpty 
-        ? barberStaff.map((u) => '${u.firstName} ${u.surname}').toList() 
-        : ['King Mojo'];
+    final List<String> barberNames = _getCompiledBarberNames(staff);
 
     final nameController = TextEditingController();
     final phoneController = TextEditingController();
@@ -387,6 +396,10 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                           child: TextField(
                             controller: phoneController,
                             keyboardType: TextInputType.phone,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(RegExp(r'[\d+]')),
+                              LengthLimitingTextInputFormatter(16),
+                            ],
                             decoration: const InputDecoration(
                               labelText: 'Phone Number (for SMS) *',
                               prefixIcon: Icon(Icons.phone_outlined),
@@ -572,7 +585,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                           ),
                           const SizedBox(height: 6),
                           const Text(
-                            '• 1. Booking SMS will be dispatched immediately to the client with this MoMo number & name to validate within 30 mins.\n• 2. Appointment enters "Pending Payment" status until payment is confirmed.\n• 3. Confirmation SMS is dispatched automatically once payment is validated.',
+                            '• 1. Booking SMS will be dispatched immediately instructing the client to send MoMo using their name as reference to validate within 30 mins.\n• 2. Appointment enters "Pending Payment" status until payment is confirmed.\n• 3. Confirmation SMS is dispatched automatically once payment is validated.',
                             style: TextStyle(fontSize: 11, color: Colors.black87),
                           ),
                           const SizedBox(height: 10),
@@ -583,6 +596,10 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                                 child: TextField(
                                   controller: momoNumberController,
                                   keyboardType: TextInputType.phone,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(RegExp(r'[\d+]')),
+                                    LengthLimitingTextInputFormatter(16),
+                                  ],
                                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                                   decoration: const InputDecoration(
                                     labelText: 'MoMo Number',
@@ -928,48 +945,84 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
 
   Widget _buildQueueTab(ThemeData theme, List<Product> services, List<UserAccount> staff) {
     final queue = ref.watch(barberQueueProvider);
+    final isMobile = MediaQuery.of(context).size.width < 600;
 
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.m),
         child: Column(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Active Client Queue & Appointments', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    Text('Pre-booked appointments auto-enter 30 mins prior', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                  ],
-                ),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: () => _showBookAppointmentDialog(context, services, staff),
-                      icon: const Icon(Icons.calendar_month, size: 16),
-                      label: const Text('Book Appointment'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF6A1B9A),
-                        foregroundColor: Colors.white,
+            if (isMobile)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Active Client Queue & Appointments', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  const SizedBox(height: 2),
+                  const Text('Pre-booked appointments auto-enter 30 mins prior', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: () => _showBookAppointmentDialog(context, services, staff),
+                        icon: const Icon(Icons.calendar_month, size: 16),
+                        label: const Text('Book Appointment'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF6A1B9A),
+                          foregroundColor: Colors.white,
+                        ),
                       ),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => _showAddQueueDialog(context, services, staff),
-                      icon: const Icon(Icons.person_add, size: 16),
-                      label: const Text('Add Client to Queue'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1565C0),
-                        foregroundColor: Colors.white,
+                      ElevatedButton.icon(
+                        onPressed: () => _showAddQueueDialog(context, services, staff),
+                        icon: const Icon(Icons.person_add, size: 16),
+                        label: const Text('Add Client to Queue'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1565C0),
+                          foregroundColor: Colors.white,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                    ],
+                  ),
+                ],
+              )
+            else
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Active Client Queue & Appointments', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text('Pre-booked appointments auto-enter 30 mins prior', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                    ],
+                  ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: () => _showBookAppointmentDialog(context, services, staff),
+                        icon: const Icon(Icons.calendar_month, size: 16),
+                        label: const Text('Book Appointment'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF6A1B9A),
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () => _showAddQueueDialog(context, services, staff),
+                        icon: const Icon(Icons.person_add, size: 16),
+                        label: const Text('Add Client to Queue'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1565C0),
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             const SizedBox(height: AppSpacing.m),
             Expanded(
               child: queue.isEmpty
@@ -1161,6 +1214,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
   Widget _buildAppointmentsTab(ThemeData theme, List<Product> services, List<UserAccount> staff) {
     final appointments = ref.watch(barberAppointmentsProvider);
     final now = DateTime.now();
+    final isMobile = MediaQuery.of(context).size.width < 600;
 
     final pendingPaymentAppts = appointments.where((a) => a.isPendingPayment).toList();
 
@@ -1194,27 +1248,47 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
         child: Column(
           children: [
             // Top action bar
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Appointment Bookings & Schedule', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    Text('Clients auto-enter Live Queue 30 mins before scheduled time with SMS', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                  ],
-                ),
-                ElevatedButton.icon(
-                  onPressed: () => _showBookAppointmentDialog(context, services, staff),
-                  icon: const Icon(Icons.bookmark_add_rounded, size: 16),
-                  label: const Text('Book Appointment'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF6A1B9A),
-                    foregroundColor: Colors.white,
+            if (isMobile)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Appointment Bookings & Schedule', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  const SizedBox(height: 2),
+                  const Text('Clients auto-enter Live Queue 30 mins before scheduled time', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  const SizedBox(height: 8),
+                  ElevatedButton.icon(
+                    onPressed: () => _showBookAppointmentDialog(context, services, staff),
+                    icon: const Icon(Icons.bookmark_add_rounded, size: 16),
+                    label: const Text('Book Appointment'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6A1B9A),
+                      foregroundColor: Colors.white,
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              )
+            else
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Appointment Bookings & Schedule', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text('Clients auto-enter Live Queue 30 mins before scheduled time with SMS', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                    ],
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () => _showBookAppointmentDialog(context, services, staff),
+                    icon: const Icon(Icons.bookmark_add_rounded, size: 16),
+                    label: const Text('Book Appointment'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6A1B9A),
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
             const SizedBox(height: AppSpacing.m),
 
             // Filters row
@@ -1471,7 +1545,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Client received SMS instructions. Verify MoMo receipt for ${currencyFormat.format(appt.price)}, then click "Validate Appointment" below.',
+                      'Client received SMS instructions to pay via MoMo using their name "${appt.customerName}" as reference. Verify MoMo receipt for ${currencyFormat.format(appt.price)}, then click "Validate Appointment" below.',
                       style: TextStyle(fontSize: 10.5, color: Colors.black.withValues(alpha: 0.65)),
                     ),
                   ],
@@ -1550,7 +1624,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Client has no phone number.')));
                         return;
                       }
-                      await SmsService.sendAppointmentBookingSms(
+                      final sent = await SmsService.sendAppointmentBookingSms(
                         name: appt.customerName,
                         phone: appt.phone,
                         serviceName: appt.service,
@@ -1563,7 +1637,12 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                       );
                       if (!mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Payment instructions (${appt.effectiveMomoNumber}) re-sent to ${appt.phone}.')),
+                        SnackBar(
+                          backgroundColor: sent ? const Color(0xFF2E7D32) : Colors.red,
+                          content: Text(sent
+                              ? 'Payment instructions (${appt.effectiveMomoNumber}) re-sent to ${appt.phone}.'
+                              : 'Failed to send SMS to ${appt.phone}. Check network or API balance.'),
+                        ),
                       );
                     },
                   ),
@@ -1610,7 +1689,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             backgroundColor: const Color(0xFF2E7D32),
-                            content: Text('Appointment ${appt.id} validated! Confirmation SMS sent to ${appt.phone}.'),
+                            content: Text('Appointment ${appt.id} validated! Confirmation SMS processed for ${appt.phone}.'),
                           ),
                         );
                       }
@@ -1663,7 +1742,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Client has no phone number.')));
                         return;
                       }
-                      await SmsService.sendAppointmentValidatedSms(
+                      final sent = await SmsService.sendAppointmentValidatedSms(
                         name: appt.customerName,
                         phone: appt.phone,
                         serviceName: appt.service,
@@ -1673,7 +1752,12 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                       );
                       if (!mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Confirmation SMS re-sent to ${appt.phone}.')),
+                        SnackBar(
+                          backgroundColor: sent ? const Color(0xFF2E7D32) : Colors.red,
+                          content: Text(sent
+                              ? 'Confirmation SMS re-sent to ${appt.phone}.'
+                              : 'Failed to send SMS to ${appt.phone}. Check network or API balance.'),
+                        ),
                       );
                     },
                   ),
@@ -1791,6 +1875,13 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
     final double totalRevenue = filtered.fold(0.0, (sum, r) => sum + r.totalPaid);
     final double avgTicket = filtered.isNotEmpty ? totalRevenue / filtered.length : 0.0;
 
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    final bool hasActiveFilters = _recordsSearchController.text.isNotEmpty ||
+        _recordBarberFilter != 'All' ||
+        _recordServiceFilter != 'All' ||
+        _recordDateFilter != 'All Time' ||
+        _recordPaymentFilter != 'All';
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.m),
@@ -1798,40 +1889,63 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Top Header: Title & Clear Filters Action
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Shaving & Grooming Records Archive', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    Text(
-                      'Search by customer, barber, haircut, and date range • ${allRecords.length} total records saved',
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+            if (isMobile)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Shaving & Grooming Records Archive', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  const SizedBox(height: 2),
+                  Text('Filtered by selected criteria • ${allRecords.length} Total Records', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                  if (hasActiveFilters) ...[
+                    const SizedBox(height: 6),
+                    TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _recordsSearchController.clear();
+                          _recordBarberFilter = 'All';
+                          _recordServiceFilter = 'All';
+                          _recordDateFilter = 'All Time';
+                          _recordCustomRange = null;
+                          _recordPaymentFilter = 'All';
+                        });
+                      },
+                      icon: const Icon(Icons.filter_alt_off, size: 14, color: Colors.red),
+                      label: const Text('Clear All Filters', style: TextStyle(color: Colors.red, fontSize: 11)),
                     ),
                   ],
-                ),
-                if (_recordsSearchController.text.isNotEmpty ||
-                    _recordBarberFilter != 'All' ||
-                    _recordServiceFilter != 'All' ||
-                    _recordDateFilter != 'All Time' ||
-                    _recordPaymentFilter != 'All')
-                  TextButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _recordsSearchController.clear();
-                        _recordBarberFilter = 'All';
-                        _recordServiceFilter = 'All';
-                        _recordDateFilter = 'All Time';
-                        _recordCustomRange = null;
-                        _recordPaymentFilter = 'All';
-                      });
-                    },
-                    icon: const Icon(Icons.filter_alt_off, size: 16, color: Colors.red),
-                    label: const Text('Clear All Filters', style: TextStyle(color: Colors.red, fontSize: 12)),
+                ],
+              )
+            else
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Shaving & Grooming Records Archive', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text(
+                        'Search by customer, barber, haircut, and date range • ${allRecords.length} total records saved',
+                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                    ],
                   ),
-              ],
-            ),
+                  if (hasActiveFilters)
+                    TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _recordsSearchController.clear();
+                          _recordBarberFilter = 'All';
+                          _recordServiceFilter = 'All';
+                          _recordDateFilter = 'All Time';
+                          _recordCustomRange = null;
+                          _recordPaymentFilter = 'All';
+                        });
+                      },
+                      icon: const Icon(Icons.filter_alt_off, size: 16, color: Colors.red),
+                      label: const Text('Clear All Filters', style: TextStyle(color: Colors.red, fontSize: 12)),
+                    ),
+                ],
+              ),
             const SizedBox(height: AppSpacing.m),
 
             // 1. Search Bar (Customer Name, Phone, Service, Barber, Receipt ID)
@@ -2352,9 +2466,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
 
   Widget _buildCommissionsTab(ThemeData theme, List<SaleRecord> todaySales, List<UserAccount> staff) {
     final allRecords = ref.watch(barberRecordsProvider);
-    final barberNames = staff.isNotEmpty 
-        ? staff.map((u) => '${u.firstName} ${u.surname}').toList()
-        : ['King Mojo'];
+    final barberNames = _getCompiledBarberNames(staff);
 
     // Retrieve accurate aggregated summaries for each barber
     final summariesMap = ref.watch(barberRecordsProvider.notifier).getAllBarbersCommissionSummary(
@@ -2729,6 +2841,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider);
     final theme = Theme.of(context);
+    final isMobile = ResponsiveLayout.isMobile(context);
     final isDesktop = ResponsiveLayout.isDesktop(context);
     const currentRoute = '/barbershop';
     final menuItems = ref.watch(menuItemsProvider);
@@ -2813,64 +2926,157 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.m)),
                       color: const Color(0xFF1565C0),
                       child: Padding(
-                        padding: const EdgeInsets.all(AppSpacing.l),
-                        child: Row(
-                          children: [
-                            const CircleAvatar(
-                              radius: 28,
-                              backgroundColor: Colors.white24,
-                              child: Icon(Icons.content_cut, size: 30, color: Colors.white),
-                            ),
-                            const SizedBox(width: AppSpacing.m),
-                            const Expanded(
-                              child: Column(
+                        padding: EdgeInsets.all(isMobile ? AppSpacing.m : AppSpacing.l),
+                        child: isMobile
+                            ? Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    'Barbershop Grooming Operations',
-                                    style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                                  Row(
+                                    children: [
+                                      const CircleAvatar(
+                                        radius: 22,
+                                        backgroundColor: Colors.white24,
+                                        child: Icon(Icons.content_cut, size: 24, color: Colors.white),
+                                      ),
+                                      const SizedBox(width: AppSpacing.m),
+                                      const Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Barbershop Grooming Operations',
+                                              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                                            ),
+                                            SizedBox(height: 2),
+                                            Text(
+                                              'Live Client Queue, Bookings & POS Sales',
+                                              style: TextStyle(color: Colors.white70, fontSize: 11),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  SizedBox(height: 4),
-                                  Text(
-                                    'Live Client Queue, Advance Bookings, Automated 30-Min Queueing & POS Sales',
-                                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                                  const SizedBox(height: AppSpacing.m),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: OutlinedButton.icon(
+                                          onPressed: () => BarberManagementDialog.show(context),
+                                          icon: const Icon(Icons.manage_accounts, color: Colors.white, size: 16),
+                                          label: const Text('MANAGE BARBERS', style: TextStyle(color: Colors.white, fontSize: 10)),
+                                          style: OutlinedButton.styleFrom(
+                                            side: const BorderSide(color: Colors.white),
+                                            padding: const EdgeInsets.symmetric(vertical: 10),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: ElevatedButton.icon(
+                                          onPressed: () => Navigator.pushNamed(context, '/barbershop/pos'),
+                                          icon: const Icon(Icons.point_of_sale, size: 16),
+                                          label: const Text('OPEN BARBER POS', style: TextStyle(fontSize: 10)),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.white,
+                                            foregroundColor: const Color(0xFF1565C0),
+                                            padding: const EdgeInsets.symmetric(vertical: 10),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              )
+                            : Row(
+                                children: [
+                                  const CircleAvatar(
+                                    radius: 28,
+                                    backgroundColor: Colors.white24,
+                                    child: Icon(Icons.content_cut, size: 30, color: Colors.white),
+                                  ),
+                                  const SizedBox(width: AppSpacing.m),
+                                  const Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Barbershop Grooming Operations',
+                                          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                                        ),
+                                        SizedBox(height: 4),
+                                        Text(
+                                          'Live Client Queue, Advance Bookings, Automated 30-Min Queueing & POS Sales',
+                                          style: TextStyle(color: Colors.white70, fontSize: 13),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: () => BarberManagementDialog.show(context),
+                                    icon: const Icon(Icons.manage_accounts, color: Colors.white),
+                                    label: const Text('MANAGE BARBERS', style: TextStyle(color: Colors.white)),
+                                    style: OutlinedButton.styleFrom(
+                                      side: const BorderSide(color: Colors.white),
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  ElevatedButton.icon(
+                                    onPressed: () => Navigator.pushNamed(context, '/barbershop/pos'),
+                                    icon: const Icon(Icons.point_of_sale),
+                                    label: const Text('OPEN BARBER POS'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.white,
+                                      foregroundColor: const Color(0xFF1565C0),
+                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                                    ),
                                   ),
                                 ],
                               ),
-                            ),
-                            ElevatedButton.icon(
-                              onPressed: () => Navigator.pushNamed(context, '/barbershop/pos'),
-                              icon: const Icon(Icons.point_of_sale),
-                              label: const Text('OPEN BARBER POS'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: const Color(0xFF1565C0),
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                              ),
-                            ),
-                          ],
-                        ),
                       ),
                     ),
                     const SizedBox(height: AppSpacing.l),
 
                     // 4 Live Stat Cards
-                    Row(
-                      children: [
-                        Expanded(child: _buildStatCard('Clients Served Today', todayClientsServed.toString(), Icons.people_alt, Colors.blue)),
-                        const SizedBox(width: AppSpacing.m),
-                        Expanded(child: _buildStatCard('Queue Waiting', '${liveQueue.where((q) => q.status != 'Completed').length} Active', Icons.access_time_filled, Colors.orange)),
-                        const SizedBox(width: AppSpacing.m),
-                        Expanded(child: _buildStatCard('Appointments Today', '${todayAppointments.length} Booked', Icons.calendar_month, const Color(0xFF6A1B9A))),
-                        const SizedBox(width: AppSpacing.m),
-                        Expanded(child: _buildStatCard('Today\'s Revenue', currencyFormat.format(todayRevenue), Icons.monetization_on, Colors.green)),
-                      ],
-                    ),
+                    if (isMobile)
+                      Column(
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(child: _buildStatCard('Clients Served', todayClientsServed.toString(), Icons.people_alt, Colors.blue)),
+                              const SizedBox(width: AppSpacing.s),
+                              Expanded(child: _buildStatCard('Queue Waiting', '${liveQueue.where((q) => q.status != 'Completed').length} Active', Icons.access_time_filled, Colors.orange)),
+                            ],
+                          ),
+                          const SizedBox(height: AppSpacing.s),
+                          Row(
+                            children: [
+                              Expanded(child: _buildStatCard('Appointments Today', '${todayAppointments.length} Booked', Icons.calendar_month, const Color(0xFF6A1B9A))),
+                              const SizedBox(width: AppSpacing.s),
+                              Expanded(child: _buildStatCard('Today\'s Revenue', currencyFormat.format(todayRevenue), Icons.monetization_on, Colors.green)),
+                            ],
+                          ),
+                        ],
+                      )
+                    else
+                      Row(
+                        children: [
+                          Expanded(child: _buildStatCard('Clients Served Today', todayClientsServed.toString(), Icons.people_alt, Colors.blue)),
+                          const SizedBox(width: AppSpacing.m),
+                          Expanded(child: _buildStatCard('Queue Waiting', '${liveQueue.where((q) => q.status != 'Completed').length} Active', Icons.access_time_filled, Colors.orange)),
+                          const SizedBox(width: AppSpacing.m),
+                          Expanded(child: _buildStatCard('Appointments Today', '${todayAppointments.length} Booked', Icons.calendar_month, const Color(0xFF6A1B9A))),
+                          const SizedBox(width: AppSpacing.m),
+                          Expanded(child: _buildStatCard('Today\'s Revenue', currencyFormat.format(todayRevenue), Icons.monetization_on, Colors.green)),
+                        ],
+                      ),
                     const SizedBox(height: AppSpacing.l),
 
                     // 5 Tabs
                     TabBar(
                       controller: _tabController,
+                      isScrollable: isMobile,
                       labelColor: theme.colorScheme.primary,
                       unselectedLabelColor: Colors.grey,
                       indicatorColor: theme.colorScheme.primary,

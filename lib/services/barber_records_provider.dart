@@ -66,7 +66,8 @@ class BarberRecordsNotifier extends StateNotifier<List<BarberRecord>> {
       final response = await SupabaseConfig.client
           .from('barber_records')
           .select()
-          .order('timestamp', ascending: false);
+          .order('timestamp', ascending: false)
+          .limit(100);
 
       final List data = response as List? ?? [];
       if (data.isNotEmpty) {
@@ -258,7 +259,7 @@ class BarberRecordsNotifier extends StateNotifier<List<BarberRecord>> {
     return price != null ? (price >= 50 ? 20.0 : (price * 0.40)) : 20.0;
   }
 
-  double _resolveCommissionPercentage(String serviceName) {
+  double resolveCommissionPercentage(String serviceName) {
     try {
       final services = ref.read(barberServicesProvider);
       final sName = serviceName.trim().toLowerCase();

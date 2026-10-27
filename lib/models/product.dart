@@ -232,7 +232,12 @@ class Product {
     DateTime? batchExpiryDate,
     String? batchNumber,
     double? commissionAmount,
+    List<PriceBracket>? retailBrackets,
+    List<PriceBracket>? wholesaleBrackets,
     bool? isService,
+    List<String>? imeiList,
+    bool? requiresImei,
+    bool? requiresPrescription,
   }) {
     return Product(
       id: id,
@@ -241,8 +246,8 @@ class Product {
       retailPrice: retailPrice ?? this.retailPrice,
       wholesalePrice: wholesalePrice ?? this.wholesalePrice,
       costPrice: costPrice ?? this.costPrice,
-      retailBrackets: retailBrackets,
-      wholesaleBrackets: wholesaleBrackets,
+      retailBrackets: retailBrackets ?? this.retailBrackets,
+      wholesaleBrackets: wholesaleBrackets ?? this.wholesaleBrackets,
       imageUrl: imageUrl ?? this.imageUrl,
       category: category ?? this.category,
       stockQuantity: stockQuantity ?? this.stockQuantity,
@@ -257,12 +262,12 @@ class Product {
       lowStockThreshold: lowStockThreshold ?? this.lowStockThreshold,
       dailyStockAdded: dailyStockAdded ?? this.dailyStockAdded,
       lastStockUpdate: lastStockUpdate ?? this.lastStockUpdate,
-      imeiList: imeiList,
+      imeiList: imeiList ?? this.imeiList,
       batchExpiryDate: batchExpiryDate ?? this.batchExpiryDate,
       batchNumber: batchNumber ?? this.batchNumber,
       isService: isService ?? this.isService,
-      requiresPrescription: requiresPrescription,
-      requiresImei: requiresImei,
+      requiresPrescription: requiresPrescription ?? this.requiresPrescription,
+      requiresImei: requiresImei ?? this.requiresImei,
       piecesPerPack: piecesPerPack ?? this.piecesPerPack,
       packPrice: packPrice ?? this.packPrice,
       numberOfBoxes: numberOfBoxes ?? this.numberOfBoxes,
@@ -364,12 +369,14 @@ class CartItem {
   final double quantity;
   final double priceAtSale;
   final double originalPrice;
+  final String? imei;
 
   CartItem({
     required this.product, 
     required this.quantity,
     required this.priceAtSale,
     required this.originalPrice,
+    this.imei,
   });
 
   double get total => priceAtSale * quantity;

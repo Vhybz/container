@@ -6,22 +6,26 @@ class AppSettings {
   final bool pushNotificationsEnabled;
   final bool systemSoundsEnabled;
   final bool hapticFeedbackEnabled;
+  final bool requirePasscode;
 
   AppSettings({
     this.pushNotificationsEnabled = true,
     this.systemSoundsEnabled = true,
     this.hapticFeedbackEnabled = true,
+    this.requirePasscode = false,
   });
 
   AppSettings copyWith({
     bool? pushNotificationsEnabled,
     bool? systemSoundsEnabled,
     bool? hapticFeedbackEnabled,
+    bool? requirePasscode,
   }) {
     return AppSettings(
       pushNotificationsEnabled: pushNotificationsEnabled ?? this.pushNotificationsEnabled,
       systemSoundsEnabled: systemSoundsEnabled ?? this.systemSoundsEnabled,
       hapticFeedbackEnabled: hapticFeedbackEnabled ?? this.hapticFeedbackEnabled,
+      requirePasscode: requirePasscode ?? this.requirePasscode,
     );
   }
 }
@@ -37,6 +41,7 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
       pushNotificationsEnabled: box.get('push_notifications', defaultValue: true),
       systemSoundsEnabled: box.get('system_sounds', defaultValue: true),
       hapticFeedbackEnabled: box.get('haptic_feedback', defaultValue: true),
+      requirePasscode: box.get('require_passcode', defaultValue: false),
     );
   }
 
@@ -53,6 +58,11 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
   void toggleHapticFeedback(bool value) {
     state = state.copyWith(hapticFeedbackEnabled: value);
     _save('haptic_feedback', value);
+  }
+
+  void toggleRequirePasscode(bool value) {
+    state = state.copyWith(requirePasscode: value);
+    _save('require_passcode', value);
   }
 
   void _save(String key, bool value) {

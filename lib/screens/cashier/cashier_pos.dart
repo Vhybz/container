@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import '../../core/constants.dart';
 import '../../core/uuid_utils.dart';
@@ -17,8 +16,6 @@ import '../../services/sale_provider.dart';
 import '../../services/customer_provider.dart';
 import '../../services/menu_service.dart';
 import '../../services/user_provider.dart';
-import '../../services/expense_provider.dart';
-import 'package:image_picker/image_picker.dart';
 import '../../models/sale_model.dart';
 import '../../models/product.dart';
 import '../../models/customer_model.dart';
@@ -26,6 +23,7 @@ import '../../models/user_model.dart';
 import '../../services/receipt_service.dart';
 import '../../services/sms_service.dart';
 import '../../widgets/role_pop_scope.dart';
+import '../../widgets/pos_transaction_history_view.dart';
 import '../../services/held_receipt_provider.dart';
 import '../../services/birthday_service.dart';
 import '../../services/branch_provider.dart';
@@ -50,8 +48,6 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
   String _selectedCategory = 'All';
   
   String _productSearchQuery = '';
-  final String _historySearchQuery = '';
-  DateTimeRange? _historyDateRange;
 
   // Keyboard shortcut focus & search controller
   final FocusNode _searchFocusNode = FocusNode();
@@ -210,7 +206,7 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
 
     // Instant Permission Guard: Redirect if access is revoked
     final roles = user.activeRoles;
-    final hasAccess = roles.contains(UserRole.cashier) || roles.contains(UserRole.superAdmin) || user.enabledPermissions.contains('/cashier');
+    final hasAccess = roles.contains(UserRole.cashier) || roles.contains(UserRole.superAdmin) || roles.contains(UserRole.admin) || user.enabledPermissions.contains('/cashier');
     
     if (!hasAccess) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -366,21 +362,6 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
     ref.read(cartProvider.notifier).clear();
     setState(() => _selectedCustomer = null);
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Receipt held!')));
-  }
-
-  Widget _getPaymentMethodIcon(List<PaymentDetail> payments) {
-    if (payments.isEmpty) return const SizedBox.shrink();
-    if (payments.length > 1) return const Icon(Icons.call_split, size: 12, color: Colors.blue);
-    
-    final method = payments.first.method;
-    switch (method) {
-      case PaymentMethod.cash:
-        return const Icon(Icons.money, size: 12, color: Colors.green);
-      case PaymentMethod.mobileMoney:
-        return const Icon(Icons.smartphone, size: 12, color: Colors.orange);
-      case PaymentMethod.bankDeposit:
-        return const Icon(Icons.account_balance, size: 12, color: Colors.purple);
-    }
   }
 
   void _showHeldReceipts() {
@@ -540,6 +521,8 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
     for (final p in activeProds) {
       final cat = _getMappedCategory(p);
       categoryCounts[cat] = (categoryCounts[cat] ?? 0) + 1;
+      categoryCounts[cat.toLowerCase()] = (categoryCounts[cat.toLowerCase()] ?? 0) + 1;
+      categoryCounts[cat.toUpperCase()] = (categoryCounts[cat.toUpperCase()] ?? 0) + 1;
     }
 
     final categories = ['All', ...{...allowedCatalog.keys, ...activeProds.map((p) => _getMappedCategory(p))}];
@@ -559,7 +542,8 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
                       final mappedCat = _getMappedCategory(p);
                       
                       // Filter based on UI Category Selection and Search Query
-                      final matchesCategory = _selectedCategory == 'All' || mappedCat == _selectedCategory;
+                      final matchesCategory = _selectedCategory == 'All' || 
+                          mappedCat.toUpperCase() == _selectedCategory.toUpperCase();
                       final matchesSearch = p.name.toLowerCase().contains(_productSearchQuery.toLowerCase()) || 
                                            p.category.toLowerCase().contains(_productSearchQuery.toLowerCase());
                       
@@ -1280,6 +1264,7 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
     }
 
     // 2. Tech / Phone IMEI Scanning Check
+    String? scannedImei;
     final hasImei = cartItems.any((item) => item.product.requiresImei || item.product.category.toLowerCase().contains('phone') || item.product.category.toLowerCase().contains('device'));
     if (hasImei) {
       final imeiController = TextEditingController();
@@ -1306,6 +1291,7 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
       );
       if (!mounted) return;
       if (confirmed != true) return;
+      scannedImei = imeiController.text.trim();
     }
 
     if (!mounted) return;
@@ -1327,6 +1313,7 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
             promo,
             amountTendered: tenderResult.amountTendered,
             changeDue: tenderResult.changeDue,
+            capturedImei: scannedImei,
           );
         },
       ),
@@ -1341,6 +1328,7 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
     String promo, {
     double? amountTendered,
     double? changeDue,
+    String? capturedImei,
   }) async {
     final cartItems = ref.read(cartProvider);
     final currentUser = ref.read(currentUserProvider);
@@ -1349,13 +1337,19 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
     final double balance = finalTotal - amountPaid;
     final double totalCost = cartItems.fold(0.0, (sum, item) => sum + (item.product.costPrice * item.quantity));
 
-    // High Value Sale Enforcement: If total >= 800, prompt for customer
+    // High Value Sale: Optionally prompt for customer, but fallback to Walk-In if skipped
     if (finalTotal >= 800 && _selectedCustomer == null) {
       final proceed = await _showBulkPurchaseCustomerDialog();
-      if (!proceed) return;
-      
-      await _showCustomerDialog(isBulk: true);
-      if (_selectedCustomer == null) return;
+      if (proceed) {
+        await _showCustomerDialog(isBulk: true);
+      }
+      // If customer is still not selected, default to Walk-In Customer so sale is not blocked
+      _selectedCustomer ??= Customer(
+        id: 'WALKIN-${DateTime.now().millisecondsSinceEpoch}',
+        name: 'Walk-In Customer',
+        phone: '',
+        branchCode: currentUser?.branchCode ?? 'MAIN',
+      );
     }
 
     // Debt Enforcement: If there's a balance, a customer MUST be selected
@@ -1363,11 +1357,18 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
       final proceed = await _showDebtCustomerRequiredDialog();
       if (!proceed) return;
       
-      // Open customer dialog and wait for it
       await _showCustomerDialog();
-      
-      // If they registered/selected a customer, _selectedCustomer will be non-null now
-      if (_selectedCustomer == null) return; 
+      if (_selectedCustomer == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Credit/Debt sales require selecting or creating a customer profile.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
     }
 
     final hasBankDeposit = payments.any((p) => p.method == PaymentMethod.bankDeposit);
@@ -1375,12 +1376,16 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
     final sale = SaleRecord(
       id: 'INV-${DateTime.now().millisecondsSinceEpoch}',
       branchCode: currentUser?.branchCode ?? 'MAIN',
-      items: cartItems.map((item) => SaleItem(
-        product: item.product,
-        quantity: item.quantity,
-        priceAtSale: item.priceAtSale,
-        originalPrice: item.originalPrice,
-      )).toList(),
+      items: cartItems.map((item) {
+        final itemImei = capturedImei ?? item.imei ?? (item.product.imeiList != null && item.product.imeiList!.isNotEmpty ? item.product.imeiList!.first : null);
+        return SaleItem(
+          product: item.product,
+          quantity: item.quantity,
+          priceAtSale: item.priceAtSale,
+          originalPrice: item.originalPrice,
+          imei: itemImei,
+        );
+      }).toList(),
       totalAmount: finalTotal,
       totalDiscount: discount,
       totalCost: totalCost,
@@ -1540,1159 +1545,15 @@ class _CashierPOSState extends ConsumerState<CashierPOS> {
     );
   }
 
-  void _showDateFilterOptions(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.today),
-            title: const Text('Today'),
-            onTap: () {
-              final now = DateTime.now();
-              setState(() => _historyDateRange = DateTimeRange(start: now, end: now));
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.history),
-            title: const Text('Yesterday'),
-            onTap: () {
-              final yesterday = DateTime.now().subtract(const Duration(days: 1));
-              setState(() => _historyDateRange = DateTimeRange(start: yesterday, end: yesterday));
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.calendar_today),
-            title: const Text('Specific Day'),
-            onTap: () async {
-              Navigator.pop(context);
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: _historyDateRange?.start ?? DateTime.now(),
-                firstDate: DateTime(2023),
-                lastDate: DateTime.now(),
-              );
-              if (picked != null) {
-                setState(() => _historyDateRange = DateTimeRange(start: picked, end: picked));
-              }
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.date_range),
-            title: const Text('Date Range'),
-            onTap: () async {
-              Navigator.pop(context);
-              final picked = await showDateRangePicker(
-                context: context,
-                initialDateRange: _historyDateRange,
-                firstDate: DateTime(2023),
-                lastDate: DateTime.now(),
-              );
-              if (picked != null) {
-                setState(() => _historyDateRange = picked);
-              }
-            },
-          ),
-          const SizedBox(height: AppSpacing.l),
-        ],
-      ),
-    );
-  }
+
 
   Widget _buildHistoryLayout() {
-    final theme = Theme.of(context);
-    final salesHistory = ref.watch(saleHistoryProvider);
-    final filteredHistory = salesHistory.where((s) {
-      final matchesSearch = s.id.toLowerCase().contains(_historySearchQuery.toLowerCase());
-      
-      bool matchesDate = true;
-      if (_historyDateRange != null) {
-        final start = DateTime(_historyDateRange!.start.year, _historyDateRange!.start.month, _historyDateRange!.start.day);
-        final end = DateTime(_historyDateRange!.end.year, _historyDateRange!.end.month, _historyDateRange!.end.day, 23, 59, 59);
-        matchesDate = s.timestamp.isAfter(start.subtract(const Duration(seconds: 1))) && 
-                      s.timestamp.isBefore(end.add(const Duration(seconds: 1)));
-      }
-      
-      return matchesSearch && matchesDate;
-    }).toList();
-
-    // Stats calculations
-    double totalSales = 0;
-    double totalCost = 0;
-    final Map<String, ({double qty, String category})> productStatsMap = {};
-
-    for (var sale in filteredHistory) {
-      if (sale.status == SaleStatus.cancelled) continue;
-      totalSales += sale.totalAmount;
-      totalCost += sale.totalCost;
-      for (var item in sale.items) {
-        final existing = productStatsMap[item.product.name];
-        productStatsMap[item.product.name] = (
-          qty: (existing?.qty ?? 0) + item.quantity,
-          category: item.product.category
-        );
-      }
-    }
-    final totalProfit = totalSales - totalCost;
-
-    return Column(
-      children: [
-        // Non-scrollable Header (Date Filter)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(AppSpacing.l, AppSpacing.l, AppSpacing.l, 0),
-          child: Row(
-            children: [
-              Expanded(
-                flex: 2,
-                child: OutlinedButton.icon(
-                  onPressed: () => _showDateFilterOptions(context),
-                  icon: const Icon(Icons.date_range),
-                  label: Text(_historyDateRange == null 
-                    ? 'Select Date' 
-                    : _historyDateRange!.start.day == _historyDateRange!.end.day && 
-                      _historyDateRange!.start.month == _historyDateRange!.end.month && 
-                      _historyDateRange!.start.year == _historyDateRange!.end.year
-                      ? DateFormat('MMM dd').format(_historyDateRange!.start)
-                      : '${DateFormat('MMM dd').format(_historyDateRange!.start)} - ${DateFormat('MMM dd').format(_historyDateRange!.end)}'),
-                ),
-              ),
-              if (_historyDateRange != null)
-                IconButton(
-                  onPressed: () => setState(() => _historyDateRange = null),
-                  icon: const Icon(Icons.close, size: 18, color: Colors.red),
-                  tooltip: 'Clear Filter',
-                ),
-              if (_historyDateRange != null && filteredHistory.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      final period = '${DateFormat('MMM dd, yyyy').format(_historyDateRange!.start)} - ${DateFormat('MMM dd, yyyy').format(_historyDateRange!.end)}';
-                      ReceiptService.printDetailedHistoryReport(filteredHistory, period: period);
-                    },
-                    icon: const Icon(Icons.print, size: 18),
-                    label: const Text('PRINT', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: theme.colorScheme.primary,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        
-        // Scrollable Content
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(AppSpacing.l),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (filteredHistory.isNotEmpty) ...[
-                  _buildHistorySummaryCards(totalSales, totalProfit, theme),
-                  const SizedBox(height: 24),
-                  Text('SALES TREND', style: theme.textTheme.labelSmall?.copyWith(letterSpacing: 1.2, fontWeight: FontWeight.bold, color: Colors.grey)),
-                  const SizedBox(height: 12),
-                  _buildSalesChart(filteredHistory, theme),
-                  const SizedBox(height: 24),
-                  Text('HIGHEST PURCHASED PRODUCTS', style: theme.textTheme.labelSmall?.copyWith(letterSpacing: 1.2, fontWeight: FontWeight.bold, color: Colors.grey)),
-                  const SizedBox(height: 12),
-                  _buildProductQtyList(productStatsMap, theme),
-                  const SizedBox(height: 24),
-                ],
-
-                Text('TRANSACTION LOG', style: theme.textTheme.labelSmall?.copyWith(letterSpacing: 1.2, fontWeight: FontWeight.bold, color: Colors.grey)),
-                const SizedBox(height: 12),
-                filteredHistory.isEmpty 
-                  ? Center(child: Padding(
-                      padding: const EdgeInsets.all(32.0),
-                      child: Text('No transactions found.', style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
-                    ))
-                  : ListView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: filteredHistory.length,
-                      itemBuilder: (context, index) {
-                        final sale = filteredHistory[index];
-                        return _buildHistoryCard(sale);
-                      },
-                    ),
-              ],
-            ),
-          ),
-        ),
-      ],
+    return PosTransactionHistoryView(
+      onSwitchToNewSale: () => setState(() => _currentView = POSView.sales),
     );
   }
 
-  Widget _buildHistoryCard(SaleRecord sale) {
-    final theme = Theme.of(context);
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
-          child: Icon(Icons.receipt_long, color: theme.colorScheme.primary, size: 20),
-        ),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(sale.id, 
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), 
-                overflow: TextOverflow.ellipsis
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text('₵${sale.totalAmount.toStringAsFixed(2)}', 
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)
-            ),
-          ],
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text('${DateFormat('HH:mm').format(sale.timestamp)} • ${sale.items.length} items', style: const TextStyle(fontSize: 10)),
-                const SizedBox(width: 8),
-                _getPaymentMethodIcon(sale.payments),
-                if (sale.status != SaleStatus.completed) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: _getStatusColor(sale.status).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: _getStatusColor(sale.status).withValues(alpha: 0.2)),
-                    ),
-                    child: Text(
-                      sale.status.name.toUpperCase(),
-                      style: TextStyle(color: _getStatusColor(sale.status), fontSize: 8, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-            Text('Cust: ${sale.customerName ?? "Walk-in"}', style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant), overflow: TextOverflow.ellipsis),
-          ],
-        ),
-        trailing: const Icon(Icons.chevron_right, size: 20),
-        onTap: () => _showSaleDetails(sale),
-      ),
-    );
-  }
 
-  Widget _buildHistorySummaryCards(double totalSales, double totalProfit, ThemeData theme) {
-    return Row(
-      children: [
-        _summaryStatCard('TOTAL SALES', '₵${totalSales.toStringAsFixed(2)}', theme.colorScheme.primary, theme),
-        const SizedBox(width: 12),
-        _summaryStatCard('TOTAL PROFIT', '₵${totalProfit.toStringAsFixed(2)}', AppColors.accentGreen, theme),
-      ],
-    );
-  }
-
-  Widget _summaryStatCard(String label, String value, Color color, ThemeData theme) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: theme.cardColor,
-          borderRadius: BorderRadius.circular(AppRadius.m),
-          border: Border.all(color: theme.dividerColor),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
-            const SizedBox(height: 4),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSalesChart(List<SaleRecord> sales, ThemeData theme) {
-    if (sales.isEmpty) return const SizedBox.shrink();
-
-    // Group sales by day (Last 7 days or selected range)
-    final now = DateTime.now();
-    final List<DateTime> dates = [];
-    bool isSingleDay = false;
-
-    if (_historyDateRange != null) {
-      DateTime d = _historyDateRange!.start;
-      while (d.isBefore(_historyDateRange!.end.add(const Duration(days: 1)))) {
-        dates.add(DateTime(d.year, d.month, d.day));
-        d = d.add(const Duration(days: 1));
-      }
-      if (dates.length == 1) isSingleDay = true;
-    } else {
-      // Default to last 7 days
-      for (int i = 6; i >= 0; i--) {
-        final d = now.subtract(Duration(days: i));
-        dates.add(DateTime(d.year, d.month, d.day));
-      }
-    }
-
-    final List<double> chartData;
-    final List<String> labels;
-
-    if (isSingleDay) {
-      // Hourly breakdown for single day
-      final targetDate = dates.first;
-      // We'll show blocks: 8am, 10am, 12pm, 2pm, 4pm, 6pm, 8pm (common business hours)
-      final hours = [8, 10, 12, 14, 16, 18, 20];
-      chartData = hours.map((h) {
-        return sales
-            .where((s) => s.timestamp.year == targetDate.year && 
-                          s.timestamp.month == targetDate.month && 
-                          s.timestamp.day == targetDate.day &&
-                          s.timestamp.hour >= h && s.timestamp.hour < h + 2 &&
-                          s.status != SaleStatus.cancelled)
-            .fold(0.0, (sum, s) => sum + s.totalAmount);
-      }).toList();
-      labels = hours.map((h) => '${h > 12 ? h - 12 : h}${h >= 12 ? 'pm' : 'am'}').toList();
-    } else {
-      chartData = dates.map((date) {
-        return sales
-            .where((s) => s.timestamp.year == date.year && s.timestamp.month == date.month && s.timestamp.day == date.day && s.status != SaleStatus.cancelled)
-            .fold(0.0, (sum, s) => sum + s.totalAmount);
-      }).toList();
-      labels = dates.map((d) => DateFormat('E').format(d).substring(0, 1)).toList();
-    }
-
-    final maxTotal = chartData.isEmpty ? 100.0 : (chartData.reduce((a, b) => a > b ? a : b) + 50.0);
-
-    return Container(
-      height: 200,
-      padding: const EdgeInsets.all(AppSpacing.m),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(AppRadius.m),
-        border: Border.all(color: theme.dividerColor),
-      ),
-      child: BarChart(
-        BarChartData(
-          alignment: BarChartAlignment.spaceAround,
-          maxY: maxTotal,
-          barTouchData: BarTouchData(
-            touchTooltipData: BarTouchTooltipData(
-              getTooltipColor: (_) => theme.colorScheme.primary,
-              getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                return BarTooltipItem(
-                  '₵${rod.toY.toStringAsFixed(0)}',
-                  const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10),
-                );
-              },
-            ),
-          ),
-          titlesData: FlTitlesData(
-            show: true,
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (value, meta) {
-                  final index = value.toInt();
-                  if (index >= 0 && index < labels.length) {
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text(
-                        labels[index],
-                        style: const TextStyle(fontSize: 10, color: Colors.grey),
-                      ),
-                    );
-                  }
-                  return const SizedBox.shrink();
-                },
-                reservedSize: 28,
-              ),
-            ),
-            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          ),
-          gridData: const FlGridData(show: false),
-          borderData: FlBorderData(show: false),
-          barGroups: List.generate(chartData.length, (index) {
-            return BarChartGroupData(
-              x: index,
-              barRods: [
-                BarChartRodData(
-                  toY: chartData[index],
-                  color: theme.colorScheme.primary,
-                  width: isSingleDay ? 24 : 16,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
-                ),
-              ],
-            );
-          }),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProductQtyList(Map<String, ({double qty, String category})> statsMap, ThemeData theme) {
-    final sortedProducts = statsMap.entries.toList()
-      ..sort((a, b) => b.value.qty.compareTo(a.value.qty));
-    
-    final totalQty = statsMap.values.fold(0.0, (sum, val) => sum + val.qty);
-
-    return Column(
-      children: sortedProducts.take(10).map((e) {
-        final double percentage = totalQty > 0 ? (e.value.qty / totalQty) : 0;
-        return Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(AppSpacing.m),
-          decoration: BoxDecoration(
-            color: theme.cardColor,
-            borderRadius: BorderRadius.circular(AppRadius.s),
-            border: Border.all(color: theme.dividerColor),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(e.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                        Text(e.value.category.toUpperCase(), style: TextStyle(fontSize: 9, color: theme.colorScheme.primary, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
-                      ],
-                    ),
-                  ),
-                  Text(WeightConverter.formatShort(e.value.qty, unit: 'kg'), 
-                    style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w900, fontSize: 13)),
-                ],
-              ),
-              const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: percentage,
-                  minHeight: 6,
-                  backgroundColor: theme.dividerColor,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  void _showReceiptOptionsDialog(SaleRecord sale) {
-    final currentBranch = ref.read(currentBranchProvider);
-    bool isProcessing = false;
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)), // Rectangular
-          title: const Row(
-            children: [
-              Icon(Icons.receipt_long_rounded, color: AppColors.primaryMaroon),
-              SizedBox(width: 12),
-              Text('RECEIPT OPTIONS', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.0, fontSize: 16)),
-            ],
-          ),
-          content: isProcessing 
-            ? const SizedBox(height: 100, child: Center(child: CircularProgressIndicator()))
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _receiptOptionTile(
-                    context,
-                    icon: Icons.print_rounded,
-                    title: 'PRINT RECEIPT',
-                    subtitle: 'Send to thermal printer',
-                    onTap: () async {
-                      setState(() => isProcessing = true);
-                      await ReceiptService.printReceipt(sale);
-                      if (context.mounted) Navigator.pop(context);
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  _receiptOptionTile(
-                    context,
-                    icon: Icons.sms_rounded,
-                    title: 'SEND VIA SMS',
-                    subtitle: sale.customerPhone ?? 'Enter custom number',
-                    enabled: true,
-                    onTap: () async {
-                      String? targetPhone = sale.customerPhone;
-                      
-                      if (targetPhone == null || targetPhone.isEmpty) {
-                        targetPhone = await PhonePromptDialog.show(context);
-                      }
-
-                      if (targetPhone != null && targetPhone.isNotEmpty) {
-                        setState(() => isProcessing = true);
-                        final success = await SmsService.sendReceiptSms(
-                          sale, 
-                          branchName: currentBranch?.name,
-                          customPhone: targetPhone,
-                        );
-                        if (context.mounted) {
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(success ? 'SMS Sent' : 'SMS Failed'),
-                              backgroundColor: success ? Colors.green : Colors.red,
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        }
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  _receiptOptionTile(
-                    context,
-                    icon: Icons.share_rounded,
-                    title: 'SHARE PDF (WHATSAPP)',
-                    subtitle: 'Share via WhatsApp or Email',
-                    onTap: () async {
-                      setState(() => isProcessing = true);
-                      await ReceiptService.shareReceipt(sale);
-                      if (context.mounted) Navigator.pop(context);
-                    },
-                  ),
-                ],
-              ),
-          actions: [
-            TextButton(
-              onPressed: isProcessing ? null : () => Navigator.pop(context),
-              child: const Text('CANCEL', style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _receiptOptionTile(BuildContext context, {
-    required IconData icon, 
-    required String title, 
-    required String subtitle, 
-    required VoidCallback onTap,
-    bool enabled = true,
-  }) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(2),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: enabled ? theme.colorScheme.primary.withValues(alpha: 0.05) : theme.disabledColor.withValues(alpha: 0.03),
-          borderRadius: BorderRadius.circular(2),
-          border: Border.all(color: enabled ? theme.colorScheme.primary.withValues(alpha: 0.1) : theme.disabledColor.withValues(alpha: 0.1)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: enabled ? theme.colorScheme.primary : theme.disabledColor, size: 24),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: enabled ? theme.colorScheme.onSurface : theme.disabledColor, letterSpacing: 0.5)),
-                  Text(subtitle, style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant)),
-                ],
-              ),
-            ),
-            if (enabled) Icon(Icons.keyboard_arrow_right_rounded, color: theme.colorScheme.primary.withValues(alpha: 0.3), size: 18),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showSaleDetails(SaleRecord sale) {
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
-          final theme = Theme.of(context);
-          
-          return Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.l)),
-            backgroundColor: theme.colorScheme.surface,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 450, maxHeight: 650),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.m, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary,
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.l)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.receipt_long, color: Colors.white, size: 20),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Transaction Details',
-                                style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold),
-                              ),
-                              Text(
-                                sale.id,
-                                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white70, size: 20),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Flexible(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(AppSpacing.l),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('STATUS', style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.bold)),
-                                    const SizedBox(height: 4),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: _getStatusColor(sale.status).withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Text(
-                                        sale.status.name.toUpperCase(),
-                                        style: TextStyle(color: _getStatusColor(sale.status), fontSize: 10, fontWeight: FontWeight.bold),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text('DATE', style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.bold)),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      DateFormat('MMM dd, yyyy HH:mm').format(sale.timestamp), 
-                                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                                      textAlign: TextAlign.right,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const Divider(height: 32),
-                          Row(
-                            children: [
-                              const Icon(Icons.person_outline, size: 16, color: AppColors.textLight),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('CUSTOMER', style: TextStyle(fontSize: 9, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.bold)),
-                                    Text(sale.customerName ?? 'Walk-in Customer', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text('CASHIER', style: TextStyle(fontSize: 9, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.bold)),
-                                    Text(sale.cashierName.split(' ')[0], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const Divider(height: 32),
-                          Text('ITEMS', style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 12),
-                          ...sale.items.map((item) => Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(item.product.category.toUpperCase(), style: TextStyle(color: theme.colorScheme.primary, fontSize: 8, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
-                                      Text(item.product.name, 
-                                        style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.w600, fontSize: 13),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      Text('${WeightConverter.formatShort(item.quantity, unit: item.product.unit, productName: item.product.name, category: item.product.category)} x ₵${item.priceAtSale.toStringAsFixed(2)}', 
-                                        style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Text('₵${item.total.toStringAsFixed(2)}', 
-                                  style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface, fontSize: 13)
-                                ),
-                              ],
-                            ),
-                          )),
-                          const Divider(height: 32),
-                          if (sale.totalDiscount > 0) ...[
-                            _detailRow('Gross Amount', '₵${sale.baseTotal.toStringAsFixed(2)}'),
-                            _detailRow('Total Discount', '-₵${sale.totalDiscount.toStringAsFixed(2)}', color: Colors.green),
-                            const SizedBox(height: 4),
-                          ],
-                          _detailRow('NET INVOICE VALUE', '₵${sale.netInvoiceValue.toStringAsFixed(2)}', isBold: true, color: theme.colorScheme.primary),
-                          const Divider(height: 32),
-                          Text('PAYMENT HISTORY', style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 12),
-                          ...sale.payments.map((p) => Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      p.method == PaymentMethod.cash ? Icons.money : 
-                                      (p.method == PaymentMethod.mobileMoney ? Icons.smartphone : Icons.account_balance), 
-                                      size: 14, color: theme.colorScheme.onSurfaceVariant
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      p.method.name.toUpperCase(), 
-                                      style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurface)
-                                    ),
-                                    if (p.reference != null)
-                                      Text(' (${p.reference})', style: TextStyle(fontSize: 9, color: theme.colorScheme.onSurfaceVariant)),
-                                  ],
-                                ),
-                                Text('₵${p.amount.toStringAsFixed(2)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                              ],
-                            ),
-                          )),
-                          if (sale.balance > 0.01) ...[
-                             const SizedBox(height: 8),
-                             _detailRow('BALANCE DUE', '₵${sale.balance.toStringAsFixed(2)}', color: Colors.red, isBold: true),
-                          ],
-                          if (sale.bankReceiptUrl != null) ...[
-                            const Divider(height: 32),
-                            Text('BANK DEPOSIT RECEIPT', style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.bold)),
-                            const SizedBox(height: 12),
-                            InkWell(
-                              onTap: () => _viewBankReceipt(sale.bankReceiptUrl!, receiptId: sale.bankReceiptId),
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  border: Border.all(color: theme.dividerColor),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.image_outlined, size: 20, color: Colors.purple),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          const Text('View Uploaded Receipt', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.purple)),
-                                          if (sale.bankReceiptId != null)
-                                            Text('ID: ${sale.bankReceiptId}', style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                                        ],
-                                      ),
-                                    ),
-                                    const Icon(Icons.open_in_new, size: 16, color: Colors.purple),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.all(AppSpacing.m),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      border: Border(top: BorderSide(color: theme.dividerColor)),
-                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(AppRadius.l)),
-                    ),
-                    child: OverflowBar(
-                      alignment: MainAxisAlignment.end,
-                      spacing: 8,
-                      overflowSpacing: 8,
-                      children: [
-                        if (sale.status == SaleStatus.awaitingDeposit)
-                          ElevatedButton.icon(
-                            onPressed: () => _showBankReceiptUploadDialog(sale),
-                            icon: const Icon(Icons.upload_file, size: 16),
-                            label: const Text('UPLOAD RECEIPT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.purple,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              minimumSize: Size.zero,
-                            ),
-                          ),
-                        if (!sale.isVerified && sale.status != SaleStatus.awaitingDeposit)
-                          ElevatedButton.icon(
-                            onPressed: () {
-                              ref.read(saleHistoryProvider.notifier).verifySale(sale.id);
-                              Navigator.pop(context);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Transaction Verified. Inventory updated.'), backgroundColor: Colors.green),
-                              );
-                            },
-                            icon: const Icon(Icons.check_circle_outline, size: 16),
-                            label: const Text('VERIFY', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              minimumSize: Size.zero,
-                            ),
-                          ),
-                        if (sale.status == SaleStatus.completed)
-                          TextButton.icon(
-                            onPressed: () => _showReportErrorDialog(sale),
-                            icon: const Icon(Icons.report_problem_outlined, color: Colors.orange, size: 16),
-                            label: const Text('Report Error', style: TextStyle(color: Colors.orange, fontSize: 11)),
-                          ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context), 
-                          child: Text('Close', style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12))
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: () => _showReceiptOptionsDialog(sale),
-                          icon: const Icon(Icons.receipt_long_rounded, size: 14),
-                          label: const Text('RECEIPT OPTIONS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.accentOrange, 
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-      ),
-    );
-  }
-
-  void _showBankReceiptUploadDialog(SaleRecord sale) {
-    final receiptIdController = TextEditingController();
-    Uint8List? selectedImageBytes;
-    bool isUploading = false;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.l)),
-          title: const Row(
-            children: [
-              Icon(Icons.account_balance, color: Colors.purple),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Complete Bank Deposit',
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-              ),
-            ],
-          ),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'Please provide the bank transaction reference/ID and a photo of the deposit slip.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 24),
-                  TextField(
-                    controller: receiptIdController,
-                    decoration: const InputDecoration(
-                      labelText: 'Bank Receipt ID / Reference',
-                      hintText: 'e.g. UMB-123456',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.tag),
-                    ),
-                    onChanged: (_) => setState(() {}), // Refresh to enable/disable button
-                  ),
-                  const SizedBox(height: 16),
-                  InkWell(
-                    onTap: () async {
-                      final picker = ImagePicker();
-                      final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
-                      if (image != null) {
-                        final bytes = await image.readAsBytes();
-                        setState(() => selectedImageBytes = bytes);
-                      }
-                    },
-                    child: Container(
-                      height: 150,
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: selectedImageBytes != null ? Colors.purple : Colors.grey.shade300),
-                      ),
-                      child: selectedImageBytes != null
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Image.memory(selectedImageBytes!, fit: BoxFit.cover),
-                            )
-                          : const Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.add_a_photo_outlined, color: Colors.purple, size: 32),
-                                SizedBox(height: 8),
-                                Text('Select Deposit Slip Photo', style: TextStyle(fontSize: 11, color: Colors.purple)),
-                              ],
-                            ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: isUploading ? null : () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: (isUploading || selectedImageBytes == null || receiptIdController.text.isEmpty)
-                  ? null
-                  : () async {
-                      setState(() => isUploading = true);
-                      try {
-                        final fileName = 'bank_${sale.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-                        final url = await ref.read(expenseProvider.notifier).uploadReceipt(selectedImageBytes!, fileName);
-                        
-                        if (url != null) {
-                          await ref.read(saleHistoryProvider.notifier).verifySale(
-                            sale.id, 
-                            bankReceiptUrl: url,
-                            bankReceiptId: receiptIdController.text.trim(),
-                          );
-                          if (context.mounted) {
-                            Navigator.pop(context); // Close dialog
-                            Navigator.pop(context); // Close sale details
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Bank details saved & sale verified!'), backgroundColor: Colors.green),
-                            );
-                          }
-                        }
-                      } catch (e) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-                          );
-                        }
-                      } finally {
-                        if (mounted) setState(() => isUploading = false);
-                      }
-                    },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.purple, foregroundColor: Colors.white),
-              child: isUploading
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text('Confirm & Verify'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _viewBankReceipt(String url, {String? receiptId}) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.l)),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppBar(
-              title: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Bank Deposit Slip', style: TextStyle(fontSize: 16)),
-                  if (receiptId != null)
-                    Text('REF: $receiptId', style: const TextStyle(fontSize: 10, color: Colors.white70)),
-                ],
-              ),
-              backgroundColor: Colors.purple,
-              foregroundColor: Colors.white,
-              leading: IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
-            ),
-            Flexible(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.m),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    url,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return const Center(child: CircularProgressIndicator());
-                    },
-                    errorBuilder: (context, error, stackTrace) => const Center(child: Text('Could not load image')),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showReportErrorDialog(SaleRecord sale) {
-    final theme = Theme.of(context);
-    final reasonController = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.l)),
-        title: const Row(
-          children: [
-            Icon(Icons.report_problem_outlined, color: Colors.orange),
-            SizedBox(width: 8),
-            Text('Report Sale Error'),
-          ],
-        ),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Please describe the error (e.g., wrong weight). This will notify the Admin for rectification.', 
-                style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12)),
-              const SizedBox(height: 16),
-              TextField(
-                controller: reasonController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  hintText: 'Enter reason here...',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              if (reasonController.text.isNotEmpty) {
-                ref.read(saleHistoryProvider.notifier).updateSale(
-                  sale.copyWith(
-                    status: SaleStatus.pendingCorrection,
-                    correctionReason: reasonController.text,
-                  )
-                );
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Error reported to Administrator.'), backgroundColor: Colors.orange),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
-            child: const Text('Submit Report'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _getStatusColor(SaleStatus status) {
-    switch (status) {
-      case SaleStatus.completed: return Colors.green;
-      case SaleStatus.rectified: return Colors.blue;
-      case SaleStatus.pendingCorrection: return Colors.orange;
-      case SaleStatus.cancelled: return Colors.red;
-      case SaleStatus.reversed: return Colors.red.shade900;
-      case SaleStatus.awaitingDeposit: return Colors.purple;
-    }
-  }
-
-  Widget _detailRow(String label, String value, {bool isBold = false, Color? color}) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Text(label, style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant)),
-          ),
-          const SizedBox(width: 16),
-          Flexible(
-            child: Text(value, 
-              textAlign: TextAlign.right,
-              style: TextStyle(fontSize: 12, fontWeight: isBold ? FontWeight.bold : FontWeight.normal, color: color ?? theme.colorScheme.onSurface)
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   String _getMappedCategory(Product p) {
     final cat = p.category.toUpperCase();

@@ -69,6 +69,22 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> with Si
     final user = ref.watch(currentUserProvider);
     if (user == null) return const Center(child: CircularProgressIndicator());
 
+    final isAdmin = user.activePrimaryRole.name == 'admin' || user.activePrimaryRole.name == 'superAdmin';
+
+    if (!isAdmin) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) {
+          final homeRoute = MenuService.getHomeRoute(user);
+          Navigator.pushReplacementNamed(context, homeRoute);
+        }
+      });
+      return const Scaffold(
+        body: Center(
+          child: Text('Access Restricted: Sales Analytics is reserved for Admins only.'),
+        ),
+      );
+    }
+
     final theme = Theme.of(context);
     final salesHistory = ref.watch(saleHistoryProvider);
     final expenseState = ref.watch(expenseProvider);
@@ -886,6 +902,33 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> with Si
                   : null,
                 firstDate: DateTime(2023),
                 lastDate: DateTime.now(),
+                builder: (context, child) {
+                  final isDark = Theme.of(context).brightness == Brightness.dark;
+                  return Theme(
+                    data: isDark
+                        ? ThemeData.dark().copyWith(
+                            scaffoldBackgroundColor: const Color(0xFF0F172A),
+                            dialogTheme: const DialogThemeData(backgroundColor: Color(0xFF1E293B)),
+                            colorScheme: const ColorScheme.dark(
+                              primary: AppColors.accentBlue,
+                              onPrimary: Colors.white,
+                              surface: Color(0xFF1E293B),
+                              onSurface: Colors.white,
+                            ),
+                          )
+                        : ThemeData.light().copyWith(
+                            scaffoldBackgroundColor: const Color(0xFFF8FAFC),
+                            dialogTheme: const DialogThemeData(backgroundColor: Colors.white),
+                            colorScheme: const ColorScheme.light(
+                              primary: AppColors.accentBlue,
+                              onPrimary: Colors.white,
+                              surface: Colors.white,
+                              onSurface: Color(0xFF0F172A),
+                            ),
+                          ),
+                    child: child!,
+                  );
+                },
               );
               if (picked != null) {
                 setState(() {
@@ -998,6 +1041,13 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> with Si
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                       ),
+                                      if ((item.imei != null && item.imei!.trim().isNotEmpty) || (item.product.imeiList != null && item.product.imeiList!.isNotEmpty))
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 2),
+                                          child: Text('IMEI: ${item.imei ?? item.product.imeiList!.first}', 
+                                            style: TextStyle(color: theme.colorScheme.primary, fontSize: 10, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
                                     ],
                                   ),
                                 ),

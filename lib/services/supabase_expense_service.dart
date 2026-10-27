@@ -35,7 +35,7 @@ class SupabaseExpenseService extends SupabaseBaseService {
       await storage.uploadBinary(
         fileName, 
         bytes,
-        fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+        fileOptions: const FileOptions(cacheControl: '31536000', upsert: true),
       );
       return storage.getPublicUrl(fileName);
     } catch (e) {

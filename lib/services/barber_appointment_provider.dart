@@ -70,7 +70,8 @@ class BarberAppointmentNotifier extends StateNotifier<List<BarberAppointment>> {
       final response = await SupabaseConfig.client
           .from('barber_appointments')
           .select()
-          .order('appointment_time', ascending: true);
+          .order('appointment_time', ascending: true)
+          .limit(100);
 
       final List data = response as List? ?? [];
       if (data.isNotEmpty) {
@@ -140,19 +141,10 @@ class BarberAppointmentNotifier extends StateNotifier<List<BarberAppointment>> {
     state = updatedList;
     await _saveToCache(updatedList);
 
-    // Sync to Supabase
-    try {
-      final connectivity = await Connectivity().checkConnectivity();
-      if (!connectivity.contains(ConnectivityResult.none)) {
-        await SupabaseConfig.client.from('barber_appointments').upsert(appointment.toJson());
-      }
-    } catch (e) {
-      debugPrint('Supabase appointment booking error: $e');
-    }
-
-    // Dispatch immediate Booking Confirmation SMS with MoMo payment instructions
+    // 1. Dispatch immediate Booking Confirmation SMS with MoMo payment instructions FIRST
     if (phone.trim().isNotEmpty) {
-      await SmsService.sendAppointmentBookingSms(
+      debugPrint('Barber Appointment: Dispatching immediate booking MoMo payment SMS to ${phone.trim()}...');
+      SmsService.sendAppointmentBookingSms(
         name: customerName.trim(),
         phone: phone.trim(),
         serviceName: service,
@@ -163,6 +155,16 @@ class BarberAppointmentNotifier extends StateNotifier<List<BarberAppointment>> {
         momoNumber: appointment.effectiveMomoNumber,
         momoName: appointment.effectiveMomoName,
       );
+    }
+
+    // 2. Sync to Supabase in background
+    try {
+      final connectivity = await Connectivity().checkConnectivity();
+      if (!connectivity.contains(ConnectivityResult.none)) {
+        await SupabaseConfig.client.from('barber_appointments').upsert(appointment.toJson());
+      }
+    } catch (e) {
+      debugPrint('Supabase appointment booking error: $e');
     }
 
     // Note: Do not auto-queue pending payment appointments until validated

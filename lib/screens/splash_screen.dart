@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'dart:async';
+import '../core/constants.dart';
 import '../services/auth_provider.dart';
 import '../services/user_provider.dart';
 import '../models/user_model.dart';
@@ -138,22 +140,14 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: theme.colorScheme.primary,
+      backgroundColor: AppColors.primarySlate,
       resizeToAvoidBottomInset: false,
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              theme.colorScheme.primary,
-              HSLColor.fromColor(theme.colorScheme.primary).withLightness(0.15).toColor(),
-            ],
-          ),
+        decoration: const BoxDecoration(
+          gradient: AppGradients.splashAuthBackdrop,
         ),
         child: Stack(
           alignment: Alignment.center,
@@ -199,20 +193,20 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
                     
                     FadeTransition(
                       opacity: _fadeAnimation,
-                      child: const Column(
+                      child: Column(
                         children: [
                           Text(
                             'MULTI-BUSINESS',
-                            style: TextStyle(
+                            style: GoogleFonts.oswald(
                               color: Colors.white,
-                              fontSize: 28,
+                              fontSize: 32,
                               fontWeight: FontWeight.bold,
                               letterSpacing: 3,
                             ),
                           ),
                           Text(
                             'PHARMACY • BARBERSHOP • TECH • RETAIL',
-                            style: TextStyle(
+                            style: GoogleFonts.inter(
                               color: Colors.white70,
                               fontSize: 12,
                               fontWeight: FontWeight.w600,

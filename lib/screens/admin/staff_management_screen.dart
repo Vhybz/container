@@ -63,8 +63,13 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
 
       if (!matchesQuery) return false;
 
-      if (_selectedBranchFilter != 'ALL') {
-        if (u.status != AccountStatus.pending && u.branchCode != _selectedBranchFilter) {
+      if (_selectedBranchFilter == 'UNASSIGNED') {
+        if (u.branchCode != null && u.branchCode!.isNotEmpty && u.branchCode != 'MAIN') {
+          return false;
+        }
+      } else if (_selectedBranchFilter != 'ALL') {
+        final bCode = u.branchCode?.trim() ?? '';
+        if (u.status != AccountStatus.pending && bCode != _selectedBranchFilter && bCode.isNotEmpty && bCode != 'MAIN') {
           return false;
         }
       }
@@ -249,7 +254,8 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                 value: _selectedBranchFilter,
                 icon: const Icon(Icons.filter_list_rounded),
                 items: [
-                  const DropdownMenuItem(value: 'ALL', child: Text('All Branches', style: TextStyle(fontSize: 13))),
+                  const DropdownMenuItem(value: 'ALL', child: Text('All Branches & Staff', style: TextStyle(fontSize: 13))),
+                  const DropdownMenuItem(value: 'UNASSIGNED', child: Text('Unassigned / Global Staff', style: TextStyle(fontSize: 13))),
                   ...branches.map((b) => DropdownMenuItem(
                     value: b.code,
                     child: Text(b.name, style: const TextStyle(fontSize: 13)),

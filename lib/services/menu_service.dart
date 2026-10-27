@@ -31,147 +31,73 @@ class MenuService {
       SidebarItem(icon: Icons.build_circle_rounded, label: 'System Maintenance', route: '/admin/maintenance'),
     ];
 
-    // 1. Admin Module
-    if (roles.contains(UserRole.superAdmin) || isAdmin) {
+    // 1. ADMIN / SUPER ADMIN: Full access to everything on the menu
+    if (isAdmin) {
       for (final item in adminItems) {
-        // Super Admins always see everything.
-        if (roles.contains(UserRole.superAdmin)) {
-          items.add(SidebarItem(
-            icon: item.icon,
-            label: item.label,
-            route: item.route,
-            isCatchy: user.newlyAddedPermissions.contains(item.route),
-          ));
-          continue;
-        }
-
-        // Logic for regular Admin:
-        // Always show standard tools, show others if not restricted.
-        final bool isSystemTool = item.route == '/admin' || 
-                                  item.route == '/admin/tax' ||
-                                  item.route == '/admin/documents' ||
-                                  item.route == '/admin/salaries' ||
-                                  item.route == '/admin/staff' ||
-                                  item.route == '/admin/recents' || 
-                                  item.route == '/admin/audit' || 
-                                  item.route == '/admin/maintenance' ||
-                                  item.route == '/admin/settings' ||
-                                  item.route == '/admin/product-report';
-        
-        final hasSpecificRestrictions = user.enabledPermissions.isNotEmpty && 
-                                         user.enabledPermissions.any((p) => p.startsWith('/admin'));
-
-        if (isSystemTool || !hasSpecificRestrictions || user.enabledPermissions.contains(item.route)) {
-          items.add(SidebarItem(
-            icon: item.icon,
-            label: item.label,
-            route: item.route,
-            isCatchy: user.newlyAddedPermissions.contains(item.route),
-          ));
-        }
-      }
-    }
- else {
-      // Check if non-admin has been granted specific admin duties
-      for (final item in adminItems) {
-        if (user.enabledPermissions.contains(item.route)) {
-          items.add(SidebarItem(
-            icon: item.icon,
-            label: item.label,
-            route: item.route,
-            isCatchy: user.newlyAddedPermissions.contains(item.route),
-          ));
-        }
-      }
-    }
-
-    // 2. Cashier Module
-    final hasCashierAccess = roles.contains(UserRole.superAdmin) || 
-                             roles.contains(UserRole.cashier) || 
-                             user.enabledPermissions.contains('/cashier');
-    
-    if (hasCashierAccess && !roles.contains(UserRole.secretary)) {
-      items.add(SidebarItem(
-        icon: Icons.point_of_sale_rounded, 
-        label: 'Cashier POS', 
-        route: '/cashier', 
-        isCatchy: user.newlyAddedPermissions.contains('/cashier'),
-      ));
-      
-      if (roles.contains(UserRole.cashier)) {
         items.add(SidebarItem(
-          icon: Icons.bar_chart_rounded,
-          label: 'Daily Sales Report',
-          route: '/admin/sales',
+          icon: item.icon,
+          label: item.label,
+          route: item.route,
+          isCatchy: user.newlyAddedPermissions.contains(item.route),
         ));
       }
+
+      items.add(SidebarItem(icon: Icons.point_of_sale_rounded, label: 'Cashier POS', route: '/cashier'));
+
+      items.add(SidebarItem(icon: Icons.local_pharmacy_rounded, label: 'Pharmacy Operations', route: '/pharmacy'));
+      items.add(SidebarItem(icon: Icons.point_of_sale_rounded, label: 'Pharmacy POS', route: '/pharmacy/pos'));
+
+      items.add(SidebarItem(icon: Icons.content_cut_rounded, label: 'Barbershop Operations', route: '/barbershop'));
+      items.add(SidebarItem(icon: Icons.point_of_sale_rounded, label: 'Barbershop POS', route: '/barbershop/pos'));
+
+      items.add(SidebarItem(icon: Icons.phone_android_rounded, label: 'Tech & Phone Shop', route: '/tech'));
+      items.add(SidebarItem(icon: Icons.point_of_sale_rounded, label: 'Tech POS', route: '/tech/pos'));
+
+      items.add(SidebarItem(icon: Icons.info_outline_rounded, label: 'About System', route: '/about'));
+      items.add(SidebarItem(icon: Icons.settings_rounded, label: 'User Settings', route: '/settings'));
+
+      if (roles.contains(UserRole.superAdmin)) {
+        items.add(SidebarItem(icon: Icons.security, label: 'Root Access (Restore)', route: '/admin/super', isCatchy: true));
+      }
+
+      return _deduplicateItems(items);
     }
 
-
-
-    // 4. Pharmacy Module
-    final hasPharmacyAccess = roles.contains(UserRole.superAdmin) || 
-                              roles.contains(UserRole.pharmacist) || 
-                              user.enabledPermissions.contains('/pharmacy');
-    if (hasPharmacyAccess) {
-      items.add(SidebarItem(
-        icon: Icons.local_pharmacy_rounded, 
-        label: 'Pharmacy Operations', 
-        route: '/pharmacy',
-      ));
-      items.add(SidebarItem(
-        icon: Icons.point_of_sale_rounded, 
-        label: 'Pharmacy POS', 
-        route: '/pharmacy/pos',
-      ));
+    // 2. PHARMACIST: Strictly ONLY Pharmacy Operations, Pharmacy POS
+    if (roles.contains(UserRole.pharmacist)) {
+      items.add(SidebarItem(icon: Icons.local_pharmacy_rounded, label: 'Pharmacy Operations', route: '/pharmacy'));
+      items.add(SidebarItem(icon: Icons.point_of_sale_rounded, label: 'Pharmacy POS', route: '/pharmacy/pos'));
     }
 
-    // 5. Barbershop Module
-    final hasBarbershopAccess = roles.contains(UserRole.superAdmin) || 
-                                roles.contains(UserRole.barber) || 
-                                roles.contains(UserRole.secretary) ||
-                                user.enabledPermissions.contains('/barbershop');
-    if (hasBarbershopAccess) {
-      items.add(SidebarItem(
-        icon: Icons.content_cut_rounded, 
-        label: 'Barbershop Operations', 
-        route: '/barbershop',
-      ));
-      items.add(SidebarItem(
-        icon: Icons.point_of_sale_rounded, 
-        label: 'Barbershop POS', 
-        route: '/barbershop/pos',
-      ));
+    // 3. SECRETARY: Strictly ONLY Tech POS & Operations, Barber POS & Operations
+    if (roles.contains(UserRole.secretary)) {
+      items.add(SidebarItem(icon: Icons.content_cut_rounded, label: 'Barbershop Operations', route: '/barbershop'));
+      items.add(SidebarItem(icon: Icons.point_of_sale_rounded, label: 'Barbershop POS', route: '/barbershop/pos'));
+      items.add(SidebarItem(icon: Icons.phone_android_rounded, label: 'Tech & Phone Shop', route: '/tech'));
+      items.add(SidebarItem(icon: Icons.point_of_sale_rounded, label: 'Tech POS', route: '/tech/pos'));
     }
 
-    // 6. Tech & Phone Shop Module
-    final hasTechAccess = roles.contains(UserRole.superAdmin) || 
-                          roles.contains(UserRole.phoneSales) || 
-                          roles.contains(UserRole.phoneSalesGuy) || 
-                          roles.contains(UserRole.secretary) ||
-                          user.enabledPermissions.contains('/tech');
-    if (hasTechAccess) {
-      items.add(SidebarItem(
-        icon: Icons.phone_android_rounded, 
-        label: 'Tech & Phone Shop', 
-        route: '/tech',
-      ));
-      items.add(SidebarItem(
-        icon: Icons.point_of_sale_rounded, 
-        label: 'Tech POS', 
-        route: '/tech/pos',
-      ));
+    // 4. BARBER: Strictly Barbershop Operations, Barbershop POS
+    if (roles.contains(UserRole.barber) && !roles.contains(UserRole.secretary)) {
+      items.add(SidebarItem(icon: Icons.content_cut_rounded, label: 'Barbershop Operations', route: '/barbershop'));
+      items.add(SidebarItem(icon: Icons.point_of_sale_rounded, label: 'Barbershop POS', route: '/barbershop/pos'));
+    }
+
+    // 5. PHONE SALES / TECH: Strictly Tech Shop, Tech POS
+    if ((roles.contains(UserRole.phoneSales) || roles.contains(UserRole.phoneSalesGuy)) && !roles.contains(UserRole.secretary)) {
+      items.add(SidebarItem(icon: Icons.phone_android_rounded, label: 'Tech & Phone Shop', route: '/tech'));
+      items.add(SidebarItem(icon: Icons.point_of_sale_rounded, label: 'Tech POS', route: '/tech/pos'));
+    }
+
+    // 6. CASHIER: Cashier POS, Daily Sales Report
+    if (roles.contains(UserRole.cashier)) {
+      items.add(SidebarItem(icon: Icons.point_of_sale_rounded, label: 'Cashier POS', route: '/cashier'));
+      items.add(SidebarItem(icon: Icons.bar_chart_rounded, label: 'Daily Sales Report', route: '/admin/sales'));
     }
 
     // 7. System Access (Always visible to all users)
     items.add(SidebarItem(icon: Icons.info_outline_rounded, label: 'About System', route: '/about'));
     items.add(SidebarItem(icon: Icons.settings_rounded, label: 'User Settings', route: '/settings'));
-    // Removed "My Profile" as requested. Details are now inside System Settings.
-
-    // Special: Super Admin Root Access
-    if (roles.contains(UserRole.superAdmin)) {
-      items.add(SidebarItem(icon: Icons.security, label: 'Root Access (Restore)', route: '/admin/super', isCatchy: true));
-    }
 
     return _deduplicateItems(items);
   }

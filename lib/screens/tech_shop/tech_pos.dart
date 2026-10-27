@@ -13,8 +13,11 @@ import '../../services/menu_service.dart';
 import '../../services/product_service.dart';
 import '../../services/receipt_service.dart';
 import '../../services/sale_provider.dart';
+import '../../services/sms_service.dart';
+import '../../services/tech_shop_service.dart';
 import '../../services/user_provider.dart';
 import '../../widgets/app_sidebar.dart';
+import '../../widgets/pos_transaction_history_view.dart';
 import '../../widgets/cart_item_tile.dart';
 import '../../widgets/main_app_bar.dart';
 import '../../widgets/product_card.dart';
@@ -100,12 +103,18 @@ class _TechPosState extends ConsumerState<TechPos> {
     final String cashierName = currentUser != null ? '${currentUser.firstName} ${currentUser.surname}' : 'Tech Rep';
     final subtotal = ref.read(cartProvider.notifier).subtotal;
 
+    final registeredImei = _imeiController.text.trim();
+
     final saleItems = cartItems.map((item) {
+      final itemImei = registeredImei.isNotEmpty 
+          ? registeredImei 
+          : (item.imei ?? (item.product.imeiList != null && item.product.imeiList!.isNotEmpty ? item.product.imeiList!.first : null));
       return SaleItem(
         product: item.product,
         quantity: item.quantity,
         priceAtSale: item.priceAtSale,
         originalPrice: item.originalPrice,
+        imei: itemImei,
       );
     }).toList();
 
@@ -130,13 +139,29 @@ class _TechPosState extends ConsumerState<TechPos> {
       isVerified: true,
     );
 
-    final registeredImei = _imeiController.text;
+    // Update IMEI status and deduct from product IMEI inventory
+    if (registeredImei.isNotEmpty) {
+      ref.read(imeiInventoryProvider.notifier).updateIMEIStatus(registeredImei, 'Sold');
+      for (final item in cartItems) {
+        if (item.product.imeiList != null && item.product.imeiList!.contains(registeredImei)) {
+          final updatedImeis = List<String>.from(item.product.imeiList!)..remove(registeredImei);
+          ref.read(productsFutureProvider.notifier).updateProduct(
+            item.product.copyWith(imeiList: updatedImeis),
+          );
+        }
+      }
+    }
 
     // Trigger printing receipt
     ReceiptService.printReceipt(sale, context: null);
 
     // Save sale to state
     await ref.read(saleHistoryProvider.notifier).addSale(sale);
+
+    // Send SMS Receipt if phone number available
+    if (sale.customerPhone != null && sale.customerPhone!.trim().isNotEmpty) {
+      SmsService.sendReceiptSms(sale, branchName: 'Container Tech');
+    }
 
     // Clean cart and checkout state immediately after sale
     ref.read(cartProvider.notifier).clear();
@@ -151,11 +176,11 @@ class _TechPosState extends ConsumerState<TechPos> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.verified_outlined, color: Color(0xFFE65100)),
-            SizedBox(width: 8),
-            Text('Tech Purchase & Warranty Issued'),
+            const Icon(Icons.verified_outlined, color: Color(0xFFE65100)),
+            const SizedBox(width: 8),
+            const Text('Tech Purchase & Warranty Issued'),
           ],
         ),
         content: Column(
@@ -202,12 +227,20 @@ class _TechPosState extends ConsumerState<TechPos> {
     final currentUser = ref.read(currentUserProvider);
     final debtCustomerName = _selectedCustomer!.name;
 
-    final saleItems = cartItems.map((item) => SaleItem(
-      product: item.product,
-      quantity: item.quantity,
-      priceAtSale: item.priceAtSale,
-      originalPrice: item.originalPrice,
-    )).toList();
+    final registeredImei = _imeiController.text.trim();
+
+    final saleItems = cartItems.map((item) {
+      final itemImei = registeredImei.isNotEmpty 
+          ? registeredImei 
+          : (item.imei ?? (item.product.imeiList != null && item.product.imeiList!.isNotEmpty ? item.product.imeiList!.first : null));
+      return SaleItem(
+        product: item.product,
+        quantity: item.quantity,
+        priceAtSale: item.priceAtSale,
+        originalPrice: item.originalPrice,
+        imei: itemImei,
+      );
+    }).toList();
 
     final sale = SaleRecord(
       id: 'INV-${DateTime.now().millisecondsSinceEpoch}',
@@ -225,7 +258,23 @@ class _TechPosState extends ConsumerState<TechPos> {
       isVerified: true,
     );
 
+    if (registeredImei.isNotEmpty) {
+      ref.read(imeiInventoryProvider.notifier).updateIMEIStatus(registeredImei, 'Sold');
+      for (final item in cartItems) {
+        if (item.product.imeiList != null && item.product.imeiList!.contains(registeredImei)) {
+          final updatedImeis = List<String>.from(item.product.imeiList!)..remove(registeredImei);
+          ref.read(productsFutureProvider.notifier).updateProduct(
+            item.product.copyWith(imeiList: updatedImeis),
+          );
+        }
+      }
+    }
+
     await ref.read(saleHistoryProvider.notifier).addSale(sale);
+
+    if (sale.customerPhone != null && sale.customerPhone!.trim().isNotEmpty) {
+      SmsService.sendReceiptSms(sale, branchName: 'Container Tech');
+    }
 
     // Clean cart and checkout state immediately after debt sale
     ref.read(cartProvider.notifier).clear();
@@ -406,15 +455,19 @@ class _TechPosState extends ConsumerState<TechPos> {
     final isWholesale = ref.watch(isWholesaleProvider);
     final menuItems = MenuService.getMenuItemsForUser(user);
     final productsAsync = ref.watch(productsFutureProvider);
+    final rawProducts = productsAsync.value ?? [];
 
-    // Prioritize database products if they exist
-    List<Product> productsList = [];
-
-    if (productsAsync.hasValue) {
-      final dbProducts = productsAsync.value!
-          .where((p) => !p.isDeleted)
-          .where((p) {
+    final productsList = rawProducts
+        .where((p) => !p.isDeleted)
+        .where((p) {
             final cat = p.category.toUpperCase();
+            final name = p.name.toUpperCase();
+
+            final isBarberStuff = cat.contains('BARBER') || cat.contains('HAIR') || cat.contains('BEARD') || cat.contains('GROOM') || cat.contains('SALON') || name.contains('KIDS 1-');
+            final isPharmacyStuff = p.requiresPrescription || cat.contains('PHARM') || cat.contains('MED') || cat.contains('DRUG') || cat.contains('HEALTH');
+
+            if (isBarberStuff || isPharmacyStuff) return false;
+
             final isTechCategory = p.requiresImei || 
                    cat.contains('PHONE') || 
                    cat.contains('TECH') || 
@@ -432,24 +485,15 @@ class _TechPosState extends ConsumerState<TechPos> {
                    cat.contains('MOUNT') || 
                    cat.contains('HOLDER') || 
                    cat.contains('REPAIR') || 
-                   cat.contains('SERVICE');
-            
-            final isBarberStuff = cat.contains('BARBER') || cat.contains('HAIR') || cat.contains('BEARD') || cat.contains('GROOM') || cat.contains('SALON');
-            
-            // Show if it's a tech category, or any tech-related name, ensuring no pharmacy or barber items.
-            return isTechCategory && 
-                   !p.requiresPrescription && 
-                   !cat.contains('PHARM') && 
-                   !cat.contains('MED') &&
-                   !isBarberStuff;
+                   name.contains('IPHONE') ||
+                   name.contains('SAMSUNG') ||
+                   name.contains('GIG');
+
+            return isTechCategory;
           })
           .toList();
-      
-      final activeProds = productsAsync.value!.where((p) => !p.isDeleted && !p.requiresPrescription).toList();
-      productsList = dbProducts.isNotEmpty ? dbProducts : activeProds;
-    }
 
-    final categories = ['All', ...{...productsList.map((p) => p.category.toUpperCase())}];
+    final List<String> categories = ['All', ...productsList.map((p) => p.category.toUpperCase()).toSet()];
 
     final filteredProducts = productsList.where((p) {
       final matchesCategory = _selectedCategory == 'All' || p.category.toUpperCase() == _selectedCategory.toUpperCase();
@@ -497,6 +541,46 @@ class _TechPosState extends ConsumerState<TechPos> {
             ],
           ),
           bottomNavigationBar: SafeArea(child: _buildFooter()),
+          floatingActionButton: (isMobile && _currentTab == 0)
+              ? SafeArea(
+                  child: FloatingActionButton.extended(
+                    onPressed: () => _showMobileCart(),
+                    label: Text('Cart (${ref.watch(cartProvider).length})'),
+                    icon: const Icon(Icons.shopping_cart_checkout),
+                    backgroundColor: const Color(0xFFE65100),
+                    foregroundColor: Colors.white,
+                  ),
+                )
+              : null,
+        ),
+      ),
+    );
+  }
+
+  void _showMobileCart() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.88,
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Expanded(child: _buildCartSection()),
+          ],
         ),
       ),
     );
@@ -705,16 +789,72 @@ class _TechPosState extends ConsumerState<TechPos> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('IMEI / Serial Number Registration *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.deepOrange)),
-                const SizedBox(height: 4),
+                const Row(
+                  children: [
+                    Icon(Icons.qr_code_scanner, size: 16, color: Colors.deepOrange),
+                    SizedBox(width: 6),
+                    Text('IMEI / Serial Number Registration *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.deepOrange)),
+                  ],
+                ),
+                const SizedBox(height: 6),
                 TextField(
                   controller: _imeiController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Device IMEI / Serial No *',
-                    prefixIcon: Icon(Icons.qr_code),
+                    hintText: 'Enter or pick from stock below',
+                    prefixIcon: const Icon(Icons.qr_code),
+                    suffixIcon: _imeiController.text.isNotEmpty 
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 16),
+                            onPressed: () => setState(() => _imeiController.clear()),
+                          )
+                        : null,
                     isDense: true,
                   ),
+                  onChanged: (_) => setState(() {}),
                 ),
+                () {
+                  final savedImeis = <String>{};
+                  for (final item in cartItems) {
+                    if (item.product.imeiList != null) {
+                      savedImeis.addAll(item.product.imeiList!);
+                    }
+                  }
+                  final imeiRecords = ref.watch(imeiInventoryProvider).where((r) => r.status == 'In Stock');
+                  for (final r in imeiRecords) {
+                    savedImeis.add(r.imei);
+                  }
+
+                  if (savedImeis.isEmpty) return const SizedBox.shrink();
+
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Available In-Stock IMEIs:', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: savedImeis.map((imei) {
+                            final isSelected = _imeiController.text.trim() == imei;
+                            return ChoiceChip(
+                              label: Text(imei, style: TextStyle(fontSize: 10, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+                              selected: isSelected,
+                              selectedColor: Colors.deepOrange.shade100,
+                              onSelected: (selected) {
+                                setState(() {
+                                  _imeiController.text = selected ? imei : '';
+                                });
+                              },
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ),
+                  );
+                }(),
               ],
             ),
           ),
@@ -815,35 +955,11 @@ class _TechPosState extends ConsumerState<TechPos> {
   }
 
   Widget _buildHistoryLayout() {
-    final salesHistory = ref.watch(saleHistoryProvider);
-
-    return Padding(
-      padding: const EdgeInsets.all(AppSpacing.m),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Tech Shop Sales & Warranty History', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          const SizedBox(height: AppSpacing.m),
-          Expanded(
-            child: salesHistory.isEmpty
-                ? const Center(child: Text('No tech sales records found.'))
-                : ListView.separated(
-                    itemCount: salesHistory.length,
-                    separatorBuilder: (context, sepIndex) => Divider(key: ValueKey('div_$sepIndex')),
-                    itemBuilder: (context, index) {
-                      final sale = salesHistory[index];
-                      return ListTile(
-                        leading: const CircleAvatar(backgroundColor: Color(0xFFE65100), child: Icon(Icons.phone_android, color: Colors.white)),
-                        title: Text('Invoice ${sale.id}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('${DateFormat('MMM dd, yyyy HH:mm').format(sale.timestamp)} • Customer: ${sale.customerName ?? "Walk-In"}'),
-                        trailing: Text('GHS ${sale.totalAmount.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFFE65100))),
-                        onTap: () => ReceiptService.printReceipt(sale, context: context),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
+    return PosTransactionHistoryView(
+      onSwitchToNewSale: () => setState(() => _currentTab = 0),
+      filterCategory: 'TECH',
     );
   }
 }
+
+

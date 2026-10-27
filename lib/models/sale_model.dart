@@ -47,12 +47,14 @@ class SaleItem {
   final double quantity;
   final double priceAtSale;
   final double originalPrice;
+  final String? imei;
 
   SaleItem({
     required this.product,
     required this.quantity,
     required this.priceAtSale,
     required this.originalPrice,
+    this.imei,
   });
 
   factory SaleItem.fromJson(dynamic json) {
@@ -62,6 +64,7 @@ class SaleItem {
       quantity: (map['quantity'] as num).toDouble(),
       priceAtSale: (map['price_at_sale'] as num).toDouble(),
       originalPrice: (map['original_price'] as num? ?? (map['price_at_sale'] as num)).toDouble(),
+      imei: map['imei'] as String?,
     );
   }
 
@@ -73,6 +76,7 @@ class SaleItem {
     'quantity': quantity,
     'price_at_sale': priceAtSale,
     'original_price': originalPrice,
+    if (imei != null) 'imei': imei,
   };
 }
 
@@ -179,10 +183,10 @@ class SaleRecord {
       'applied_promo': appliedPromo,
       'payments': payments.map((e) => e.toJson()).toList(),
       'timestamp': timestamp.toIso8601String(),
-      'cashier_name': cashierName,
-      'cashier_id': cashierId,
-      'staff_name': cashierName, // Mapping for older database schemas
-      'staff_id': cashierId, // Mapping for older database schemas
+      'cashier_name': cashierName.trim().isNotEmpty ? cashierName.trim() : 'Staff',
+      'cashier_id': cashierId.trim().isNotEmpty ? cashierId.trim() : 'N/A',
+      'staff_name': cashierName.trim().isNotEmpty ? cashierName.trim() : 'Staff',
+      'staff_id': cashierId.trim().isNotEmpty ? cashierId.trim() : 'N/A',
       'customer_name': customerName,
       'customer_phone': customerPhone,
       'status': status.name,

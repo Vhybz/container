@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import '../models/user_model.dart';
 import 'supabase_user_service.dart';
 import 'sms_service.dart';
@@ -9,6 +11,7 @@ import 'sms_service.dart';
 class UserNotifier extends StateNotifier<List<UserAccount>> {
   final SupabaseUserService service;
   final Ref ref;
+  static const String _usersCacheBox = 'users_cache_box';
   StreamSubscription? _subscription;
   bool _isLoading = false;
   bool get isLoading => _isLoading;
@@ -17,9 +20,36 @@ class UserNotifier extends StateNotifier<List<UserAccount>> {
     _init();
   }
 
-  void _init() {
+  Future<void> _init() async {
+    await _loadFromCache();
     _startHeartbeat();
     _startSubscription();
+  }
+
+  Future<void> _loadFromCache() async {
+    try {
+      final box = await Hive.openBox<String>(_usersCacheBox);
+      final rawList = box.get('users_list');
+      if (rawList != null) {
+        final List decoded = jsonDecode(rawList);
+        final cachedUsers = decoded.map((e) => UserAccount.fromJson(Map<String, dynamic>.from(e))).toList();
+        state = cachedUsers;
+        debugPrint('UserNotifier: Loaded ${cachedUsers.length} user accounts from local Hive cache.');
+      }
+    } catch (e) {
+      debugPrint('UserNotifier Cache Error: $e');
+    }
+  }
+
+  Future<void> _saveToCache(List<UserAccount> users) async {
+    try {
+      if (users.isEmpty && state.isNotEmpty) return;
+      final box = await Hive.openBox<String>(_usersCacheBox);
+      final jsonStr = jsonEncode(users.map((e) => e.toJson()).toList());
+      await box.put('users_list', jsonStr);
+    } catch (e) {
+      debugPrint('UserNotifier Save Cache Error: $e');
+    }
   }
 
   void _startSubscription() {
@@ -27,6 +57,7 @@ class UserNotifier extends StateNotifier<List<UserAccount>> {
     _subscription = service.watchUsers().listen(
       (users) {
         state = users;
+        _saveToCache(users);
         
         // Update session profile if current user is in the list
         final currentId = ref.read(currentUserIdProvider);
@@ -35,7 +66,7 @@ class UserNotifier extends StateNotifier<List<UserAccount>> {
           final me = users.where((u) => u.id == currentId).firstOrNull;
           if (me != null) {
             // SECURITY: If passcode changed remotely (e.g. by admin), lock the account immediately
-            if (oldMe != null && (me.passcode != oldMe.passcode || me.passcodeSentAt != oldMe.passcodeSentAt)) {
+            if (oldMe != null && me.passcode != oldMe.passcode) {
               ref.read(passcodeUnlockedProvider.notifier).state = false;
             }
             ref.read(sessionUserProfileProvider.notifier).state = me;
@@ -129,12 +160,13 @@ class UserNotifier extends StateNotifier<List<UserAccount>> {
   Future<void> addAccount(UserAccount account) async {
     try {
       debugPrint('Attempting to add user profile to database: ${account.id}');
-      await service.addUser(account);
       state = [...state, account];
+      _saveToCache(state);
+      await service.addUser(account);
       debugPrint('User profile saved successfully.');
     } catch (e) {
       debugPrint('DATABASE ERROR (addUser): $e');
-      rethrow;
+      // If offline, user account remains in local state and cache
     }
   }
 
@@ -214,22 +246,19 @@ class UserNotifier extends StateNotifier<List<UserAccount>> {
   }
 
   Future<void> deleteUser(String userId) async {
+    // 1. Instantly remove from local list and cache
+    state = state.where((u) => u.id != userId).toList();
+    _saveToCache(state);
+
     try {
-      // 1. Attempt absolute hard delete (wipes from database)
+      // 2. Attempt absolute hard delete (wipes from database)
       await service.hardDeleteUser(userId);
-      
-      // 2. Remove from local list
-      state = state.where((u) => u.id != userId).toList();
     } catch (e) {
       debugPrint('Hard Delete failed, attempting Ghost Delete fallback: $e');
       try {
-        // Fallback: If hard delete fails (usually due to sales history),
-        // we use a "Ghost Delete" where we mark it as deleted and hide it everywhere.
         await service.deleteUser(userId); // Sets is_deleted = true
-        state = state.where((u) => u.id != userId).toList();
       } catch (innerErr) {
-        debugPrint('Ghost Delete fallback failed: $innerErr');
-        rethrow;
+        debugPrint('Ghost Delete fallback notice: $innerErr');
       }
     }
   }
@@ -457,6 +486,19 @@ class UserNotifier extends StateNotifier<List<UserAccount>> {
       final user = await service.getUserById(id);
       if (user != null) {
         state = [...state.where((u) => u.id != id), user];
+      }
+      return user;
+    } catch (e) {
+      debugPrint('Fetch User Error: $e');
+      return null;
+    }
+  }
+
+  Future<UserAccount?> fetchUserByIdOrEmail(String id, String email) async {
+    try {
+      final user = await service.getUserByIdOrEmail(id, email);
+      if (user != null) {
+        state = [...state.where((u) => u.id != user.id && u.email.toLowerCase() != email.toLowerCase()), user];
       }
       return user;
     } catch (e) {

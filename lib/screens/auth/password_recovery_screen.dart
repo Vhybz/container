@@ -113,14 +113,32 @@ class _PasswordRecoveryScreenState extends ConsumerState<PasswordRecoveryScreen>
   Future<void> _handleStep3(String password) async {
     setState(() => _isLoading = true);
     try {
-      // Use SupabaseConfig.adminClient to perform admin operations
-      // This requires the SUPABASE_SERVICE_ROLE_KEY to be correctly set in environment variables
       final admin = SupabaseConfig.adminClient.auth.admin;
       
-      await admin.updateUserById(
-        _userId!,
-        attributes: AdminUserAttributes(password: password),
-      );
+      try {
+        await admin.updateUserById(
+          _userId!,
+          attributes: AdminUserAttributes(password: password),
+        );
+      } catch (err) {
+        // Fallback: If auth user does not exist in the new project yet, create it directly!
+        final userData = await SupabaseConfig.adminClient
+            .from('users')
+            .select('email, phone')
+            .eq('id', _userId!)
+            .maybeSingle();
+
+        final String userEmail = userData?['email'] ?? 'user_$_userId@container.local';
+
+        // Create auth user directly with confirmed email & password
+        await admin.createUser(
+          AdminUserAttributes(
+            email: userEmail,
+            password: password,
+            emailConfirm: true,
+          ),
+        );
+      }
 
       if (!mounted) return;
       _timer?.cancel();

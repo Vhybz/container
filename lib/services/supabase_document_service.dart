@@ -31,7 +31,7 @@ class SupabaseDocumentService {
       await _client.storage.from('documents').uploadBinary(
         path, 
         bytes,
-        fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
+        fileOptions: const FileOptions(cacheControl: '31536000', upsert: false),
       );
       return _client.storage.from('documents').getPublicUrl(path);
     } catch (e) {

@@ -138,10 +138,17 @@ CREATE TABLE IF NOT EXISTS public.products (
   number_of_boxes DECIMAL(10,2),
   packs_per_box DECIMAL(10,2),
   box_price DECIMAL(10,2),
-  commission_amount DECIMAL(10,2) DEFAULT 0.00
+  commission_rate DECIMAL(10,2) DEFAULT 40.00,
+  commission_amount DECIMAL(10,2) DEFAULT 0.00,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- Safely add all product columns to existing table
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS commission_rate DECIMAL(10,2) DEFAULT 40.00;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS commission_amount DECIMAL(10,2) DEFAULT 0.00;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS branch_code TEXT;
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS retail_price DECIMAL(10,2) NOT NULL DEFAULT 0;
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS wholesale_price DECIMAL(10,2) NOT NULL DEFAULT 0;
@@ -194,6 +201,8 @@ CREATE TABLE IF NOT EXISTS public.sales (
   correction_reason TEXT,
   bank_receipt_url TEXT,
   bank_receipt_id TEXT,
+  amount_tendered DECIMAL(10,2),
+  change_due DECIMAL(10,2),
   items JSONB NOT NULL DEFAULT '[]',
   payments JSONB NOT NULL DEFAULT '[]',
   is_verified BOOLEAN DEFAULT false,
@@ -221,6 +230,8 @@ ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'completed
 ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS correction_reason TEXT;
 ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS bank_receipt_url TEXT;
 ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS bank_receipt_id TEXT;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS amount_tendered DECIMAL(10,2);
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS change_due DECIMAL(10,2);
 ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS payments JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT false;
@@ -257,7 +268,7 @@ ALTER TABLE public.barber_queue ADD COLUMN IF NOT EXISTS is_appointment BOOLEAN 
 ALTER TABLE public.barber_queue ADD COLUMN IF NOT EXISTS appointment_id TEXT;
 ALTER TABLE public.barber_queue ADD COLUMN IF NOT EXISTS appointment_time TIMESTAMPTZ;
 
--- 2.5B BARBER APPOINTMENTS (Used by Barbershop Operations & Secretary/Admin Booking)
+-- 2.5B BARBER APPOINTMENTS (Used by Barbershop Operations & Booking)
 CREATE TABLE IF NOT EXISTS public.barber_appointments (
   id TEXT PRIMARY KEY,
   branch_code TEXT,
@@ -318,6 +329,32 @@ CREATE INDEX IF NOT EXISTS idx_barber_records_customer ON public.barber_records 
 CREATE INDEX IF NOT EXISTS idx_barber_records_timestamp ON public.barber_records (timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_barber_records_service ON public.barber_records (service);
 
+-- Performance Indexes on Core Tables
+CREATE INDEX IF NOT EXISTS idx_products_branch ON public.products (branch_code);
+CREATE INDEX IF NOT EXISTS idx_products_category ON public.products (category);
+CREATE INDEX IF NOT EXISTS idx_products_deleted ON public.products (is_deleted);
+
+CREATE INDEX IF NOT EXISTS idx_sales_timestamp ON public.sales (timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_sales_branch ON public.sales (branch_code);
+CREATE INDEX IF NOT EXISTS idx_sales_cashier ON public.sales (cashier_id);
+CREATE INDEX IF NOT EXISTS idx_sales_status ON public.sales (status);
+
+CREATE INDEX IF NOT EXISTS idx_customers_phone ON public.customers (phone);
+CREATE INDEX IF NOT EXISTS idx_customers_branch ON public.customers (branch_code);
+
+CREATE INDEX IF NOT EXISTS idx_expenses_date ON public.expenses (date DESC);
+CREATE INDEX IF NOT EXISTS idx_expenses_branch ON public.expenses (branch_code);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON public.users (email);
+CREATE INDEX IF NOT EXISTS idx_users_phone ON public.users (phone);
+CREATE INDEX IF NOT EXISTS idx_users_branch ON public.users (branch_code);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON public.audit_logs (timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_branch ON public.audit_logs (branch_code);
+
+CREATE INDEX IF NOT EXISTS idx_shift_records_branch ON public.shift_records (branch_code);
+CREATE INDEX IF NOT EXISTS idx_shift_records_cashier ON public.shift_records (cashier_id);
+
 -- 2.6 REPAIR TICKETS (Used by Tech & Phone Shop Repairs)
 CREATE TABLE IF NOT EXISTS public.repair_tickets (
   id TEXT PRIMARY KEY,
@@ -339,25 +376,46 @@ ALTER TABLE public.repair_tickets ADD COLUMN IF NOT EXISTS cost DECIMAL(10,2) DE
 ALTER TABLE public.repair_tickets ADD COLUMN IF NOT EXISTS deposit DECIMAL(10,2) DEFAULT 0.00;
 ALTER TABLE public.repair_tickets ADD COLUMN IF NOT EXISTS technician TEXT NOT NULL DEFAULT 'Tech Rep';
 
+-- 2.6B REPAIR WORK ORDERS (Tech Shop Job Work Orders)
+CREATE TABLE IF NOT EXISTS public.repair_work_orders (
+  id TEXT PRIMARY KEY,
+  branch_code TEXT,
+  ticket_id TEXT,
+  customer_name TEXT NOT NULL,
+  phone TEXT DEFAULT '',
+  device_model TEXT NOT NULL,
+  issue_description TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'In Progress',
+  estimated_cost DECIMAL(10,2) DEFAULT 0.00,
+  deposit_paid DECIMAL(10,2) DEFAULT 0.00,
+  technician_assigned TEXT,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
 -- 2.7 CUSTOMERS (CRM)
 CREATE TABLE IF NOT EXISTS public.customers (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   branch_code TEXT,
   name TEXT NOT NULL,
-  phone TEXT UNIQUE NOT NULL,
+  phone TEXT NOT NULL,
   phone2 TEXT,
   location TEXT,
   is_favorite BOOLEAN DEFAULT false,
+  is_wholesaler BOOLEAN DEFAULT false,
+  is_bulk_purchaser BOOLEAN DEFAULT false,
   loyalty_points DECIMAL(10,2) DEFAULT 0.0,
   visit_count INT DEFAULT 0,
   is_deleted BOOLEAN DEFAULT false,
-  created_at TIMESTAMPTZ DEFAULT now() NOT NULL
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS branch_code TEXT;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS phone2 TEXT;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS location TEXT;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN DEFAULT false;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS is_wholesaler BOOLEAN DEFAULT false;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS is_bulk_purchaser BOOLEAN DEFAULT false;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS loyalty_points DECIMAL(10,2) DEFAULT 0.0;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS visit_count INT DEFAULT 0;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
@@ -375,7 +433,20 @@ CREATE TABLE IF NOT EXISTS public.expenses (
   recorded_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
 
--- 2.9 STAFF PAYMENTS AUDIT (Salaries & Advances)
+-- 2.9 SALARY RECORDS & AUDIT (Staff Payroll & Advances)
+CREATE TABLE IF NOT EXISTS public.salary_records (
+  id TEXT PRIMARY KEY,
+  branch_code TEXT,
+  user_id TEXT NOT NULL,
+  user_name TEXT NOT NULL,
+  salary_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  advances_deducted DECIMAL(10,2) DEFAULT 0.00,
+  net_payout DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  payment_date TIMESTAMPTZ DEFAULT now() NOT NULL,
+  status TEXT NOT NULL DEFAULT 'Paid',
+  note TEXT
+);
+
 CREATE TABLE IF NOT EXISTS public.staff_payments_audit (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   user_id TEXT NOT NULL,
@@ -424,7 +495,7 @@ CREATE TABLE IF NOT EXISTS public.notifications (
   created_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
 
--- 2.13 STOCK HISTORY (Inventory movements)
+-- 2.13 STOCK HISTORY & TRANSFERS
 CREATE TABLE IF NOT EXISTS public.stock_history (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   product_id TEXT NOT NULL,
@@ -434,7 +505,36 @@ CREATE TABLE IF NOT EXISTS public.stock_history (
   timestamp TIMESTAMPTZ DEFAULT now() NOT NULL
 );
 
--- 2.14 DOCUMENTS (Document storage records)
+CREATE TABLE IF NOT EXISTS public.stock_transfers (
+  id TEXT PRIMARY KEY,
+  branch_code TEXT,
+  batch_id TEXT NOT NULL DEFAULT 'DIRECT',
+  meat_type TEXT NOT NULL DEFAULT 'General',
+  weight DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  unit TEXT NOT NULL DEFAULT 'pcs',
+  destination TEXT NOT NULL DEFAULT 'Unknown',
+  transfer_time TIMESTAMPTZ DEFAULT now() NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  is_third_party BOOLEAN DEFAULT false,
+  is_paid BOOLEAN DEFAULT false,
+  is_individual BOOLEAN DEFAULT false,
+  customer_name TEXT,
+  customer_phone TEXT,
+  customer_location TEXT,
+  created_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+-- 2.14 DOCUMENTS
+CREATE TABLE IF NOT EXISTS public.documents (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  branch_code TEXT,
+  name TEXT NOT NULL,
+  file_url TEXT NOT NULL,
+  category TEXT,
+  uploaded_by TEXT,
+  uploaded_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS public.documentss (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   branch_code TEXT,
@@ -445,7 +545,7 @@ CREATE TABLE IF NOT EXISTS public.documentss (
   uploaded_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
 
--- 2.15 SPECIALIZED SECTOR TABLES (For full multi-sector support)
+-- 2.15 PHARMACY TABLES
 CREATE TABLE IF NOT EXISTS public.medication_batches (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   drug_name TEXT NOT NULL,
@@ -468,6 +568,7 @@ CREATE TABLE IF NOT EXISTS public.prescription_records (
   status TEXT DEFAULT 'Dispensed'
 );
 
+-- 2.16 BARBERSHOP SERVICES & COMMISSIONS
 CREATE TABLE IF NOT EXISTS public.barber_services (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   name TEXT NOT NULL,
@@ -487,6 +588,7 @@ CREATE TABLE IF NOT EXISTS public.barber_commissions (
   date TIMESTAMPTZ DEFAULT now() NOT NULL
 );
 
+-- 2.17 TECH SHOP TABLES
 CREATE TABLE IF NOT EXISTS public.imei_records (
   imei TEXT PRIMARY KEY,
   device_model TEXT NOT NULL,
@@ -505,7 +607,7 @@ CREATE TABLE IF NOT EXISTS public.warranty_certificates (
   terms TEXT NOT NULL
 );
 
--- 2.18 SHIFT RECORDS (Cash drawer opening floats, physical cash counting, variance detection & handovers)
+-- 2.18 SHIFT RECORDS
 CREATE TABLE IF NOT EXISTS public.shift_records (
   id TEXT PRIMARY KEY,
   branch_code TEXT NOT NULL DEFAULT 'MAIN',
@@ -525,52 +627,111 @@ CREATE TABLE IF NOT EXISTS public.shift_records (
   created_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
 
-ALTER TABLE public.shift_records ADD COLUMN IF NOT EXISTS branch_code TEXT NOT NULL DEFAULT 'MAIN';
-ALTER TABLE public.shift_records ADD COLUMN IF NOT EXISTS cashier_id TEXT NOT NULL DEFAULT '';
-ALTER TABLE public.shift_records ADD COLUMN IF NOT EXISTS cashier_name TEXT NOT NULL DEFAULT '';
-ALTER TABLE public.shift_records ADD COLUMN IF NOT EXISTS start_time TIMESTAMPTZ NOT NULL DEFAULT now();
-ALTER TABLE public.shift_records ADD COLUMN IF NOT EXISTS end_time TIMESTAMPTZ;
-ALTER TABLE public.shift_records ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open';
-ALTER TABLE public.shift_records ADD COLUMN IF NOT EXISTS opening_float DECIMAL(12,2) NOT NULL DEFAULT 0.00;
-ALTER TABLE public.shift_records ADD COLUMN IF NOT EXISTS expected_cash_sales DECIMAL(12,2) NOT NULL DEFAULT 0.00;
-ALTER TABLE public.shift_records ADD COLUMN IF NOT EXISTS actual_cash_counted DECIMAL(12,2);
-ALTER TABLE public.shift_records ADD COLUMN IF NOT EXISTS cash_variance DECIMAL(12,2);
-ALTER TABLE public.shift_records ADD COLUMN IF NOT EXISTS momo_sales DECIMAL(12,2) NOT NULL DEFAULT 0.00;
-ALTER TABLE public.shift_records ADD COLUMN IF NOT EXISTS card_sales DECIMAL(12,2) NOT NULL DEFAULT 0.00;
-ALTER TABLE public.shift_records ADD COLUMN IF NOT EXISTS total_sales DECIMAL(12,2) NOT NULL DEFAULT 0.00;
-ALTER TABLE public.shift_records ADD COLUMN IF NOT EXISTS notes TEXT;
-ALTER TABLE public.shift_records ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now() NOT NULL;
-
 -- ============================================================================
--- 3. PERMISSIONS & SECURITY
+-- 3. PERMISSIONS & SECURITY (RLS UNLOCKED FOR SEAMLESS CONNECTIVITY & CSV IMPORTS)
 -- ============================================================================
 
--- Disable RLS across public tables to ensure seamless Flutter client connectivity
+-- Relax NOT NULL requirements on metadata/timestamp columns for seamless CSV importing
+ALTER TABLE public.branches ALTER COLUMN created_at DROP NOT NULL;
+ALTER TABLE public.users ALTER COLUMN created_at DROP NOT NULL;
+ALTER TABLE public.users ALTER COLUMN first_name DROP NOT NULL;
+ALTER TABLE public.users ALTER COLUMN surname DROP NOT NULL;
+ALTER TABLE public.products ALTER COLUMN name DROP NOT NULL;
+ALTER TABLE public.sales ALTER COLUMN timestamp DROP NOT NULL;
+ALTER TABLE public.customers ALTER COLUMN created_at DROP NOT NULL;
+ALTER TABLE public.expenses ALTER COLUMN recorded_at DROP NOT NULL;
+ALTER TABLE public.audit_logs ALTER COLUMN timestamp DROP NOT NULL;
+ALTER TABLE public.stock_history ALTER COLUMN timestamp DROP NOT NULL;
+ALTER TABLE public.shift_records ALTER COLUMN start_time DROP NOT NULL;
+ALTER TABLE public.shift_records ALTER COLUMN created_at DROP NOT NULL;
+
+-- Add created_at and updated_at columns to all public tables so exported CSV headers match 100%
+ALTER TABLE public.branches ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.branches ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.barber_queue ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.barber_queue ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.barber_appointments ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.barber_appointments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.barber_records ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.barber_records ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.barber_services ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.barber_services ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.barber_commissions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.barber_commissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.repair_tickets ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.repair_tickets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.repair_work_orders ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.repair_work_orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.expenses ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.expenses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.salary_records ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.salary_records ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.staff_payments_audit ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.staff_payments_audit ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.customer_payments ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.customer_payments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.stock_history ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.stock_history ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.stock_transfers ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.stock_transfers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.documentss ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.documentss ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.medication_batches ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.medication_batches ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.prescription_records ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.prescription_records ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.imei_records ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.imei_records ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.warranty_certificates ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.warranty_certificates ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.shift_records ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.shift_records ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.warranty_certificates ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE public.shift_records ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+
 ALTER TABLE public.branches DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sales DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.barber_queue DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.barber_appointments DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.barber_records DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.barber_services DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.barber_commissions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.repair_tickets DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.repair_work_orders DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customers DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.expenses DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.salary_records DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.staff_payments_audit DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_payments DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.stock_history DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.stock_transfers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.documents DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.documentss DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.medication_batches DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.prescription_records DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.barber_services DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.barber_commissions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.imei_records DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.warranty_certificates DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.shift_records DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.barber_appointments DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.barber_records DISABLE ROW LEVEL SECURITY;
 
--- Grant broad API privileges to anon, authenticated, and service_role
+-- Grant broad API privileges
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role;
@@ -599,25 +760,25 @@ GRANT ALL ON FUNCTION public.increment_stock(TEXT, DECIMAL) TO anon, authenticat
 
 DO $$
 BEGIN
-  -- Add dynamic tables to realtime publication safely
-  ALTER PUBLICATION supabase_realtime ADD TABLE 
+  ALTER PUBLICATION supabase_realtime ADD TABLE
     public.products, 
     public.sales, 
     public.branches, 
     public.users, 
     public.barber_queue, 
-    public.repair_tickets, 
-    public.customers, 
+    public.barber_appointments,
+    public.barber_records,
+    public.repair_tickets,
+    public.repair_work_orders,
+    public.customers,
     public.expenses, 
     public.notifications, 
     public.audit_logs, 
     public.staff_payments_audit, 
     public.customer_payments,
     public.shift_records,
-    public.barber_appointments,
-    public.barber_records;
+    public.stock_transfers;
 EXCEPTION WHEN OTHERS THEN
-  -- Table already in publication or publication setup
   NULL;
 END $$;
 
@@ -633,7 +794,6 @@ VALUES
   ('documents', 'documents', true)
 ON CONFLICT (id) DO UPDATE SET public = true;
 
--- Ensure storage policies exist so Flutter app can upload and view images
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -646,13 +806,11 @@ BEGIN
 END $$;
 
 -- ============================================================================
--- 7. DEFAULT SEED DATA (Non-Destructive)
+-- 7. DEFAULT SEED DATA
 -- ============================================================================
 
--- Ensure the primary 'MAIN' branch exists for single-branch setups
 INSERT INTO public.branches (code, name, location)
 VALUES ('MAIN', 'Main Store / Headquarters', 'Accra Central')
 ON CONFLICT (code) DO NOTHING;
 
--- Reload postgREST schema cache
 NOTIFY pgrst, 'reload schema';

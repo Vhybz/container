@@ -56,8 +56,8 @@ class _PhonePromptDialogState extends State<PhonePromptDialog> {
               ),
               keyboardType: TextInputType.phone,
               inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(10),
+                FilteringTextInputFormatter.allow(RegExp(r'[\d+]')),
+                LengthLimitingTextInputFormatter(16),
               ],
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Required';

@@ -12,15 +12,21 @@ class AppTheme {
       color: AppColors.textDark,
     );
 
+    final TextStyle displayOswald = GoogleFonts.oswald(
+      color: AppColors.textDark,
+      fontWeight: FontWeight.bold,
+      letterSpacing: 0.8,
+    );
+
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
       fontFamily: GoogleFonts.inter().fontFamily,
       textTheme: GoogleFonts.interTextTheme(baseTextTheme).copyWith(
-        headlineLarge: baseInter.copyWith(fontWeight: FontWeight.w800, fontSize: 28, letterSpacing: -0.8),
-        headlineMedium: baseInter.copyWith(fontWeight: FontWeight.w700, fontSize: 24, letterSpacing: -0.6),
-        headlineSmall: baseInter.copyWith(fontWeight: FontWeight.w700, fontSize: 20, letterSpacing: -0.4),
-        titleLarge: baseInter.copyWith(fontWeight: FontWeight.w700, fontSize: 18, letterSpacing: -0.3),
+        headlineLarge: displayOswald.copyWith(fontSize: 28),
+        headlineMedium: displayOswald.copyWith(fontSize: 24),
+        headlineSmall: displayOswald.copyWith(fontSize: 20),
+        titleLarge: displayOswald.copyWith(fontSize: 18),
         titleMedium: baseInter.copyWith(fontWeight: FontWeight.w600, fontSize: 15, letterSpacing: -0.2),
         titleSmall: baseInter.copyWith(fontWeight: FontWeight.w600, fontSize: 13, letterSpacing: -0.1),
         bodyLarge: baseInter.copyWith(fontSize: 14, letterSpacing: -0.1),
@@ -33,49 +39,50 @@ class AppTheme {
       colorScheme: ColorScheme.fromSeed(
         seedColor: primaryColor,
         primary: primaryColor,
-        surface: Colors.white,
+        secondary: AppColors.electricSapphire,
+        surface: AppColors.lightCard,
         onSurface: AppColors.textDark,
-        surfaceContainerHighest: const Color(0xFFF1F5F9), // Slate-100
+        surfaceContainerHighest: const Color(0xFFE2E8F0),
         brightness: Brightness.light,
       ),
-      scaffoldBackgroundColor: const Color(0xFFF8FAFC), // Slate-50 clean canvas
+      scaffoldBackgroundColor: AppColors.lightScaffold,
       cardTheme: CardThemeData(
-        color: Colors.white,
+        color: AppColors.lightCard,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.m),
-          side: const BorderSide(color: Color(0xFFE2E8F0), width: 1),
+          side: const BorderSide(color: AppColors.borderGray, width: 1.0),
         ),
         margin: EdgeInsets.zero,
       ),
       appBarTheme: AppBarTheme(
-        backgroundColor: primaryColor,
+        backgroundColor: AppColors.primarySlate,
         elevation: 0,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.inter(
+        titleTextStyle: GoogleFonts.oswald(
           color: Colors.white,
           fontSize: 18,
-          fontWeight: FontWeight.w700,
-          letterSpacing: -0.2,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 1.0,
         ),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       dividerTheme: const DividerThemeData(
-        color: Color(0xFFE2E8F0),
+        color: AppColors.borderGray,
         thickness: 1,
         space: 1,
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.lightCard,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.l),
-          side: const BorderSide(color: Color(0xFFE2E8F0), width: 1),
+          side: const BorderSide(color: AppColors.borderGray, width: 1.0),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: Colors.white,
+        fillColor: AppColors.lightCard,
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         border: OutlineInputBorder(
@@ -84,22 +91,22 @@ class AppTheme {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.s),
-          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+          borderSide: const BorderSide(color: AppColors.borderGray),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.s),
-          borderSide: BorderSide(color: primaryColor, width: 1.8),
+          borderSide: const BorderSide(color: AppColors.electricSapphire, width: 1.8),
         ),
         labelStyle: GoogleFonts.inter(color: AppColors.textLight, fontSize: 13),
         hintStyle: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 13),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: primaryColor,
+          backgroundColor: AppColors.electricSapphire,
           foregroundColor: Colors.white,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-          textStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13, letterSpacing: 0.2),
+          textStyle: GoogleFonts.oswald(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.8),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.s)),
         ),
       ),
@@ -116,19 +123,15 @@ class AppTheme {
   }
 
   static ThemeData getDarkTheme(Color primaryColor) {
-    // High-end Dark Slate / Obsidian palette (similar to Linear & GitHub Pro)
-    const darkBg = Color(0xFF0B0F19); // Slate-950 deep canvas
-    const darkSurface = Color(0xFF111827); // Slate-900 card surface
-    const darkBorder = Color(0xFF1E293B); // Slate-800 structural border
-    const darkContainerHighest = Color(0xFF1E293B);
-    
-    final Color effectivePrimary = HSLColor.fromColor(primaryColor)
-        .withLightness((HSLColor.fromColor(primaryColor).lightness + 0.08).clamp(0.0, 0.85))
-        .toColor();
-
     final TextStyle baseInter = GoogleFonts.inter(
       fontFeatures: const [FontFeature.tabularFigures()],
-      color: const Color(0xFFF8FAFC),
+      color: AppColors.darkTextPrimary,
+    );
+
+    final TextStyle displayOswald = GoogleFonts.oswald(
+      color: AppColors.darkTextPrimary,
+      fontWeight: FontWeight.bold,
+      letterSpacing: 0.8,
     );
 
     return ThemeData(
@@ -136,107 +139,107 @@ class AppTheme {
       brightness: Brightness.dark,
       fontFamily: GoogleFonts.inter().fontFamily,
       textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme).copyWith(
-        headlineLarge: baseInter.copyWith(fontWeight: FontWeight.w800, fontSize: 28, letterSpacing: -0.8),
-        headlineMedium: baseInter.copyWith(fontWeight: FontWeight.w700, fontSize: 24, letterSpacing: -0.6),
-        headlineSmall: baseInter.copyWith(fontWeight: FontWeight.w700, fontSize: 20, letterSpacing: -0.4),
-        titleLarge: baseInter.copyWith(fontWeight: FontWeight.w700, fontSize: 18, letterSpacing: -0.3),
+        headlineLarge: displayOswald.copyWith(fontSize: 28),
+        headlineMedium: displayOswald.copyWith(fontSize: 24),
+        headlineSmall: displayOswald.copyWith(fontSize: 20),
+        titleLarge: displayOswald.copyWith(fontSize: 18),
         titleMedium: baseInter.copyWith(fontWeight: FontWeight.w600, fontSize: 15, letterSpacing: -0.2),
         titleSmall: baseInter.copyWith(fontWeight: FontWeight.w600, fontSize: 13, letterSpacing: -0.1),
         bodyLarge: baseInter.copyWith(fontSize: 14, color: const Color(0xFFE2E8F0)),
         bodyMedium: baseInter.copyWith(fontSize: 13, color: const Color(0xFFCBD5E1)),
-        bodySmall: baseInter.copyWith(fontSize: 11, color: const Color(0xFF94A3B8)),
+        bodySmall: baseInter.copyWith(fontSize: 11, color: AppColors.darkTextSecondary),
         labelLarge: baseInter.copyWith(fontWeight: FontWeight.w600, fontSize: 13),
         labelMedium: baseInter.copyWith(fontWeight: FontWeight.w600, fontSize: 11, letterSpacing: 0.3),
-        labelSmall: baseInter.copyWith(fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 0.6, color: const Color(0xFF94A3B8)),
+        labelSmall: baseInter.copyWith(fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 0.6, color: AppColors.darkTextSecondary),
       ),
       colorScheme: ColorScheme.fromSeed(
         seedColor: primaryColor,
-        primary: effectivePrimary,
-        secondary: effectivePrimary.withValues(alpha: 0.7),
-        surface: darkSurface,
-        onSurface: const Color(0xFFF8FAFC),
-        onSurfaceVariant: const Color(0xFF94A3B8),
-        surfaceContainerHighest: darkContainerHighest,
+        primary: AppColors.electricSapphire,
+        secondary: AppColors.electricSapphire.withValues(alpha: 0.7),
+        surface: AppColors.darkCard,
+        onSurface: AppColors.darkTextPrimary,
+        onSurfaceVariant: AppColors.darkTextSecondary,
+        surfaceContainerHighest: const Color(0xFF1A1F1A),
         brightness: Brightness.dark,
       ),
-      scaffoldBackgroundColor: darkBg,
+      scaffoldBackgroundColor: AppColors.darkScaffold,
       cardTheme: CardThemeData(
-        color: darkSurface,
+        color: AppColors.darkCard,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.m),
-          side: const BorderSide(color: darkBorder, width: 1),
+          side: const BorderSide(color: AppColors.borderDark, width: 1.0),
         ),
         margin: EdgeInsets.zero,
       ),
       appBarTheme: AppBarTheme(
-        backgroundColor: darkBg,
+        backgroundColor: AppColors.darkScaffold,
         elevation: 0,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.inter(
+        titleTextStyle: GoogleFonts.oswald(
           color: Colors.white,
           fontSize: 18,
-          fontWeight: FontWeight.w700,
-          letterSpacing: -0.2,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 1.0,
         ),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       dividerTheme: const DividerThemeData(
-        color: darkBorder,
+        color: AppColors.borderDark,
         thickness: 1,
         space: 1,
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: darkSurface,
+        backgroundColor: AppColors.darkCard,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.l),
-          side: const BorderSide(color: darkBorder, width: 1),
+          side: const BorderSide(color: AppColors.borderDark, width: 1.0),
         ),
       ),
       listTileTheme: const ListTileThemeData(
-        iconColor: Color(0xFF94A3B8),
-        textColor: Color(0xFFF8FAFC),
+        iconColor: AppColors.darkTextSecondary,
+        textColor: AppColors.darkTextPrimary,
       ),
-      iconTheme: const IconThemeData(color: Color(0xFF94A3B8)),
+      iconTheme: const IconThemeData(color: AppColors.darkTextSecondary),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: const Color(0xFF0F172A),
+        fillColor: AppColors.darkCard,
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.s),
-          borderSide: const BorderSide(color: darkBorder),
+          borderSide: const BorderSide(color: AppColors.borderDark),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.s),
-          borderSide: const BorderSide(color: darkBorder),
+          borderSide: const BorderSide(color: AppColors.borderDark),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.s),
-          borderSide: BorderSide(color: effectivePrimary, width: 1.8),
+          borderSide: const BorderSide(color: AppColors.electricSapphire, width: 1.8),
         ),
-        labelStyle: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 13),
+        labelStyle: GoogleFonts.inter(color: AppColors.darkTextSecondary, fontSize: 13),
         hintStyle: GoogleFonts.inter(color: const Color(0xFF64748B), fontSize: 13),
       ),
-      floatingActionButtonTheme: FloatingActionButtonThemeData(
-        backgroundColor: effectivePrimary,
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+        backgroundColor: AppColors.electricSapphire,
         foregroundColor: Colors.white,
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: effectivePrimary,
+          backgroundColor: AppColors.electricSapphire,
           foregroundColor: Colors.white,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-          textStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13, letterSpacing: 0.2),
+          textStyle: GoogleFonts.oswald(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.8),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.s)),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: const Color(0xFFF8FAFC),
-          side: const BorderSide(color: darkBorder, width: 1),
+          foregroundColor: AppColors.darkTextPrimary,
+          side: const BorderSide(color: AppColors.borderDark, width: 1.0),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           textStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.s)),

@@ -38,14 +38,14 @@ class CartNotifier extends StateNotifier<List<CartItem>> {
     _activePos = normalized;
   }
 
-  void addItem(Product product, double quantity, bool isWholesale) {
+  void addItem(Product product, double quantity, bool isWholesale, {String? imei}) {
     final price = product.getPrice(isWholesale);
     final basePrice = isWholesale ? product.wholesalePrice : product.retailPrice;
-    state = [...state, CartItem(product: product, quantity: quantity, priceAtSale: price, originalPrice: basePrice)];
+    state = [...state, CartItem(product: product, quantity: quantity, priceAtSale: price, originalPrice: basePrice, imei: imei)];
   }
 
-  void addItemWithCustomPrice(Product product, double quantity, double customPrice, double originalPrice) {
-    state = [...state, CartItem(product: product, quantity: quantity, priceAtSale: customPrice, originalPrice: originalPrice)];
+  void addItemWithCustomPrice(Product product, double quantity, double customPrice, double originalPrice, {String? imei}) {
+    state = [...state, CartItem(product: product, quantity: quantity, priceAtSale: customPrice, originalPrice: originalPrice, imei: imei)];
   }
 
   void removeItem(int index) {
@@ -70,6 +70,7 @@ class CartNotifier extends StateNotifier<List<CartItem>> {
             quantity: newQuantity,
             priceAtSale: current.priceAtSale,
             originalPrice: current.originalPrice,
+            imei: current.imei,
           )
         else
           state[i]

@@ -1,6 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
-import 'dart:convert';
 import '../models/product.dart';
 import 'product_service.dart';
 import 'supabase_base_service.dart';
@@ -22,8 +21,11 @@ class SupabaseProductService extends SupabaseBaseService implements ProductServi
         query = query.or('branch_code.eq.$branchCode,branch_code.is.null');
       }
       
-      final response = await query.eq('is_deleted', false).order('name', ascending: true);
-      return (response as List).map((json) => Product.fromJson(json)).toList();
+      final response = await query.order('name', ascending: true).limit(250);
+      return (response as List)
+          .map((json) => Product.fromJson(json))
+          .where((p) => !p.isDeleted)
+          .toList();
     } catch (e) {
       return [];
     }
@@ -87,14 +89,14 @@ class SupabaseProductService extends SupabaseBaseService implements ProductServi
       await storage.uploadBinary(
         path, 
         bytes,
-        fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+        fileOptions: const FileOptions(cacheControl: '31536000', upsert: true),
       );
       
       return storage.getPublicUrl(path);
     } catch (e) {
-      debugPrint('Storage Upload Warning (falling back to Base64 data URL): $e');
+      debugPrint('Storage Upload Error: $e');
+      return null;
     }
-    return 'data:image/png;base64,${base64Encode(bytes)}';
   }
 
   @override

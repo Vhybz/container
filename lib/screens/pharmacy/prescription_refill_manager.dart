@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../core/constants.dart';
 import '../../services/sale_provider.dart';
 import '../../services/daily_briefing_service.dart';
+import '../../services/sms_service.dart';
 import '../../models/sale_model.dart';
 import '../../widgets/main_app_bar.dart';
 
@@ -161,23 +162,46 @@ class _PrescriptionRefillManagerScreenState extends ConsumerState<PrescriptionRe
                                 const SizedBox(height: 6),
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
-                                    Text(
-                                      'Dispensed: ${DateFormat('dd MMM yyyy').format(sale.timestamp)} • Refill Due: ${DateFormat('dd MMM yyyy').format(dueDate)}',
-                                      style: const TextStyle(fontSize: 11, color: Colors.grey),
-                                    ),
-                                    ElevatedButton.icon(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFF25D366),
-                                        foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                        visualDensity: VisualDensity.compact,
+                                    Expanded(
+                                      child: Text(
+                                        'Dispensed: ${DateFormat('dd MMM yyyy').format(sale.timestamp)} • Refill Due: ${DateFormat('dd MMM yyyy').format(dueDate)}',
+                                        style: const TextStyle(fontSize: 11, color: Colors.grey),
                                       ),
-                                      icon: const Icon(Icons.chat, size: 14),
-                                      label: const Text('Send WhatsApp Reminder', style: TextStyle(fontSize: 11)),
-                                      onPressed: phone.isEmpty
-                                          ? null
-                                          : () => _sendRefillReminder(patient, phone, sale.prescription!),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 6,
+                                      children: [
+                                        ElevatedButton.icon(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: const Color(0xFF2E7D32),
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                            visualDensity: VisualDensity.compact,
+                                          ),
+                                          icon: const Icon(Icons.sms_outlined, size: 14),
+                                          label: const Text('Send SMS Reminder', style: TextStyle(fontSize: 11)),
+                                          onPressed: phone.isEmpty
+                                              ? null
+                                              : () => _sendSmsReminder(patient, phone, sale.prescription!),
+                                        ),
+                                        ElevatedButton.icon(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: const Color(0xFF25D366),
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                            visualDensity: VisualDensity.compact,
+                                          ),
+                                          icon: const Icon(Icons.chat, size: 14),
+                                          label: const Text('WhatsApp', style: TextStyle(fontSize: 11)),
+                                          onPressed: phone.isEmpty
+                                              ? null
+                                              : () => _sendRefillReminder(patient, phone, sale.prescription!),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
@@ -214,6 +238,22 @@ class _PrescriptionRefillManagerScreenState extends ConsumerState<PrescriptionRe
     if (p.contains('5 day')) return 5;
     if (p.contains('3 day')) return 3;
     return 14; // Standard 2-week default supply
+  }
+
+  Future<void> _sendSmsReminder(String patient, String phone, String prescription) async {
+    final message = 'EMMANUEL CHEMIST REFILL REMINDER: Hello $patient, your prescription for $prescription is due for refill. Please visit us or call 0209276200 for pickup/delivery.';
+    final success = await SmsService.sendGeneralSms(
+      phone: phone,
+      message: message,
+      customSenderId: 'EmmaChemist',
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: success ? const Color(0xFF2E7D32) : Colors.red,
+        content: Text(success ? 'Refill SMS reminder sent to $phone!' : 'Failed to send SMS to $phone.'),
+      ),
+    );
   }
 
   void _sendRefillReminder(String patient, String phone, String prescription) {

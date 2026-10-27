@@ -45,6 +45,15 @@ class ReceiptService {
       i.product.category.toUpperCase().contains('NSAID')
     );
 
+    final isTechOrBarber = sale.items.any((i) {
+      final cat = i.product.category.toUpperCase();
+      final name = i.product.name.toUpperCase();
+      return cat.contains('BARBER') || cat.contains('HAIR') || cat.contains('BEARD') || cat.contains('GROOM') ||
+             cat.contains('PHONE') || cat.contains('TECH') || cat.contains('REPAIR') || name.contains('IPHONE');
+    });
+
+    final showCustomerCare = isTechOrBarber || isPharmacySale;
+
     final String storeTitle = isPharmacySale ? 'EMMANUEL CHEMIST' : 'CONTAINER STORES';
     final String storeSubtitle = isPharmacySale ? 'Pharmacy & Dispensing Services' : 'Multi-Business Store';
     final String storeLocation = isPharmacySale 
@@ -204,7 +213,9 @@ class ReceiptService {
                 ],
               ),
               pw.SizedBox(height: 5),
-              ...sale.items.map((item) => pw.Column(
+              ...sale.items.map((item) {
+                final displayImei = item.imei ?? (item.product.imeiList != null && item.product.imeiList!.isNotEmpty ? item.product.imeiList!.first : null);
+                return pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
                     pw.Row(
@@ -217,8 +228,15 @@ class ReceiptService {
                         pw.Text(item.total.toStringAsFixed(2), style: pw.TextStyle(font: font, fontSize: 8)),
                       ],
                     ),
+                    if (displayImei != null && displayImei.trim().isNotEmpty)
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.only(top: 1, bottom: 2),
+                        child: pw.Text('IMEI / S/N: ${displayImei.trim()}', 
+                          style: pw.TextStyle(font: boldFont, fontSize: 7, color: PdfColors.black)),
+                      ),
                   ],
-                )),
+                );
+              }),
               pw.Divider(thickness: 0.5),
               
               pw.Row(
@@ -295,6 +313,10 @@ class ReceiptService {
                 child: pw.Column(
                   children: [
                     pw.Text(thankYouMsg, style: pw.TextStyle(font: boldFont, fontSize: 7), textAlign: pw.TextAlign.center),
+                    if (showCustomerCare) ...[
+                      pw.SizedBox(height: 5),
+                      pw.Text('Customer Care: +233 53 681 4449', style: pw.TextStyle(font: boldFont, fontSize: 8)),
+                    ],
                   ],
                 ),
               ),

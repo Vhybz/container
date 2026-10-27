@@ -6,6 +6,7 @@ import '../services/user_provider.dart';
 import '../core/constants.dart';
 import 'staff_switch_sheet.dart';
 import '../services/auth_provider.dart';
+import '../services/app_settings_provider.dart';
 
 export '../services/user_provider.dart' show passcodeUnlockedProvider;
 
@@ -149,13 +150,24 @@ class _PasscodeGuardState extends ConsumerState<PasscodeGuard> {
       }
     });
 
+    final appSettings = ref.watch(appSettingsProvider);
     final unlocked = ref.watch(passcodeUnlockedProvider);
     final user = ref.watch(currentUserProvider);
     final isLockedDown = ref.watch(systemLockdownProvider);
 
-    // Only bypass if explicitly unlocked AND system is not in lockdown.
-    if (unlocked && !isLockedDown) {
-      return widget.child;
+    // If emergency lockdown is active, lock screen is strictly enforced
+    if (isLockedDown) {
+      if (unlocked) return widget.child;
+    } else {
+      // Normal operation bypass conditions:
+      // 1. PIN enforcement is toggled off in settings (!appSettings.requirePasscode)
+      // 2. User has no 4-digit passcode configured (prevents trapping users with no PIN)
+      // 3. Session is already unlocked
+      if (!appSettings.requirePasscode || 
+          (user?.passcode == null || user!.passcode!.isEmpty) || 
+          unlocked) {
+        return widget.child;
+      }
     }
 
     final theme = Theme.of(context);

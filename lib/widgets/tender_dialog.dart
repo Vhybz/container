@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import '../core/constants.dart';
+import '../core/image_picker_helper.dart';
 import '../models/sale_model.dart';
 import '../services/expense_provider.dart';
 
@@ -229,8 +230,7 @@ class _TenderDialogState extends ConsumerState<TenderDialog> {
   }
 
   Future<void> _uploadBankReceipt() async {
-    final picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    final XFile? image = await ImagePickerHelper.pickAndCompressImage(source: ImageSource.gallery);
     if (image == null) return;
 
     setState(() => _isUploading = true);

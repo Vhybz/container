@@ -13,6 +13,8 @@ import '../services/menu_service.dart';
 import '../services/auth_provider.dart';
 import '../widgets/role_pop_scope.dart';
 import '../services/branch_provider.dart';
+import '../services/sale_provider.dart';
+import '../widgets/status_badge.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -111,6 +113,7 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
               _buildModernHeader(theme, user),
               const SizedBox(height: AppSpacing.xl),
               _buildProfileContent(theme, user, branchDisplay),
+              _buildMySalesSection(theme, user),
             ],
           ),
         ),
@@ -454,5 +457,164 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
         messenger.showSnackBar(const SnackBar(content: Text('Profile updated successfully!'), backgroundColor: Colors.green));
       });
     }
+  }
+
+  Widget _buildMySalesSection(ThemeData theme, UserAccount user) {
+    final allSales = ref.watch(saleHistoryProvider);
+    final now = DateTime.now();
+
+    final mySales = allSales.where((s) {
+      final cId = s.cashierId.trim().toLowerCase();
+      final cName = s.cashierName.trim().toLowerCase();
+      final uId = user.id.trim().toLowerCase();
+      final uName = user.name.trim().toLowerCase();
+      final firstName = user.firstName.trim().toLowerCase();
+
+      return cId == uId ||
+             cName == uName ||
+             (firstName.isNotEmpty && cName.contains(firstName));
+    }).toList();
+
+    final totalRevenue = mySales.fold(0.0, (sum, s) => sum + s.totalAmount);
+
+    final todaySales = mySales.where((s) =>
+        s.timestamp.year == now.year &&
+        s.timestamp.month == now.month &&
+        s.timestamp.day == now.day).toList();
+    final todayRevenue = todaySales.fold(0.0, (sum, s) => sum + s.totalAmount);
+
+    final monthSales = mySales.where((s) =>
+        s.timestamp.year == now.year &&
+        s.timestamp.month == now.month).toList();
+    final monthRevenue = monthSales.fold(0.0, (sum, s) => sum + s.totalAmount);
+
+    final recentSales = mySales.take(5).toList();
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: AppSpacing.xl),
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      decoration: BoxDecoration(
+        color: theme.cardTheme.color,
+        borderRadius: BorderRadius.circular(AppRadius.l),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.electricSapphire.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.point_of_sale_rounded, color: AppColors.electricSapphire, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'MY SALES & TRANSACTIONS',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    Text(
+                      'Performance Ledger for ${user.firstName}',
+                      style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 28),
+
+          // Stat Cards Row
+          Row(
+            children: [
+              Expanded(child: _buildSalesStatCard('TOTAL REVENUE', '₵${totalRevenue.toStringAsFixed(2)}', '${mySales.length} Total Sales', AppColors.electricSapphire, theme)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildSalesStatCard('TODAY\'S SALES', '₵${todayRevenue.toStringAsFixed(2)}', '${todaySales.length} Today', AppColors.darkEmeraldSuccess, theme)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildSalesStatCard('THIS MONTH', '₵${monthRevenue.toStringAsFixed(2)}', '${monthSales.length} This Month', AppColors.darkAmberWarning, theme)),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Recent Sales List
+          Text('RECENT TRANSACTIONS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurfaceVariant, letterSpacing: 0.5)),
+          const SizedBox(height: 8),
+          if (recentSales.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text('No sales recorded under this account yet.', style: TextStyle(fontSize: 12, color: Colors.grey), textAlign: TextAlign.center),
+            )
+          else
+            ...recentSales.map((sale) => Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+                side: BorderSide(color: theme.dividerColor.withValues(alpha: 0.4)),
+              ),
+              child: ListTile(
+                dense: true,
+                leading: CircleAvatar(
+                  backgroundColor: AppColors.electricSapphire.withValues(alpha: 0.12),
+                  child: const Icon(Icons.receipt_long_rounded, color: AppColors.electricSapphire, size: 18),
+                ),
+                title: Text(sale.id, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                subtitle: Text(
+                  '${DateFormat('MMM d, h:mm a').format(sale.timestamp)} • ${sale.customerName ?? "Walk-In Customer"} (${sale.items.length} items)',
+                  style: const TextStyle(fontSize: 11),
+                ),
+                trailing: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text('₵${sale.totalAmount.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 2),
+                    StatusBadge.fromStatus(sale.status.name, isDense: true),
+                  ],
+                ),
+              ),
+            )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSalesStatCard(String label, String value, String subtitle, Color accent, ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: accent.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: accent)),
+          const SizedBox(height: 4),
+          FittedBox(child: Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: theme.colorScheme.onSurface))),
+          const SizedBox(height: 2),
+          Text(subtitle, style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant)),
+        ],
+      ),
+    );
   }
 }

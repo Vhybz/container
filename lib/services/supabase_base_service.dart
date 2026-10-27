@@ -67,8 +67,14 @@ abstract class SupabaseBaseService {
     }
   }
 
-  /// Standard select with ordering
-  Future<List<Map<String, dynamic>>> selectSorted(String table, {String order = 'created_at', bool ascending = false, Map<String, dynamic>? filters}) async {
+  /// Standard select with ordering and query limits for low bandwidth & high performance
+  Future<List<Map<String, dynamic>>> selectSorted(
+    String table, {
+    String order = 'created_at',
+    bool ascending = false,
+    Map<String, dynamic>? filters,
+    int limit = 100,
+  }) async {
     var query = client.from(table).select();
     
     if (filters != null) {
@@ -79,12 +85,17 @@ abstract class SupabaseBaseService {
       });
     }
     
-    final response = await query.order(order, ascending: ascending);
+    final response = await query.order(order, ascending: ascending).limit(limit);
     return List<Map<String, dynamic>>.from(response);
   }
 
-  /// Standard stream with ordering
-  Stream<List<Map<String, dynamic>>> watchTable(String table, {Map<String, dynamic>? filters, String order = 'created_at'}) {
+  /// Standard stream with ordering and real-time stream limits
+  Stream<List<Map<String, dynamic>>> watchTable(
+    String table, {
+    Map<String, dynamic>? filters,
+    String order = 'created_at',
+    int limit = 100,
+  }) {
     var query = client.from(table).stream(primaryKey: ['id']);
     
     if (filters != null) {
@@ -95,6 +106,6 @@ abstract class SupabaseBaseService {
       });
     }
     
-    return query.order(order, ascending: false);
+    return query.order(order, ascending: false).limit(limit);
   }
 }
