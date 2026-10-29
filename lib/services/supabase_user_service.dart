@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_model.dart';
@@ -70,44 +71,28 @@ class SupabaseUserService extends SupabaseBaseService {
 
   Future<UserAccount?> getUserByIdOrEmail(String id, String email) async {
     try {
-      // 1. Try by Auth UID first
-      final response = await client.from('users').select().eq('id', id).maybeSingle();
-      if (response != null) {
-        return UserAccount.fromJson(response);
-      }
-
-      // 2. Fallback: Try by Email (case-insensitive)
       final emailClean = email.trim().toLowerCase();
-      final emailResponse = await client
+
+      // 1. Single combined fast query by Auth UID or Email
+      final response = await client
           .from('users')
           .select()
-          .ilike('email', emailClean)
-          .maybeSingle();
+          .or('id.eq.$id,email.ilike.$emailClean')
+          .limit(1)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 4));
 
-      if (emailResponse != null) {
-        final oldData = Map<String, dynamic>.from(emailResponse);
-        final oldId = oldData['id'] as String;
-
-        try {
-          await client.from('users').update({'id': id}).eq('id', oldId);
-          oldData['id'] = id;
-          return UserAccount.fromJson(oldData);
-        } catch (e) {
-          debugPrint('Failed to update user ID in public.users: $e');
-          try {
-            await client.from('users').delete().eq('id', oldId);
-            oldData['id'] = id;
-            await client.from('users').insert(oldData);
-            return UserAccount.fromJson(oldData);
-          } catch (err) {
-            debugPrint('Failed to re-insert user with new Auth ID: $err');
-            oldData['id'] = id;
-            return UserAccount.fromJson(oldData);
-          }
+      if (response != null) {
+        final userData = Map<String, dynamic>.from(response);
+        // If ID in public.users hasn't synced with Auth UID, sync in background
+        if (userData['id'] != id) {
+          unawaited(client.from('users').update({'id': id}).eq('id', userData['id']).then((_) {}, onError: (_) {}));
+          userData['id'] = id;
         }
+        return UserAccount.fromJson(userData);
       }
 
-      // 3. Fallback: Auto-create default profile for authenticated user if none exists in public.users
+      // 2. Fallback: Auto-create default profile for authenticated user if none exists
       try {
         final newUser = UserAccount(
           id: id,
@@ -126,11 +111,10 @@ class SupabaseUserService extends SupabaseBaseService {
             '/admin/product-report',
             '/admin/staff',
             '/admin/salaries',
-            '/cashier', 
             '/settings'
           },
         );
-        await addUser(newUser);
+        unawaited(addUser(newUser));
         return newUser;
       } catch (autoErr) {
         debugPrint('Auto-create profile error: $autoErr');

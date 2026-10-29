@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:video_player/video_player.dart';
 import '../core/constants.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -21,6 +22,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       icon: Icons.local_pharmacy_rounded,
       color: const Color(0xFF10B981),
       bgAsset: 'assets/images/bgi/meds.jpg',
+      videoAsset: 'assets/lottie/pharmacy.mp4',
     ),
     OnboardingData(
       title: 'Barbershop Operations',
@@ -29,6 +31,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       icon: Icons.content_cut_rounded,
       color: const Color(0xFFF59E0B),
       bgAsset: 'assets/images/bgi/shave.jpg',
+      videoAsset: 'assets/lottie/barbershop.mp4',
     ),
     OnboardingData(
       title: 'Tech & Phone Shop',
@@ -37,6 +40,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       icon: Icons.phone_android_rounded,
       color: const Color(0xFF2563EB),
       bgAsset: 'assets/images/bgi/ass.jpg',
+      videoAsset: 'assets/lottie/smartphone.mp4',
     ),
     OnboardingData(
       title: 'Cross-Sector Analytics',
@@ -45,6 +49,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       icon: Icons.insights_rounded,
       color: const Color(0xFF4F46E5),
       bgAsset: 'assets/images/CLI.png',
+      videoAsset: 'assets/lottie/data_analytics.mp4',
     ),
   ];
 
@@ -186,27 +191,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          // Animated Icon/Graphic
+          // Animated Video Graphic from assets/lottie
           AnimatedScale(
             duration: const Duration(milliseconds: 1000),
             scale: isActive ? 1.0 : 0.4,
             curve: Curves.elasticOut,
-            child: Container(
-              padding: EdgeInsets.all(isSmall ? 25 : 35),
-              decoration: BoxDecoration(
-                color: data.color.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-                border: Border.all(color: data.color.withValues(alpha: 0.3), width: 2),
-                boxShadow: [
-                  if (isActive)
-                    BoxShadow(
-                      color: data.color.withValues(alpha: 0.3),
-                      blurRadius: 30,
-                      spreadRadius: 2,
-                    ),
-                ],
-              ),
-              child: Icon(data.icon, size: isSmall ? 60 : 80, color: data.color),
+            child: OnboardingVideoPlayer(
+              videoPath: data.videoAsset,
+              color: data.color,
+              isSmall: isSmall,
             ),
           ),
           SizedBox(height: isSmall ? 35 : 50),
@@ -281,6 +274,103 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 }
 
+class OnboardingVideoPlayer extends StatefulWidget {
+  final String videoPath;
+  final Color color;
+  final bool isSmall;
+
+  const OnboardingVideoPlayer({
+    super.key,
+    required this.videoPath,
+    required this.color,
+    this.isSmall = false,
+  });
+
+  @override
+  State<OnboardingVideoPlayer> createState() => _OnboardingVideoPlayerState();
+}
+
+class _OnboardingVideoPlayerState extends State<OnboardingVideoPlayer> {
+  late VideoPlayerController _controller;
+  bool _isInitialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initVideo();
+  }
+
+  @override
+  void didUpdateWidget(covariant OnboardingVideoPlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.videoPath != widget.videoPath) {
+      _controller.dispose();
+      _isInitialized = false;
+      _initVideo();
+    }
+  }
+
+  Future<void> _initVideo() async {
+    _controller = VideoPlayerController.asset(widget.videoPath);
+    try {
+      await _controller.initialize();
+      _controller.setLooping(true);
+      _controller.setVolume(0.0);
+      await _controller.play();
+      if (mounted) {
+        setState(() => _isInitialized = true);
+      }
+    } catch (e) {
+      debugPrint('Onboarding video player error: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = widget.isSmall ? 140.0 : 180.0;
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: widget.color.withValues(alpha: 0.15),
+        shape: BoxShape.circle,
+        border: Border.all(color: widget.color.withValues(alpha: 0.35), width: 2.5),
+        boxShadow: [
+          BoxShadow(
+            color: widget.color.withValues(alpha: 0.3),
+            blurRadius: 30,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: ClipOval(
+        child: _isInitialized
+            ? FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: _controller.value.size.width,
+                  height: _controller.value.size.height,
+                  child: VideoPlayer(_controller),
+                ),
+              )
+            : Center(
+                child: CircularProgressIndicator(
+                  color: widget.color,
+                  strokeWidth: 2,
+                ),
+              ),
+      ),
+    );
+  }
+}
+
 class OnboardingData {
   final String title;
   final String subtitle;
@@ -288,6 +378,7 @@ class OnboardingData {
   final IconData icon;
   final Color color;
   final String bgAsset;
+  final String videoAsset;
 
   OnboardingData({
     required this.title, 
@@ -296,5 +387,6 @@ class OnboardingData {
     required this.icon,
     required this.color,
     required this.bgAsset,
+    required this.videoAsset,
   });
 }

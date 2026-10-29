@@ -1062,7 +1062,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
             InkWell(
               onTap: () => Navigator.pushNamed(context, '/admin/sales'), // Now points to Sales Analytics where Till Ledger is
               borderRadius: BorderRadius.circular(AppRadius.m),
-              child: _kpiWithTrend(context, 'Cash at Shop', '₵${tillState.currentBalance.abs() < 0.01 ? "0" : tillState.currentBalance.toStringAsFixed(0)}', Icons.account_balance_wallet_rounded, Colors.orange.shade800, 'TILL'),
+              child: _kpiWithTrend(context, 'Cash at Shop', '₵${tillState.currentBalance <= 0 ? "0" : tillState.currentBalance.toStringAsFixed(0)}', Icons.account_balance_wallet_rounded, Colors.orange.shade800, 'TILL'),
             ),
             _kpiWithTrend(context, 'Total Debt', '₵${totalDebt.toStringAsFixed(0)}', Icons.money_off, Colors.red, 'TOTAL'),
             _kpiWithTrend(context, 'Promo Impact', '₵${totalDiscounts.toStringAsFixed(0)}', Icons.auto_awesome, Colors.orange, 'SAVED'),

@@ -127,7 +127,7 @@ class _PasscodeGuardState extends ConsumerState<PasscodeGuard> {
                   setDialogState(() => _isVerifyingPassword = false);
                 }
               },
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryMaroon, foregroundColor: Colors.white),
+              style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.white),
               child: const Text('UNLOCK'),
             ),
           ],
@@ -199,8 +199,8 @@ class _PasscodeGuardState extends ConsumerState<PasscodeGuard> {
                       height: 14,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: filled ? AppColors.primaryMaroon : (isDark ? Colors.grey.shade800 : Colors.grey.shade200),
-                        border: Border.all(color: filled ? AppColors.primaryMaroon : theme.dividerColor),
+                        color: filled ? theme.colorScheme.primary : (isDark ? Colors.grey.shade800 : Colors.grey.shade200),
+                        border: Border.all(color: filled ? theme.colorScheme.primary : theme.dividerColor),
                       ),
                     );
                   }),

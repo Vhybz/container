@@ -16,6 +16,7 @@ import '../services/sync_provider.dart';
 import '../services/shift_provider.dart';
 import 'shift_handover_dialog.dart';
 import 'cloud_sync_indicator.dart';
+import '../services/pwa_install_service.dart';
 
 class MainAppBar extends ConsumerStatefulWidget implements PreferredSizeWidget {
   final String title;
@@ -62,32 +63,33 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
   @override
   Widget build(BuildContext context) {
     final bool isMobile = MediaQuery.of(context).size.width < 600;
+    final bool canInstallPwa = ref.watch(pwaInstallableProvider);
 
     final theme = Theme.of(context);
     final user = ref.watch(currentUserProvider);
     final role = user?.activePrimaryRole;
     
-    final themeState = ref.watch(themeProvider);
-    final bool isDark = themeState.mode == ThemeMode.dark;
+    final Color appBarBg = theme.appBarTheme.backgroundColor ?? theme.colorScheme.primary;
+    final bool isHeaderDark = appBarBg.computeLuminance() < 0.45;
     
-    final Color roleColor = _getRoleColor(role, isDark, theme);
+    final Color roleColor = _getRoleColor(role, isHeaderDark, theme);
     final List<SystemNotification> notifications = ref.watch(notificationProvider);
     final unreadCount = notifications.where((n) => !n.isRead).length;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.light,
+        statusBarIconBrightness: isHeaderDark ? Brightness.light : Brightness.dark,
         systemNavigationBarColor: Colors.transparent,
-        systemNavigationBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        systemNavigationBarIconBrightness: isHeaderDark ? Brightness.light : Brightness.dark,
       ),
       child: Container(
         padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
         decoration: BoxDecoration(
-          color: AppColors.primarySlate,
-          border: const Border(
+          color: appBarBg,
+          border: Border(
             bottom: BorderSide(
-              color: Color(0xFF1E293B),
+              color: isHeaderDark ? Colors.white.withValues(alpha: 0.15) : Colors.black.withValues(alpha: 0.15),
               width: 1,
             ),
           ),
@@ -104,6 +106,7 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
                     context, 
                     Icons.arrow_back_rounded, 
                     () => Navigator.maybePop(context),
+                    isDark: isHeaderDark,
                     size: 40,
                     iconSize: 24,
                   )
@@ -112,6 +115,7 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
                     context, 
                     Icons.menu_rounded, 
                     () => Scaffold.of(context).openDrawer(),
+                    isDark: isHeaderDark,
                     size: 40,
                     iconSize: 24,
                   )
@@ -128,13 +132,27 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: _isToolsMode 
-                        ? _buildToolsRow(context, isMobile, isDark) 
-                        : _buildBrandInfo(user, isMobile),
+                        ? _buildToolsRow(context, isMobile, isHeaderDark) 
+                        : _buildBrandInfo(user, isMobile, isHeaderDark),
                     ),
                   ),
                 ),
 
                 // 3. Right Actions (Critical Apps)
+                if (canInstallPwa) ...[
+                  SizedBox(width: isMobile ? 2 : 4),
+                  ElevatedButton.icon(
+                    onPressed: () => ref.read(pwaInstallableProvider.notifier).promptInstall(),
+                    icon: Icon(isMobile ? Icons.download_rounded : Icons.desktop_windows_rounded, size: 14),
+                    label: Text(isMobile ? 'INSTALL' : 'INSTALL APP', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.amber.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
                 SizedBox(width: isMobile ? 2 : 4),
                 _buildRoundButton(
                   context, 
@@ -143,6 +161,7 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
                     HapticFeedback.mediumImpact();
                     ref.read(passcodeUnlockedProvider.notifier).state = false;
                   },
+                  isDark: isHeaderDark,
                   size: isMobile ? 32 : 42,
                   iconSize: isMobile ? 16 : 20,
                   tooltip: 'Lock System',
@@ -153,18 +172,19 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
                     context, 
                     Icons.calculate_outlined, 
                     () => showDialog(context: context, builder: (context) => const CalculatorDialog()),
+                    isDark: isHeaderDark,
                     size: 42,
                     iconSize: 20,
                     tooltip: 'Quick Calculator',
                   ),
                 ],
                 SizedBox(width: isMobile ? 2 : 4),
-                _buildShiftButton(context, ref, isMobile),
+                _buildShiftButton(context, isMobile),
                 if (widget.actions != null) ...widget.actions!,
                 SizedBox(width: isMobile ? 2 : 4),
-                _buildNotificationButton(context, unreadCount, () => _showNotificationsDialog(context, ref, notifications), isMobile),
+                _buildNotificationButton(context, unreadCount, () => _showNotificationsDialog(context, notifications), isMobile, isDark: isHeaderDark),
                 SizedBox(width: isMobile ? 2 : 4),
-                _buildProfileAvatar(context, ref, roleColor, isMobile),
+                _buildProfileAvatar(context, roleColor, isMobile, isDark: isHeaderDark),
               ],
             ),
           ),
@@ -173,7 +193,7 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
     );
   }
 
-  Widget _buildShiftButton(BuildContext context, WidgetRef ref, bool isMobile) {
+  Widget _buildShiftButton(BuildContext context, bool isMobile) {
     final shift = ref.watch(shiftProvider);
     final isShiftActive = shift != null;
 
@@ -183,7 +203,7 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
         icon: Stack(
           children: [
             Icon(
-              isShiftActive ? Icons.point_of_sale : Icons.lock_open,
+              isShiftActive ? Icons.point_of_sale : Icons.punch_clock_outlined,
               size: 20,
               color: isShiftActive ? Colors.greenAccent : Colors.white70,
             ),
@@ -231,7 +251,7 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                isShiftActive ? Icons.point_of_sale : Icons.lock_open,
+                isShiftActive ? Icons.point_of_sale : Icons.punch_clock_outlined,
                 size: 16,
                 color: isShiftActive ? Colors.greenAccent : Colors.white,
               ),
@@ -251,11 +271,14 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
     );
   }
 
-  Widget _buildBrandInfo(UserAccount? user, bool isMobile) {
+  Widget _buildBrandInfo(UserAccount? user, bool isMobile, bool isDark) {
     final currentBranch = ref.watch(currentBranchProvider);
     final String branchText = currentBranch != null 
         ? '${currentBranch.name} (${currentBranch.location})'
         : (user?.branchCode ?? 'Multi-Business Manager');
+
+    final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
+    final subtextColor = isDark ? Colors.white.withValues(alpha: 0.7) : const Color(0xFF475569);
 
     return Column(
       key: const ValueKey('brand_info'),
@@ -271,7 +294,7 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
                 style: GoogleFonts.oswald(
                   fontSize: isMobile ? 15 : 19,
                   fontWeight: FontWeight.bold,
-                  color: Colors.white,
+                  color: textColor,
                   letterSpacing: isMobile ? 0.3 : 0.8,
                 ),
                 maxLines: 1,
@@ -290,7 +313,7 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
             : branchText,
           style: TextStyle(
             fontSize: isMobile ? 8.5 : 9,
-            color: Colors.white.withValues(alpha: 0.6),
+            color: subtextColor,
             fontWeight: FontWeight.w600,
           ),
           maxLines: 1,
@@ -301,36 +324,47 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
   }
 
   Widget _buildToolsRow(BuildContext context, bool isMobile, bool isDark) {
+    final canInstallPwa = ref.watch(pwaInstallableProvider);
+
     return Row(
       key: const ValueKey('tools'),
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
+        if (canInstallPwa) ...[
+          IconButton(
+            onPressed: () => ref.read(pwaInstallableProvider.notifier).promptInstall(),
+            icon: const Icon(Icons.install_mobile_rounded, color: Colors.amber, size: 22),
+            tooltip: 'Install Container App (PWA)',
+          ),
+          const SizedBox(width: 8),
+        ],
         _buildToolIcon(Icons.refresh_rounded, () {
           ref.read(syncProvider.notifier).syncAll();
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Syncing Data...'), duration: Duration(milliseconds: 500)));
-        }),
+        }, isDark),
         const SizedBox(width: 12),
-        _buildToolIcon(Icons.calculate_outlined, () => showDialog(context: context, builder: (context) => const CalculatorDialog())),
+        _buildToolIcon(Icons.calculate_outlined, () => showDialog(context: context, builder: (context) => const CalculatorDialog()), isDark),
         const SizedBox(width: 12),
-        _buildToolIcon(Icons.auto_awesome_outlined, () => _showAiChatbot(context)),
+        _buildToolIcon(Icons.auto_awesome_outlined, () => _showAiChatbot(context), isDark),
         if (!isMobile) ...[
           const SizedBox(width: 12),
           _buildToolIcon(
             isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined, 
-            () => ref.read(themeProvider.notifier).toggleTheme(!isDark)
+            () => ref.read(themeProvider.notifier).toggleTheme(!isDark),
+            isDark,
           ),
         ],
       ],
     );
   }
 
-  Widget _buildToolIcon(IconData icon, VoidCallback onTap) {
+  Widget _buildToolIcon(IconData icon, VoidCallback onTap, bool isDark) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Padding(
         padding: const EdgeInsets.all(8.0),
-        child: Icon(icon, color: Colors.white, size: 22),
+        child: Icon(icon, color: isDark ? Colors.white : Colors.black, size: 22),
       ),
     );
   }
@@ -341,7 +375,7 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
     return theme.colorScheme.primary;
   }
 
-  Widget _buildNotificationButton(BuildContext context, int count, VoidCallback onTap, bool isMobile) {
+  Widget _buildNotificationButton(BuildContext context, int count, VoidCallback onTap, bool isMobile, {bool isDark = true}) {
     return Stack(
       alignment: Alignment.center,
       children: [
@@ -349,6 +383,7 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
           context, 
           Icons.notifications_none_rounded, 
           onTap,
+          isDark: isDark,
           size: isMobile ? 36 : 42,
           iconSize: isMobile ? 18 : 20,
         ),
@@ -371,9 +406,10 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
     );
   }
 
-  Widget _buildProfileAvatar(BuildContext context, WidgetRef ref, Color roleColor, bool isMobile) {
+  Widget _buildProfileAvatar(BuildContext context, Color roleColor, bool isMobile, {bool isDark = true}) {
     final user = ref.watch(currentUserProvider);
     final size = isMobile ? 32.0 : 38.0;
+    final iconColor = isDark ? Colors.white : Colors.black;
 
     return InkWell(
       onTap: () => widget.onProfileTap != null ? widget.onProfileTap!() : Navigator.pushNamed(context, '/profile'),
@@ -383,34 +419,38 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 2),
-          color: Colors.white24,
+          border: Border.all(color: isDark ? roleColor.withValues(alpha: 0.8) : Colors.black26, width: 2),
+          color: isDark ? Colors.white24 : Colors.black12,
         ),
         child: ClipOval(
           child: user?.photoUrl != null && user!.photoUrl!.isNotEmpty
               ? Image.network(
                   user.photoUrl!,
                   fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Icon(Icons.person, color: Colors.white, size: size * 0.6),
+                  errorBuilder: (context, error, stackTrace) => Icon(Icons.person, color: iconColor, size: size * 0.6),
                 )
-              : Icon(Icons.person, color: Colors.white, size: size * 0.6),
+              : Icon(Icons.person, color: iconColor, size: size * 0.6),
         ),
       ),
     );
   }
 
-  Widget _buildRoundButton(BuildContext context, IconData icon, VoidCallback onTap, {double size = 40, double iconSize = 20, Color? color, String? tooltip}) {
+  Widget _buildRoundButton(BuildContext context, IconData icon, VoidCallback onTap, {bool isDark = true, double size = 40, double iconSize = 20, Color? color, String? tooltip}) {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    final btnColor = color ?? primaryColor.withValues(alpha: isDark ? 0.20 : 0.10);
+    final iconColor = isDark ? Colors.white : primaryColor;
+
     Widget button = SizedBox(
       width: size,
       height: size,
       child: Material(
-        color: color ?? Colors.white.withValues(alpha: 0.15),
+        color: btnColor,
         shape: const CircleBorder(),
         child: InkWell(
           onTap: onTap,
           customBorder: const CircleBorder(),
           child: Center(
-            child: Icon(icon, size: iconSize, color: Colors.white),
+            child: Icon(icon, size: iconSize, color: iconColor),
           ),
         ),
       ),
@@ -423,7 +463,7 @@ class _MainAppBarState extends ConsumerState<MainAppBar> with SingleTickerProvid
   }
 
   // Show Notifications
-  void _showNotificationsDialog(BuildContext context, WidgetRef ref, List<SystemNotification> allNotifications) {
+  void _showNotificationsDialog(BuildContext context, List<SystemNotification> allNotifications) {
     final theme = Theme.of(context);
     // Only show unread notifications in the "Recent" popup to satisfy "Clear All" logic
     final notifications = allNotifications.where((n) => !n.isRead).toList();

@@ -15,16 +15,17 @@ import '../widgets/role_pop_scope.dart';
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
-  static const List<Color> themeColors = [
-    AppColors.primaryMaroon,
-    Colors.black,
-    Color(0xFFE91E63), // Deep Pink
-    Color(0xFF2962FF), // Electric Blue
-    Color(0xFF00E676), // Neon Green
-    Color(0xFFFF3D00), // Vivid Orange
-    Color(0xFF7C4DFF), // Electric Violet
-    Color(0xFFFFD600), // Yellow Gold
-    Color(0xFF00B0FF), // Bright Cyan
+  static const List<Map<String, dynamic>> brandSwatches = [
+    {'name': 'Snow White', 'color': Color(0xFFFFFFFF)},
+    {'name': 'Electric Sapphire', 'color': Color(0xFF2563EB)},
+    {'name': 'Deep Maroon', 'color': Color(0xFF6B1111)},
+    {'name': 'Emerald Green', 'color': Color(0xFF10B981)},
+    {'name': 'Amber Gold', 'color': Color(0xFFF59E0B)},
+    {'name': 'Crimson Red', 'color': Color(0xFFEF4444)},
+    {'name': 'Royal Violet', 'color': Color(0xFF7C4DFF)},
+    {'name': 'Bright Cyan', 'color': Color(0xFF00B0FF)},
+    {'name': 'Midnight Slate', 'color': Color(0xFF0F172A)},
+    {'name': 'Pitch Black', 'color': Color(0xFF000000)},
   ];
 
   @override
@@ -104,7 +105,7 @@ class SettingsScreen extends ConsumerWidget {
                                   Wrap(
                                     spacing: 16,
                                     runSpacing: 16,
-                                    children: themeColors.map((color) => _buildColorDot(ref, color, themeState.primaryColor)).toList(),
+                                    children: brandSwatches.map((swatch) => _buildColorDot(ref, swatch, themeState.primaryColor)).toList(),
                                   ),
                                 ],
                               ),
@@ -263,7 +264,7 @@ class SettingsScreen extends ConsumerWidget {
         segments: const [
           ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_outlined), label: Text('Light')),
           ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_outlined), label: Text('Dark')),
-          ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.settings_suggest_outlined), label: Text('Auto')),
+          ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.settings_suggest_outlined), label: Text('System Default')),
         ],
         selected: {state.mode},
         onSelectionChanged: (newSelection) {
@@ -282,21 +283,38 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildColorDot(WidgetRef ref, Color color, Color selectedColor) {
+  Widget _buildColorDot(WidgetRef ref, Map<String, dynamic> swatch, Color selectedColor) {
+    final Color color = swatch['color'] as Color;
+    final String name = swatch['name'] as String;
     final isSelected = color.toARGB32() == selectedColor.toARGB32();
-    return InkWell(
-      onTap: () => ref.read(themeProvider.notifier).setPrimaryColor(color),
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          border: isSelected ? Border.all(color: Colors.white, width: 3) : null,
-          boxShadow: isSelected ? [BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 8, spreadRadius: 2)] : null,
+    final bool isLightColor = color.computeLuminance() > 0.45;
+
+    return Tooltip(
+      message: name,
+      child: InkWell(
+        onTap: () => ref.read(themeProvider.notifier).setPrimaryColor(color),
+        borderRadius: BorderRadius.circular(22),
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: isSelected 
+                ? Border.all(color: isLightColor ? Colors.black : Colors.white, width: 3) 
+                : Border.all(color: Colors.grey.withValues(alpha: 0.3), width: 1),
+            boxShadow: isSelected 
+                ? [BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 10, spreadRadius: 2)] 
+                : null,
+          ),
+          child: isSelected 
+              ? Icon(
+                  Icons.check_rounded, 
+                  color: isLightColor ? Colors.black : Colors.white, 
+                  size: 22,
+                ) 
+              : null,
         ),
-        child: isSelected ? const Icon(Icons.check, color: Colors.white, size: 20) : null,
       ),
     );
   }

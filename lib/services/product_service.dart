@@ -92,34 +92,31 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
     _subscription?.cancel();
     final user = ref.read(currentUserProvider);
     if (user != null) {
-      final roles = user.activeRoles;
-      final bool canSeeAll = roles.contains(UserRole.admin) || roles.contains(UserRole.superAdmin);
-      
-      if (canSeeAll || user.branchCode != null) {
-        // 1. Initial Fresh Fetch (Prioritize Network)
-        _fetchFreshProducts(user.branchCode);
+      final String? branchCode = (user.branchCode != null && user.branchCode!.trim().isNotEmpty)
+          ? user.branchCode!.trim()
+          : null;
 
-        // 2. Start Real-time Stream
-        _subscription = _service.watchProducts(user.branchCode).listen(
-          (products) {
-            _applyPendingAndSetState(products);
-            _saveToCache(products);
-          },
-          onError: (e, st) {
-            if (kIsWeb) {
-              debugPrint('Product Stream Error: $e');
-            } else {
-              debugPrint('Product Stream Connection Error: $e');
-            }
-            if (!state.hasValue) {
-               state = AsyncValue.error(e, st);
-            }
-          },
-          cancelOnError: false,
-        );
-      } else {
-        state = const AsyncValue.data([]);
-      }
+      // 1. Initial Fresh Fetch (Prioritize Network)
+      _fetchFreshProducts(branchCode);
+
+      // 2. Start Real-time Stream
+      _subscription = _service.watchProducts(branchCode).listen(
+        (products) {
+          _applyPendingAndSetState(products);
+          _saveToCache(products);
+        },
+        onError: (e, st) {
+          if (kIsWeb) {
+            debugPrint('Product Stream Error: $e');
+          } else {
+            debugPrint('Product Stream Connection Error: $e');
+          }
+          if (!state.hasValue) {
+             state = AsyncValue.error(e, st);
+          }
+        },
+        cancelOnError: false,
+      );
     } else {
       state = const AsyncValue.data([]);
     }

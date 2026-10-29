@@ -805,11 +805,7 @@ class _PosTransactionHistoryViewState extends ConsumerState<PosTransactionHistor
                     barRods: [
                       BarChartRodData(
                         toY: e.value,
-                        gradient: const LinearGradient(
-                          colors: [AppColors.accentBlue, AppColors.electricSapphire],
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                        ),
+                        color: theme.colorScheme.primary,
                         width: 14,
                         borderRadius: BorderRadius.circular(4),
                       ),

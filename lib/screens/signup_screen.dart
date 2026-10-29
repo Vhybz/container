@@ -549,7 +549,6 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   '/admin/product-report',
                   '/admin/staff',
                   '/admin/salaries',
-                  '/cashier', 
                   '/butcher', 
                   '/settings'
                 } 

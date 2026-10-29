@@ -109,7 +109,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
                   Navigator.pushReplacementNamed(context, '/barbershop');
                   break;
                 case UserRole.cashier:
-                  Navigator.pushReplacementNamed(context, '/cashier');
+                  Navigator.pushReplacementNamed(context, '/admin/sales');
                   break;
                 case UserRole.butcher:
                   Navigator.pushReplacementNamed(context, '/butcher');

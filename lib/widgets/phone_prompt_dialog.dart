@@ -30,11 +30,11 @@ class _PhonePromptDialogState extends State<PhonePromptDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.m)),
-      title: const Row(
+      title: Row(
         children: [
-          Icon(Icons.sms_outlined, color: AppColors.primaryMaroon),
-          SizedBox(width: 12),
-          Text('Enter Phone Number', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Icon(Icons.sms_outlined, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 12),
+          const Text('Enter Phone Number', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         ],
       ),
       content: Form(
@@ -77,7 +77,7 @@ class _PhonePromptDialogState extends State<PhonePromptDialog> {
         ElevatedButton(
           onPressed: _submit,
           style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.primaryMaroon,
+            backgroundColor: Theme.of(context).colorScheme.primary,
             foregroundColor: Colors.white,
           ),
           child: const Text('SEND SMS'),

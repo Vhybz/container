@@ -115,6 +115,7 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> with Si
       return matchesSearch && matchesStatus && matchesDate && matchesCashier && matchesPayment && matchesMinTotal && matchesMaxTotal;
     }).toList();
 
+    final isMobile = ResponsiveLayout.isMobile(context);
     final isDesktop = ResponsiveLayout.isDesktop(context);
     const currentRoute = '/admin/sales';
 
@@ -151,6 +152,10 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> with Si
                 children: [
                   TabBar(
                     controller: _tabController,
+                    isScrollable: isMobile,
+                    labelColor: theme.colorScheme.primary,
+                    unselectedLabelColor: Colors.grey,
+                    indicatorColor: theme.colorScheme.primary,
                     tabs: const [
                       Tab(text: 'OVERVIEW', icon: Icon(Icons.analytics_outlined)),
                       Tab(text: 'TRANSACTIONS', icon: Icon(Icons.history_rounded)),
@@ -512,18 +517,26 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> with Si
     final netProfit = totalRevenue - totalExpenses;
 
     return LayoutBuilder(builder: (context, constraints) {
-      final bool useColumn = constraints.maxWidth < 900;
+      final bool useColumn = constraints.maxWidth < 600;
       
       if (useColumn) {
         return Column(
           children: [
-            _reportCard(context, 'Gross Volume', '₵ ${totalRevenue.toStringAsFixed(2)}', Icons.payments, Colors.blue),
-            const SizedBox(height: AppSpacing.m),
-            _reportCard(context, 'Total Expenses', '₵ ${totalExpenses.toStringAsFixed(2)}', Icons.trending_down, Colors.red),
-            const SizedBox(height: AppSpacing.m),
-            _reportCard(context, 'Net Profit', '₵ ${netProfit.toStringAsFixed(2)}', Icons.account_balance_wallet, Colors.green),
-            const SizedBox(height: AppSpacing.m),
-            _reportCard(context, 'Cash at Shop', '₵ ${tillBalance.toStringAsFixed(2)}', Icons.money, Colors.orange),
+            Row(
+              children: [
+                Expanded(child: _reportCard(context, 'Gross Volume', '₵ ${totalRevenue.toStringAsFixed(2)}', Icons.payments, Colors.blue)),
+                const SizedBox(width: AppSpacing.s),
+                Expanded(child: _reportCard(context, 'Total Expenses', '₵ ${totalExpenses.toStringAsFixed(2)}', Icons.trending_down, Colors.red)),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.s),
+            Row(
+              children: [
+                Expanded(child: _reportCard(context, 'Net Profit', '₵ ${netProfit.toStringAsFixed(2)}', Icons.account_balance_wallet, Colors.green)),
+                const SizedBox(width: AppSpacing.s),
+                Expanded(child: _reportCard(context, 'Cash at Shop', '₵ ${tillBalance.toStringAsFixed(2)}', Icons.money, Colors.orange)),
+              ],
+            ),
           ],
         );
       }
@@ -547,7 +560,8 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> with Si
     final isDark = theme.brightness == Brightness.dark;
 
     return Container(
-      padding: const EdgeInsets.all(AppSpacing.l),
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.m),
       decoration: BoxDecoration(
         color: theme.cardTheme.color,
         borderRadius: BorderRadius.circular(AppRadius.m),
@@ -1585,12 +1599,14 @@ class _SalesReportsScreenState extends ConsumerState<SalesReportsScreen> with Si
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('Revenue Breakdown by Shop', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 6),
               Wrap(
                 spacing: 12,
+                runSpacing: 6,
                 children: [
                   _legendDot('Pharmacy', const Color(0xFF2E7D32)),
                   _legendDot('Phones & Tech', const Color(0xFFE65100)),

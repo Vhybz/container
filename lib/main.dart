@@ -26,7 +26,6 @@ import 'screens/admin/tax_compliance_screen.dart';
 import 'screens/admin/salary_management_screen.dart';
 import 'screens/admin/audit_trail_screen.dart';
 import 'screens/admin/product_activity_report_screen.dart';
-import 'screens/cashier/cashier_pos.dart' show CashierPOS;
 import 'screens/settings_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/about_screen.dart';
@@ -44,6 +43,7 @@ import 'services/offline_sync_service.dart';
 import 'screens/admin/super_admin_screen.dart';
 import 'screens/tracking/live_tracking_screen.dart';
 import 'screens/pharmacy/prescription_refill_manager.dart';
+import 'widgets/pwa_install_banner.dart';
 
 void main() async {
   try {
@@ -311,6 +311,19 @@ class MultiBusinessApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeState = ref.watch(themeProvider);
+    final isDark = themeState.mode == ThemeMode.dark;
+
+    // Dynamically sync Status Bar icons & Navigation Bar colors with Theme Mode
+    SystemChrome.setSystemUIOverlayStyle(
+      SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
+        systemNavigationBarColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+        systemNavigationBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+      ),
+    );
+
     // Initialize background services
     ref.watch(syncProvider);
     ref.watch(notificationObserverProvider);
@@ -323,6 +336,14 @@ class MultiBusinessApp extends ConsumerWidget {
       theme: AppTheme.getLightTheme(themeState.primaryColor),
       darkTheme: AppTheme.getDarkTheme(themeState.primaryColor),
       themeMode: themeState.mode,
+      builder: (context, child) {
+        return Stack(
+          children: [
+            child ?? const SizedBox.shrink(),
+            const PwaInstallBanner(),
+          ],
+        );
+      },
       initialRoute: '/',
       routes: {
         '/': (context) => const SplashScreen(),
@@ -347,7 +368,6 @@ class MultiBusinessApp extends ConsumerWidget {
         '/settings': (context) => const SettingsScreen(),
         '/profile': (context) => const ProfileScreen(),
         '/about': (context) => const AboutScreen(),
-        '/cashier': (context) => const CashierPOS(),
         '/pharmacy': (context) => const PharmacyDashboard(),
         '/pharmacy/pos': (context) => const PharmacistPos(),
         '/pharmacy/refills': (context) => const PrescriptionRefillManagerScreen(),

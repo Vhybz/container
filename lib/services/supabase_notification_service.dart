@@ -11,7 +11,7 @@ class SupabaseNotificationService extends SupabaseBaseService {
 
     final String? cleanBranch = branchCode?.trim();
 
-    return watchTable('notifications', order: 'created_at')
+    return watchTable('notifications', order: 'created_at', limit: 30)
         .map((data) => data
             .map((json) => SystemNotification.fromJson(json))
             .where((n) {

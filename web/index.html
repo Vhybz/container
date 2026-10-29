@@ -23,36 +23,87 @@
   <link rel="icon" type="image/png" href="favicon.png"/>
   <link rel="shortcut icon" type="image/png" href="favicon.png"/>
 
-  <title>Container Multi-Business Stores</title>
-  <link rel="manifest" href="manifest.json">
+  <!-- Hide Netlify Toolbar / Floating Drawer Banner -->
+  <style>
+    netlify-drawer,
+    netlify-toolbar,
+    [data-netlify-drawer],
+    #netlify-drawer,
+    .netlify-drawer,
+    .netlify-toolbar,
+    iframe[src*="netlify"],
+    [id*="netlify-drawer"],
+    [class*="netlify-drawer"],
+    [id*="netlify-toolbar"],
+    [class*="netlify-toolbar"] {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      width: 0 !important;
+      height: 0 !important;
+      position: absolute !important;
+      top: -9999px !important;
+      left: -9999px !important;
+    }
+  </style>
 
   <!-- PWA Service Worker & Install Prompt Interceptor JS -->
   <script>
-    let deferredInstallPrompt = null;
-
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      deferredInstallPrompt = e;
-      window.dispatchEvent(new CustomEvent('pwaCanInstall'));
-      console.log('[PWA] beforeinstallprompt event captured.');
-    });
-
-    window.checkPwaCanInstall = function() {
-      return deferredInstallPrompt !== null;
+    // MutationObserver to permanently remove any injected Netlify Drawer / Toolbar element
+    const removeNetlifyDrawer = () => {
+      const selectors = [
+        'netlify-drawer',
+        'netlify-toolbar',
+        '[data-netlify-drawer]',
+        '#netlify-drawer',
+        '.netlify-drawer',
+        'iframe[src*="netlify"]'
+      ];
+      selectors.forEach(selector => {
+        document.querySelectorAll(selector).forEach(el => el.remove());
+      });
     };
 
-    window.promptPwaInstallation = function() {
-      if (deferredInstallPrompt) {
-        deferredInstallPrompt.prompt();
-        deferredInstallPrompt.userChoice.then((choiceResult) => {
-          if (choiceResult.outcome === 'accepted') {
-            console.log('[PWA] User accepted the install prompt');
-          } else {
-            console.log('[PWA] User dismissed the install prompt');
-          }
-          deferredInstallPrompt = null;
-        });
+    const netlifyObserver = new MutationObserver(() => {
+      removeNetlifyDrawer();
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+      removeNetlifyDrawer();
+      if (document.body) {
+        netlifyObserver.observe(document.body, { childList: true, subtree: true });
       }
+    });
+
+    let pwaDeferredPrompt = null;
+
+    // Intercept browser default prompt and hold event
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      pwaDeferredPrompt = e;
+      console.log('[PWA] beforeinstallprompt event intercepted.');
+      window.dispatchEvent(new CustomEvent('pwa_install_ready'));
+    });
+
+    // Helper function for Flutter to check if PWA can be installed
+    window.checkPwaCanInstall = function() {
+      if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+        return false;
+      }
+      return pwaDeferredPrompt !== null;
+    };
+
+    // Helper function for Flutter to trigger native install popup
+    window.promptPwaInstallation = async function() {
+      if (pwaDeferredPrompt) {
+        pwaDeferredPrompt.prompt();
+        const choice = await pwaDeferredPrompt.userChoice;
+        pwaDeferredPrompt = null;
+        window.dispatchEvent(new CustomEvent('pwa_install_ready'));
+        return choice.outcome === 'accepted';
+      }
+      return false;
     };
 
     if ('serviceWorker' in navigator) {

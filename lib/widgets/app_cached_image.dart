@@ -46,7 +46,7 @@ class AppCachedImage extends StatelessWidget {
         width: width,
         height: height,
         fit: fit,
-        errorBuilder: (_, __, ___) => defaultFallback,
+        errorBuilder: (context, error, stackTrace) => defaultFallback,
       );
     } else if (imageUrl != null && imageUrl!.trim().isNotEmpty) {
       final url = imageUrl!.trim();
@@ -60,7 +60,7 @@ class AppCachedImage extends StatelessWidget {
             width: width,
             height: height,
             fit: fit,
-            errorBuilder: (_, __, ___) => defaultFallback,
+            errorBuilder: (context, error, stackTrace) => defaultFallback,
           );
         } catch (_) {
           imageWidget = defaultFallback;
@@ -71,7 +71,7 @@ class AppCachedImage extends StatelessWidget {
           width: width,
           height: height,
           fit: fit,
-          errorBuilder: (_, __, ___) => defaultFallback,
+          errorBuilder: (context, error, stackTrace) => defaultFallback,
         );
       } else {
         imageWidget = Image.network(
@@ -94,7 +94,7 @@ class AppCachedImage extends StatelessWidget {
               ),
             );
           },
-          errorBuilder: (_, __, ___) => defaultFallback,
+          errorBuilder: (context, error, stackTrace) => defaultFallback,
         );
       }
     } else {

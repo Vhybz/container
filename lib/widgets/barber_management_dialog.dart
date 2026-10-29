@@ -5,7 +5,6 @@ import '../services/user_provider.dart';
 import '../services/barber_management_provider.dart';
 import '../services/barber_records_provider.dart';
 import '../services/barber_queue_provider.dart';
-import '../core/constants.dart';
 
 class BarberManagementDialog extends ConsumerStatefulWidget {
   const BarberManagementDialog({super.key});
@@ -131,11 +130,11 @@ class _BarberManagementDialogState extends ConsumerState<BarberManagementDialog>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.edit, color: AppColors.primaryMaroon),
-            SizedBox(width: 8),
-            Text('Edit Barber Details'),
+            Icon(Icons.edit, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 8),
+            const Text('Edit Barber Details'),
           ],
         ),
         content: SingleChildScrollView(
@@ -168,7 +167,7 @@ class _BarberManagementDialogState extends ConsumerState<BarberManagementDialog>
             child: const Text('Cancel'),
           ),
           ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryMaroon, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.white),
             icon: const Icon(Icons.save),
             label: const Text('Save Changes'),
             onPressed: () async {

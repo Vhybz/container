@@ -73,8 +73,8 @@ class CategoryFilterRail extends StatelessWidget {
           final count = categoryCounts?[cat] ?? categoryCounts?[cat.toUpperCase()];
 
           // Clean, high-contrast retail color scheme (no tacky AI neon)
-          final activeBg = isDark ? theme.colorScheme.primaryContainer : const Color(0xFF0F172A);
-          final activeFg = isDark ? theme.colorScheme.onPrimaryContainer : Colors.white;
+          final activeBg = theme.colorScheme.primary;
+          final activeFg = theme.colorScheme.onPrimary;
           final inactiveBg = isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9);
           final inactiveBorder = isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1);
           final inactiveFg = isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155);

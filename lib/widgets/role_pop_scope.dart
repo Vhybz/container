@@ -63,7 +63,7 @@ class RolePopScope extends ConsumerWidget {
       case UserRole.secretary:
         return '/barbershop';
       case UserRole.cashier:
-        return '/cashier';
+        return '/admin/sales';
       case UserRole.butcher:
         return '/butcher';
     }

@@ -38,19 +38,24 @@ class NotificationNotifier extends StateNotifier<List<SystemNotification>> {
     _startSubscription();
   }
 
+  final Set<String> _sessionAlertKeys = {};
+
   void _checkStockAlerts(List<Product> products) {
     for (final product in products) {
       if (!product.isDeleted && 
           product.lastStockUpdate != null && 
           product.stockQuantity <= product.lowStockThreshold) {
         
-        final title = 'INVENTORY NOTICE: ${product.name}';
-        final message = '${product.name} is below safety threshold (${product.stockQuantity}${product.unit} remaining).';
-        
-        // Avoid duplicate notifications in current state
-        final existing = state.any((n) => n.title == title && !n.isRead);
-        if (!existing) {
-          addNotification(title, message, type: 'warning');
+        final alertKey = 'stock_${product.id}_${product.stockQuantity}';
+        if (!_sessionAlertKeys.contains(alertKey)) {
+          _sessionAlertKeys.add(alertKey);
+          final title = 'INVENTORY NOTICE: ${product.name}';
+          final message = '${product.name} is below safety threshold (${product.stockQuantity}${product.unit} remaining).';
+          
+          final existing = state.any((n) => n.title == title && !n.isRead);
+          if (!existing) {
+            addNotification(title, message, type: 'warning');
+          }
         }
       }
     }
@@ -68,34 +73,34 @@ class NotificationNotifier extends StateNotifier<List<SystemNotification>> {
       if (expiry.isAfter(sixMonthsFromNow)) continue;
 
       final daysUntilExpiry = expiry.difference(now).inDays;
+      final alertKey = 'expiry_${product.id}_$daysUntilExpiry';
+
+      if (_sessionAlertKeys.contains(alertKey)) continue;
 
       String title;
       String message;
       String type;
 
       if (daysUntilExpiry < 0) {
-        // Already expired
         title = 'EXPIRED DRUG: ${product.name}';
         message = '${product.name} expired ${(-daysUntilExpiry)} days ago. Please remove from shelves immediately. Stock remaining: ${product.stockQuantity}${product.unit}.';
         type = 'critical';
       } else if (daysUntilExpiry <= 30) {
-        // Expiring within 30 days — urgent
         title = 'URGENT EXPIRY: ${product.name}';
         message = '${product.name} expires in $daysUntilExpiry days (${_formatDate(expiry)}). Stock remaining: ${product.stockQuantity}${product.unit}. Consider clearing stock.';
         type = 'critical';
       } else if (daysUntilExpiry <= 90) {
-        // Expiring within 3 months
         title = 'EXPIRY WARNING: ${product.name}';
         message = '${product.name} expires in $daysUntilExpiry days (${_formatDate(expiry)}). Stock remaining: ${product.stockQuantity}${product.unit}.';
         type = 'warning';
       } else {
-        // Expiring within 6 months
         title = 'EXPIRY NOTICE: ${product.name}';
         message = '${product.name} expires in $daysUntilExpiry days (${_formatDate(expiry)}). Stock remaining: ${product.stockQuantity}${product.unit}. Plan to sell or return.';
         type = 'warning';
       }
 
-      // Avoid duplicate unread notifications with the same title
+      _sessionAlertKeys.add(alertKey);
+
       final existing = state.any((n) => n.title == title && !n.isRead);
       if (!existing) {
         addNotification(title, message, type: type);

@@ -199,9 +199,8 @@ class _StockVerificationScreenState extends ConsumerState<StockVerificationScree
                             ElevatedButton(
                               onPressed: () {
                                 Navigator.pop(context);
-                                Navigator.pushReplacementNamed(context, '/cashier');
                               },
-                              child: const Text('Back to POS'),
+                              child: const Text('Close'),
                             ),
                             const SizedBox(height: 20), // Extra space for keyboard padding
                           ],

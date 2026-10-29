@@ -42,8 +42,6 @@ class MenuService {
         ));
       }
 
-      items.add(SidebarItem(icon: Icons.point_of_sale_rounded, label: 'Cashier POS', route: '/cashier'));
-
       items.add(SidebarItem(icon: Icons.local_pharmacy_rounded, label: 'Pharmacy Operations', route: '/pharmacy'));
       items.add(SidebarItem(icon: Icons.point_of_sale_rounded, label: 'Pharmacy POS', route: '/pharmacy/pos'));
 
@@ -89,9 +87,8 @@ class MenuService {
       items.add(SidebarItem(icon: Icons.point_of_sale_rounded, label: 'Tech POS', route: '/tech/pos'));
     }
 
-    // 6. CASHIER: Cashier POS, Daily Sales Report
+    // 6. CASHIER: Daily Sales Report
     if (roles.contains(UserRole.cashier)) {
-      items.add(SidebarItem(icon: Icons.point_of_sale_rounded, label: 'Cashier POS', route: '/cashier'));
       items.add(SidebarItem(icon: Icons.bar_chart_rounded, label: 'Daily Sales Report', route: '/admin/sales'));
     }
 
@@ -117,7 +114,6 @@ class MenuService {
       {'route': '/admin/staff', 'label': 'Staff Management'},
       {'route': '/admin/recents', 'label': 'Company Recents'},
       {'route': '/admin/maintenance', 'label': 'System Maintenance'},
-      {'route': '/cashier', 'label': 'Cashier POS Access'},
       {'route': '/pharmacy', 'label': 'Pharmacy Operations Access'},
       {'route': '/barbershop', 'label': 'Barbershop Operations Access'},
       {'route': '/tech', 'label': 'Tech Shop Operations Access'},
@@ -154,7 +150,7 @@ class MenuService {
       case UserRole.secretary:
         return '/barbershop';
       case UserRole.cashier:
-        return '/cashier';
+        return '/admin/sales';
       case UserRole.butcher:
         return '/butcher';
     }

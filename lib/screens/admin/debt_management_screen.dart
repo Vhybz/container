@@ -353,15 +353,16 @@ class _DebtManagementScreenState extends ConsumerState<DebtManagementScreen> {
       return FlSpot(entry.key.toDouble(), totalDebtOnDay);
     }).toList();
 
+    final theme = Theme.of(context);
     return LineChart(
       LineChartData(
         gridData: const FlGridData(show: false),
         lineTouchData: LineTouchData(
           touchTooltipData: LineTouchTooltipData(
-            getTooltipColor: (spot) => Colors.white,
+            getTooltipColor: (spot) => theme.colorScheme.surface,
             getTooltipItems: (spots) => spots.map((s) => LineTooltipItem(
               '₵${s.y.toStringAsFixed(2)}',
-              const TextStyle(color: AppColors.primaryMaroon, fontWeight: FontWeight.bold, fontSize: 12),
+              TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.bold, fontSize: 12),
             )).toList(),
           ),
         ),
@@ -379,7 +380,7 @@ class _DebtManagementScreenState extends ConsumerState<DebtManagementScreen> {
                   final date = last7Days[index];
                   return Text(
                     DateFormat('E').format(date).toUpperCase(), 
-                    style: const TextStyle(color: Colors.white60, fontSize: 9, fontWeight: FontWeight.bold)
+                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 9, fontWeight: FontWeight.bold)
                   );
                 }
                 return const Text('');
@@ -395,16 +396,16 @@ class _DebtManagementScreenState extends ConsumerState<DebtManagementScreen> {
             spots: spots,
             isCurved: true,
             curveSmoothness: 0.35,
-            color: Colors.white,
+            color: theme.colorScheme.primary,
             barWidth: 4,
             isStrokeCapRound: true,
             dotData: FlDotData(
               show: true,
               getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
                 radius: 4,
-                color: AppColors.primaryMaroon,
+                color: theme.colorScheme.primary,
                 strokeWidth: 2,
-                strokeColor: Colors.white,
+                strokeColor: theme.colorScheme.surface,
               ),
             ),
             belowBarData: BarAreaData(

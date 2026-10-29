@@ -75,7 +75,7 @@ class TillNotifier extends StateNotifier<TillState> {
     // 3. Sort chronologically
     movements.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
-    // 4. Calculate Running Balance
+    // 4. Calculate Running Balance (Clamped so physical Cash at Shop never goes negative)
     double balance = 0;
     final List<TillMovement> historyWithBalance = [];
     
@@ -85,6 +85,7 @@ class TillNotifier extends StateNotifier<TillState> {
       } else {
         balance -= m.amount;
       }
+      if (balance < 0) balance = 0;
       
       historyWithBalance.add(TillMovement(
         id: m.id,
@@ -113,7 +114,8 @@ class TillNotifier extends StateNotifier<TillState> {
       if (m.type == TillMovementType.cashIn || m.type == TillMovementType.openingBalance) {
         pendingByDay[date] = currentPending + m.amount;
       } else if (m.type == TillMovementType.closure || m.type == TillMovementType.cashOut) {
-        pendingByDay[date] = currentPending - m.amount;
+        final remainingPending = currentPending - m.amount;
+        pendingByDay[date] = remainingPending < 0 ? 0.0 : remainingPending;
       }
 
       // Track Closures and Withdrawals as "Taking Cash"
@@ -127,9 +129,11 @@ class TillNotifier extends StateNotifier<TillState> {
       list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
     }
 
+    final double safeCurrentBalance = balance < 0 ? 0.0 : balance;
+
     state = TillState(
       history: displayHistory,
-      currentBalance: balance,
+      currentBalance: safeCurrentBalance,
       pendingByDay: pendingByDay,
       closuresByDay: closuresByDay,
     );

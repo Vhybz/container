@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import '../core/constants.dart';
 import 'user_provider.dart';
 import 'offline_sync_service.dart';
 
@@ -29,21 +28,21 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
   final Ref ref;
   
   ThemeNotifier(this.ref) : super(ThemeState(
-    mode: ThemeMode.light,
-    primaryColor: AppColors.primaryMaroon,
+    mode: ThemeMode.dark,
+    primaryColor: const Color(0xFF2563EB),
   )) {
     _init();
   }
 
   void _init() {
-    // 1. Load from local Hive first for instant boot
+    // 1. Load from local Hive for instant boot persistence
     final box = Hive.box(OfflineSyncService.settingsBoxName);
     final String? savedMode = box.get('theme_mode');
     final int? savedColor = box.get('theme_color');
 
     state = ThemeState(
-      mode: _stringToMode(savedMode),
-      primaryColor: savedColor != null ? Color(savedColor) : AppColors.primaryMaroon,
+      mode: _stringToMode(savedMode ?? 'dark'),
+      primaryColor: savedColor != null ? Color(savedColor) : const Color(0xFF2563EB),
     );
 
     // 2. Listen to currentUser changes to sync account preferences
@@ -116,7 +115,7 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
       case 'dark': return ThemeMode.dark;
       case 'light': return ThemeMode.light;
       case 'system': return ThemeMode.system;
-      default: return ThemeMode.light;
+      default: return ThemeMode.dark;
     }
   }
 }

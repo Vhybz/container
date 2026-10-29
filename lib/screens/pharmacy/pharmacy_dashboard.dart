@@ -68,7 +68,14 @@ class _PharmacyDashboardState extends ConsumerState<PharmacyDashboard> with Sing
       p.category.toUpperCase().contains('SUPPLEMENT') ||
       p.category.toUpperCase().contains('TOPICAL') ||
       p.category.toUpperCase().contains('SEDATIVE') ||
-      p.category.toUpperCase().contains('GENERAL MEDICATION')
+      p.category.toUpperCase().contains('GENERAL') ||
+      (!p.requiresImei && !p.isService && 
+       !p.category.toUpperCase().contains('PHONE') && 
+       !p.category.toUpperCase().contains('SMART') && 
+       !p.category.toUpperCase().contains('TECH') && 
+       !p.category.toUpperCase().contains('BARBER') && 
+       !p.category.toUpperCase().contains('HAIR') && 
+       !p.category.toUpperCase().contains('GROOM'))
     )).toList();
 
     // Today's Pharmacy Sales

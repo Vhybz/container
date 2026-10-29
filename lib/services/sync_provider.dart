@@ -34,9 +34,19 @@ class SyncNotifier extends StateNotifier<DateTime> with WidgetsBindingObserver {
 
   void _startSyncTimer() {
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 30), (timer) {
-      _syncAll();
+    // Process pending offline sync queue every 3 minutes (Realtime streams handle live data pushes)
+    _timer = Timer.periodic(const Duration(minutes: 3), (timer) {
+      _processOfflineQueueOnly();
     });
+  }
+
+  Future<void> _processOfflineQueueOnly() async {
+    if (!mounted || _isSyncing) return;
+    try {
+      await OfflineSyncService.processQueue();
+    } catch (e) {
+      debugPrint('Queue Process Error: $e');
+    }
   }
 
   Future<void> _syncAll() async {
@@ -49,11 +59,10 @@ class SyncNotifier extends StateNotifier<DateTime> with WidgetsBindingObserver {
       _isSyncing = true;
       ref.read(isSyncingProvider.notifier).state = true;
       
-      // 1. Process offline queue first (Now enabled on all platforms)
+      // 1. Process offline queue first
       await OfflineSyncService.processQueue();
       
-      // 2. Refresh key data sets to ensure cache is hot and Supabase is source of truth
-      // Note: Realtime streams also handle this, but manual refresh ensures Req 3 is met.
+      // 2. Refresh key data sets on explicit user pull-to-refresh or app resume
       await Future.wait([
         _safeRefresh(productsFutureProvider.notifier, (n) => n.loadProducts()),
         _safeRefresh(customerProvider.notifier, (n) => n.loadCustomers()),

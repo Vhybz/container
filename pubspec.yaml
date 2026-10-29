@@ -39,6 +39,8 @@ dependencies:
   mobile_scanner: ^5.1.1
   url_launcher: ^6.3.0
   file_picker: ^8.0.0
+  video_player: ^2.9.2
+  web: ^1.0.0
 
 dev_dependencies:
   flutter_test:
@@ -77,3 +79,4 @@ flutter:
     - assets/images/
     - assets/images/bgi/
     - assets/logo/
+    - assets/lottie/

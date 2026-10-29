@@ -16,7 +16,7 @@ class SupabaseSaleService extends SupabaseBaseService {
        filters['branch_code'] = branchCode ?? 'MAIN';
     }
 
-    final response = await selectSorted('sales', order: 'timestamp', filters: filters);
+    final response = await selectSorted('sales', order: 'timestamp', filters: filters, limit: 50);
     return response.map((json) => SaleRecord.fromJson(json)).toList();
   }
 
@@ -39,7 +39,7 @@ class SupabaseSaleService extends SupabaseBaseService {
       filters['branch_code'] = branchCode ?? 'MAIN';
     }
 
-    return watchTable('sales', filters: filters, order: 'timestamp')
+    return watchTable('sales', filters: filters, order: 'timestamp', limit: 50)
         .map((data) => data.map((json) => SaleRecord.fromJson(json)).toList());
   }
 }

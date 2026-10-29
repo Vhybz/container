@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/constants.dart';
 import '../core/app_strings.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +11,7 @@ import '../services/user_provider.dart';
 import '../services/auth_provider.dart';
 import '../services/audit_service.dart';
 import '../services/offline_auth_vault.dart';
+import '../services/pwa_install_service.dart';
 import '../core/error_handler.dart';
 import 'auth/password_recovery_screen.dart';
 
@@ -42,22 +45,35 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final response = await ref.read(authServiceProvider).signIn(email, password);
-      
+      // 1. Fast online sign-in with timeout fallback
+      final authFuture = ref.read(authServiceProvider).signIn(email, password).timeout(const Duration(seconds: 5));
+
+      AuthResponse? response;
+      try {
+        response = await authFuture;
+      } catch (authErr) {
+        // If network error or timeout, attempt offline vault sign-in
+        if (await _tryOfflineLogin(email, password)) {
+          return;
+        }
+        rethrow;
+      }
+
       if (response.user != null) {
         final notifier = ref.read(userProvider.notifier);
+        final String userId = response.user!.id;
+        final String emailClean = email.toLowerCase();
         
-        // 1. Try local state first
-        UserAccount? userAccount;
-        try {
-          userAccount = ref.read(userProvider).firstWhere((u) => u.id == response.user!.id);
-        } catch (_) {
-          // 2. Fallback: Fetch directly from Supabase (by Auth ID or Email)
-          userAccount = await notifier.fetchUserByIdOrEmail(response.user!.id, email);
-        }
+        // 2. Fast memory lookup in pre-loaded local state (by ID or Email)
+        UserAccount? userAccount = ref.read(userProvider).where((u) => 
+          u.id == userId || u.email.trim().toLowerCase() == emailClean
+        ).firstOrNull;
+
+        // 3. Fallback to Supabase if missing from local memory
+        userAccount ??= await notifier.fetchUserByIdOrEmail(userId, email);
 
         if (userAccount == null) {
-          await GlobalLogout.perform(ref);
+          unawaited(GlobalLogout.perform(ref));
           if (mounted) {
             _showMessage(AppStrings.profileMissingTitle, AppStrings.profileMissingMessage);
           }
@@ -65,7 +81,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         }
 
         if (userAccount.status == AccountStatus.pending) {
-          await GlobalLogout.perform(ref);
+          unawaited(GlobalLogout.perform(ref));
           if (mounted) {
             _showMessage(
               AppStrings.approvalPendingTitle, 
@@ -77,25 +93,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         }
 
         if (userAccount.status == AccountStatus.suspended) {
-          await GlobalLogout.perform(ref);
+          unawaited(GlobalLogout.perform(ref));
           if (mounted) {
              _showMessage(AppStrings.accountSuspendedTitle, AppStrings.accountSuspendedMessage, isError: true);
           }
           return;
         }
 
-        // Successful online login -> Save credentials to encrypted local offline vault
-        await OfflineAuthVault.storeCredentials(email, password, userAccount);
-
+        // Set session state immediately for instant navigation
         ref.read(currentUserIdProvider.notifier).state = userAccount.id;
+        ref.read(sessionUserProfileProvider.notifier).state = userAccount;
 
-        // 3. Log Audit Event
-        await AuditService.log(
+        // Run non-blocking background tasks
+        unawaited(OfflineAuthVault.storeCredentials(email, password, userAccount));
+        unawaited(AuditService.log(
           ref: ref,
           action: 'USER_SIGNED_IN',
           entityType: 'USER',
           entityId: userAccount.id,
-        );
+        ));
+
+        // Prompt PWA installation if available
+        if (PwaInstallService.canInstall()) {
+          PwaInstallService.promptInstall();
+        }
 
         if (mounted) {
           switch (userAccount.activePrimaryRole) {
@@ -119,7 +140,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               Navigator.pushReplacementNamed(context, '/barbershop');
               break;
             case UserRole.cashier:
-              Navigator.pushReplacementNamed(context, '/cashier');
+              Navigator.pushReplacementNamed(context, '/admin/sales');
               break;
             case UserRole.butcher:
               Navigator.pushReplacementNamed(context, '/butcher');
@@ -225,7 +246,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           Navigator.pushReplacementNamed(context, '/barbershop');
           break;
         case UserRole.cashier:
-          Navigator.pushReplacementNamed(context, '/cashier');
+          Navigator.pushReplacementNamed(context, '/admin/sales');
           break;
         case UserRole.butcher:
           Navigator.pushReplacementNamed(context, '/butcher');
@@ -342,7 +363,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       style: GoogleFonts.inter(
                         fontSize: 10, 
                         fontWeight: FontWeight.w600, 
-                        color: AppColors.electricSapphire, 
+                        color: theme.colorScheme.primary, 
                         letterSpacing: 2.5,
                       ),
                     ),
@@ -389,7 +410,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       child: ElevatedButton(
                         onPressed: _isLoading ? null : _handleLogin,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.electricSapphire,
+                          backgroundColor: theme.colorScheme.primary,
                           foregroundColor: Colors.white,
                           elevation: 3,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.s)),
@@ -413,7 +434,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           },
                           child: Text(
                             'Forgot Password?',
-                            style: GoogleFonts.inter(color: AppColors.electricSapphire, fontWeight: FontWeight.bold, fontSize: 13),
+                            style: GoogleFonts.inter(color: theme.colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 13),
                           ),
                         ),
                         const SizedBox(width: 6),
@@ -424,13 +445,32 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             AppStrings.registerLink,
                             style: GoogleFonts.inter(
                               fontWeight: FontWeight.bold,
-                              color: AppColors.electricSapphire,
+                              color: theme.colorScheme.primary,
                               fontSize: 13,
                             ),
                           ),
                         ),
                       ],
                     ),
+                    if (ref.watch(pwaInstallableProvider)) ...[
+                      const SizedBox(height: AppSpacing.m),
+                      const Divider(height: 1, color: Colors.white12),
+                      const SizedBox(height: AppSpacing.m),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 44,
+                        child: OutlinedButton.icon(
+                          onPressed: () => ref.read(pwaInstallableProvider.notifier).promptInstall(),
+                          icon: const Icon(Icons.desktop_windows_rounded, color: Colors.amber, size: 20),
+                          label: Text('INSTALL APP (PWA)', style: GoogleFonts.oswald(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1)),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.amber, width: 1.5),
+                            backgroundColor: Colors.amber.withValues(alpha: 0.1),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.s)),
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

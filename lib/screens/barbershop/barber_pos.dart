@@ -546,8 +546,9 @@ class _BarberPosState extends ConsumerState<BarberPos> {
             },
           );
         },
-      );
-    }
+      ),
+    );
+  }
 
   void _showAddNewCustomerModal(BuildContext parentContext) {
     final nameCtrl = TextEditingController();
@@ -638,7 +639,7 @@ class _BarberPosState extends ConsumerState<BarberPos> {
           })
           .toList();
 
-    final List<String> categories = ['All', ...productsList.map((p) => p.category.toUpperCase()).toSet()];
+    final categories = ['All', ...productsList.map((p) => p.category.toUpperCase()).toSet()];
 
     final filteredProducts = productsList.where((p) {
       final matchesCategory = _selectedCategory == 'All' || p.category.toUpperCase() == _selectedCategory.toUpperCase();
