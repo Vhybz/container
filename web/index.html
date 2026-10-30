@@ -51,7 +51,7 @@
     }
   </style>
 
-  <!-- PWA Service Worker & Install Prompt Interceptor JS -->
+  <!-- PWA Service Worker & Direct Install Prompt Interceptor JS -->
   <script>
     // MutationObserver to permanently remove any injected Netlify Drawer / Toolbar element
     const removeNetlifyDrawer = () => {
@@ -81,24 +81,24 @@
 
     let pwaDeferredPrompt = null;
 
-    // Intercept browser default prompt and hold event
+    // Intercept browser default prompt and hold event for direct 1-click install
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       pwaDeferredPrompt = e;
-      console.log('[PWA] beforeinstallprompt event intercepted.');
+      console.log('[PWA] Native beforeinstallprompt captured.');
       window.dispatchEvent(new CustomEvent('pwa_install_ready'));
     });
 
-    // Helper function for Flutter to check if PWA can be installed
+    // Only enable the Install button when native prompt is 100% ready
     window.checkPwaCanInstall = function() {
       const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
       if (isStandalone) {
         return false;
       }
-      return true; // Always allow install trigger when running in a browser tab!
+      return pwaDeferredPrompt !== null;
     };
 
-    // Helper function for Flutter to trigger native install popup
+    // Directly open native browser 1-click install dialog without any step alerts
     window.promptPwaInstallation = async function() {
       if (pwaDeferredPrompt) {
         pwaDeferredPrompt.prompt();
@@ -106,10 +106,8 @@
         pwaDeferredPrompt = null;
         window.dispatchEvent(new CustomEvent('pwa_install_ready'));
         return choice.outcome === 'accepted';
-      } else {
-        alert("To install Container POS app:\n\n1. Click the 3 Dots (⋮) or Install icon in your browser address bar.\n2. Click 'Install Container POS' or 'Add to Home Screen'.");
-        return true;
       }
+      return false;
     };
 
     if ('serviceWorker' in navigator) {
