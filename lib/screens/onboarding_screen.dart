@@ -65,188 +65,197 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         decoration: const BoxDecoration(
           gradient: AppGradients.splashAuthBackdrop,
         ),
-        child: Stack(
-          children: [
-            // 1. Content PageView
-            PageView.builder(
-              controller: _pageController,
-              onPageChanged: (int page) => setState(() => _currentPage = page),
-              itemCount: _pages.length,
-              itemBuilder: (context, index) => _buildPage(_pages[index], index == _currentPage, isSmall),
-            ),
+        child: SafeArea(
+          child: Stack(
+            children: [
+              // 1. Content PageView
+              PageView.builder(
+                controller: _pageController,
+                onPageChanged: (int page) => setState(() => _currentPage = page),
+                itemCount: _pages.length,
+                itemBuilder: (context, index) => _buildPage(_pages[index], index == _currentPage, isSmall, size.height),
+              ),
 
-            // 2. Top Branding & Skip
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 20,
-              left: 20,
-              right: 20,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.storefront_rounded, color: Colors.white, size: 24),
-                      const SizedBox(width: 8),
-                      Text(
-                        'MULTI-BUSINESS MANAGER',
-                        style: GoogleFonts.oswald(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.5,
-                          fontSize: 15,
+              // 2. Top Branding & Skip
+              Positioned(
+                top: 16,
+                left: 20,
+                right: 20,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.storefront_rounded, color: Colors.white, size: 24),
+                        const SizedBox(width: 8),
+                        Text(
+                          'MULTI-BUSINESS MANAGER',
+                          style: GoogleFonts.oswald(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.5,
+                            fontSize: 15,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pushReplacementNamed(context, '/login'),
-                    child: Text(
-                      'SKIP',
-                      style: GoogleFonts.inter(
-                        color: Colors.white70,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                        letterSpacing: 1,
+                      ],
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pushReplacementNamed(context, '/login'),
+                      child: Text(
+                        'SKIP',
+                        style: GoogleFonts.inter(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          letterSpacing: 1,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
 
-            // 3. Bottom Controls
-            Positioned(
-              bottom: MediaQuery.of(context).padding.bottom + 40,
-              left: 30,
-              right: 30,
-              child: Column(
-                children: [
-                  // Progress Indicators
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(_pages.length, (index) => _buildDot(index)),
-                  ),
-                  SizedBox(height: isSmall ? 30 : 50),
-                  
-                  // Action Button
-                  Center(
-                    child: SizedBox(
-                      width: size.width > 460 ? 400 : double.infinity,
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed: () {
-                          if (_currentPage == _pages.length - 1) {
-                            Navigator.pushReplacementNamed(context, '/login');
-                          } else {
-                            _pageController.nextPage(
-                              duration: const Duration(milliseconds: 600), 
-                              curve: Curves.easeInOutQuart,
-                            );
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _pages[_currentPage].color,
-                          foregroundColor: Colors.white,
-                          elevation: 6,
-                          shadowColor: _pages[_currentPage].color.withValues(alpha: 0.4),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 300),
-                          child: Row(
-                            key: ValueKey(_currentPage),
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                _currentPage == _pages.length - 1 ? 'GET STARTED' : 'CONTINUE',
-                                style: GoogleFonts.oswald(
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 1.2,
-                                  fontSize: 16,
+              // 3. Bottom Controls
+              Positioned(
+                bottom: 24,
+                left: 30,
+                right: 30,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Progress Indicators
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(_pages.length, (index) => _buildDot(index)),
+                    ),
+                    const SizedBox(height: 20),
+                    
+                    // Action Button
+                    Center(
+                      child: SizedBox(
+                        width: size.width > 480 ? 420 : double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            if (_currentPage == _pages.length - 1) {
+                              Navigator.pushReplacementNamed(context, '/login');
+                            } else {
+                              _pageController.nextPage(
+                                duration: const Duration(milliseconds: 500), 
+                                curve: Curves.easeInOutQuart,
+                              );
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _pages[_currentPage].color,
+                            foregroundColor: Colors.white,
+                            elevation: 6,
+                            shadowColor: _pages[_currentPage].color.withValues(alpha: 0.4),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 300),
+                            child: Row(
+                              key: ValueKey(_currentPage),
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  _currentPage == _pages.length - 1 ? 'GET STARTED' : 'CONTINUE',
+                                  style: GoogleFonts.oswald(
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 1.2,
+                                    fontSize: 16,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 10),
-                              Icon(
-                                _currentPage == _pages.length - 1 ? Icons.check_circle_outline : Icons.arrow_forward_ios_rounded,
-                                size: 18,
-                              ),
-                            ],
+                                const SizedBox(width: 10),
+                                Icon(
+                                  _currentPage == _pages.length - 1 ? Icons.check_circle_outline : Icons.arrow_forward_ios_rounded,
+                                  size: 18,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildPage(OnboardingData data, bool isActive, bool isSmall) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          // Animated Video Graphic from assets/lottie
-          AnimatedScale(
-            duration: const Duration(milliseconds: 1000),
-            scale: isActive ? 1.0 : 0.4,
-            curve: Curves.elasticOut,
-            child: OnboardingVideoPlayer(
-              videoPath: data.videoAsset,
-              color: data.color,
-              isSmall: isSmall,
-            ),
+  Widget _buildPage(OnboardingData data, bool isActive, bool isSmall, double screenHeight) {
+    return Center(
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(24.0, 70.0, 24.0, 110.0),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 580),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Animated Video Graphic from assets/lottie
+              AnimatedScale(
+                duration: const Duration(milliseconds: 800),
+                scale: isActive ? 1.0 : 0.6,
+                curve: Curves.elasticOut,
+                child: OnboardingVideoPlayer(
+                  videoPath: data.videoAsset,
+                  color: data.color,
+                  isSmall: isSmall,
+                ),
+              ),
+              const SizedBox(height: 28),
+              
+              // Text Content
+              AnimatedOpacity(
+                duration: const Duration(milliseconds: 600),
+                opacity: isActive ? 1.0 : 0.0,
+                child: Column(
+                  children: [
+                    Text(
+                      data.subtitle,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        color: data.color,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      data.title,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.oswald(
+                        fontSize: isSmall ? 28 : 36,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        letterSpacing: 0.5,
+                        height: 1.1,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      data.description,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: isSmall ? 13 : 15,
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontWeight: FontWeight.w400,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          SizedBox(height: isSmall ? 35 : 50),
-          
-          // Text Content
-          AnimatedOpacity(
-            duration: const Duration(milliseconds: 800),
-            opacity: isActive ? 1.0 : 0.0,
-            child: Column(
-              children: [
-                Text(
-                  data.subtitle,
-                  style: GoogleFonts.inter(
-                    color: data.color,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  data.title,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.oswald(
-                    fontSize: isSmall ? 32 : 40,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    letterSpacing: 0.5,
-                    height: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  data.description,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
-                    fontSize: isSmall ? 14 : 16,
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w400,
-                    height: 1.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(height: isSmall ? 170 : 210), // Bottom padding for controls
-        ],
+        ),
       ),
     );
   }
@@ -333,7 +342,7 @@ class _OnboardingVideoPlayerState extends State<OnboardingVideoPlayer> {
 
   @override
   Widget build(BuildContext context) {
-    final size = widget.isSmall ? 140.0 : 180.0;
+    final size = widget.isSmall ? 130.0 : 160.0;
 
     return Container(
       width: size,
