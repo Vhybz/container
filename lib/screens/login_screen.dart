@@ -152,16 +152,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (mounted) {
         String errorMessage = e.toString();
 
-        final bool isNetworkError = errorMessage.contains('network') || 
+        final bool isNetworkOrLimitError = errorMessage.contains('network') || 
                    errorMessage.contains('SocketException') || 
                    errorMessage.contains('Failed host lookup') ||
                    errorMessage.contains('handshake') ||
                    errorMessage.contains('errno = 7') ||
                    errorMessage.contains('ClientException') ||
-                   errorMessage.contains('TimeoutException');
+                   errorMessage.contains('TimeoutException') ||
+                   errorMessage.contains('429') ||
+                   errorMessage.contains('egress') ||
+                   errorMessage.contains('exceeded') ||
+                   errorMessage.contains('quota');
 
         // Check if offline login is possible for cached user
-        if (isNetworkError && await _tryOfflineLogin(email, password)) {
+        if (isNetworkOrLimitError && await _tryOfflineLogin(email, password)) {
           return;
         }
 
@@ -172,7 +176,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           errorMessage = AppStrings.emailNotConfirmedError;
         } else if (errorMessage.contains('User not found')) {
           errorMessage = AppStrings.userNotFoundError;
-        } else if (isNetworkError) {
+        } else if (isNetworkOrLimitError) {
           errorMessage = AppStrings.networkError;
         }
 
