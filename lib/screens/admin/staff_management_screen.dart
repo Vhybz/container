@@ -639,6 +639,10 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
       icon: Icon(Icons.more_vert_rounded, color: theme.colorScheme.onSurfaceVariant, size: 20),
       itemBuilder: (context) => [
         const PopupMenuItem(
+          value: 'assign_branch',
+          child: Row(children: [Icon(Icons.storefront_rounded, size: 18, color: Colors.teal), SizedBox(width: 12), Text('Change Branch')]),
+        ),
+        const PopupMenuItem(
           value: 'manage_roles',
           child: Row(children: [Icon(Icons.admin_panel_settings_outlined, size: 18), SizedBox(width: 12), Text('Permissions')]),
         ),
@@ -670,6 +674,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
 
   void _handleUserAction(BuildContext context, WidgetRef ref, UserAccount user, String action) {
     switch (action) {
+      case 'assign_branch': _showAssignBranchDialog(context, ref, user); break;
       case 'suspend': ref.read(userProvider.notifier).suspendUser(user.id); break;
       case 'activate': ref.read(userProvider.notifier).activateUser(user.id); break;
       case 'delete': _confirmDelete(context, ref, user); break;
@@ -678,6 +683,64 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
       case 'passcode': _showPasscodeDialog(context, ref, user); break;
       case 'clear_promo': ref.read(userProvider.notifier).clearTemporaryPromotion(user.id); break;
     }
+  }
+
+  void _showAssignBranchDialog(BuildContext context, WidgetRef ref, UserAccount user) {
+    final branchesAsync = ref.watch(branchesProvider);
+    final branches = branchesAsync.value ?? [];
+    String? selectedBranch = user.branchCode;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.l)),
+          title: Text('Assign Branch for ${user.firstName}', overflow: TextOverflow.ellipsis),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Select the branch/shop location where ${user.name} will operate.', 
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              const SizedBox(height: 20),
+              DropdownButtonFormField<String>(
+                initialValue: branches.any((b) => b.code == selectedBranch) ? selectedBranch : (branches.isNotEmpty ? branches.first.code : null),
+                decoration: const InputDecoration(
+                  labelText: 'Working Branch',
+                  prefixIcon: Icon(Icons.storefront_rounded),
+                ),
+                items: branches.map((b) => DropdownMenuItem(
+                  value: b.code,
+                  child: Text('${b.name} (${b.location})'),
+                )).toList(),
+                onChanged: (v) => setState(() => selectedBranch = v),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: selectedBranch == null ? null : () async {
+                await ref.read(userProvider.notifier).updateProfile(
+                  user.id,
+                  branchCode: selectedBranch,
+                );
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('${user.name}\'s working branch updated to $selectedBranch.'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Save Branch Assignment'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _confirmDelete(BuildContext context, WidgetRef ref, UserAccount user) {

@@ -9,7 +9,6 @@ import '../models/tech_shop_models.dart';
 import 'tech_shop_service.dart';
 import 'supabase_product_service.dart';
 import 'user_provider.dart';
-import '../models/user_model.dart';
 import 'audit_service.dart';
 import 'offline_sync_service.dart';
 import '../models/system_models.dart';
@@ -124,7 +123,15 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
 
   Future<void> _fetchFreshProducts(String? branchCode) async {
     try {
-      final products = await _service.getProducts(branchCode);
+      var products = await _service.getProducts(branchCode);
+      // Fallback: If products is empty for a specific branch, pull all global/master products so POS is never blank
+      if (products.isEmpty && branchCode != null && branchCode.isNotEmpty) {
+        final masterProducts = await _service.getProducts(null);
+        if (masterProducts.isNotEmpty) {
+          products = masterProducts;
+          debugPrint('Product Engine: Branch "$branchCode" returned 0 products. Loaded ${masterProducts.length} master products as fallback.');
+        }
+      }
       _applyPendingAndSetState(products);
       _saveToCache(products);
     } catch (e) {
