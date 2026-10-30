@@ -874,9 +874,13 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
   void _showAddProductDialog(BuildContext context, WidgetRef ref) {
     final user = ref.read(currentUserProvider);
     final products = ref.read(productsFutureProvider).value ?? [];
+    final branchesAsync = ref.read(branchesProvider);
+    final branches = branchesAsync.value ?? [];
     final formKey = GlobalKey<FormState>();
     
-    final branchController = TextEditingController(text: user?.branchCode ?? 'MAIN');
+    String selectedBranchCode = (user?.branchCode != null && user!.branchCode!.trim().isNotEmpty)
+        ? user.branchCode!.trim()
+        : 'GLOBAL';
     final nameController = TextEditingController();
     final defaultUnit = _selectedSector == 'pharmacy' ? 'tablets' : 'pcs';
     final unitController = TextEditingController(text: defaultUnit);
@@ -1177,14 +1181,20 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                                 const SizedBox(width: 10),
                                 Expanded(
                                   flex: 2,
-                                  child: _buildFormTextField(
+                                  child: _buildFormDropdown<String>(
                                     context: context,
-                                    controller: branchController,
-                                    label: 'Branch Code',
-                                    hint: 'e.g. MAIN',
-                                    icon: Icons.store_outlined,
+                                    label: 'Target Branch',
+                                    value: branches.any((b) => b.code == selectedBranchCode) ? selectedBranchCode : 'GLOBAL',
+                                    icon: Icons.storefront_outlined,
                                     activeColor: sectorColor,
-                                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Branch required' : null,
+                                    items: [
+                                      const DropdownMenuItem(value: 'GLOBAL', child: Text('All Branches (Global)', overflow: TextOverflow.ellipsis)),
+                                      ...branches.map((b) => DropdownMenuItem(
+                                        value: b.code,
+                                        child: Text('${b.name} (${b.code})', overflow: TextOverflow.ellipsis),
+                                      )),
+                                    ],
+                                    onChanged: (v) => setState(() => selectedBranchCode = v!),
                                   ),
                                 ),
                               ],
@@ -1526,7 +1536,7 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
 
                                 final newProduct = Product(
                                   id: UuidUtils.generate(),
-                                  branchCode: branchController.text.trim().isEmpty ? 'MAIN' : branchController.text.trim(),
+                                  branchCode: selectedBranchCode == 'GLOBAL' ? null : selectedBranchCode,
                                   category: finalCategory,
                                   name: nameController.text.trim(),
                                   unit: unitController.text.trim(),
@@ -1587,7 +1597,11 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
 
   void _showEditProductDialog(BuildContext context, WidgetRef ref, Product product) {
     final formKey = GlobalKey<FormState>();
-    final branchController = TextEditingController(text: product.branchCode ?? 'MAIN');
+    final branchesAsync = ref.read(branchesProvider);
+    final branches = branchesAsync.value ?? [];
+    String selectedBranchCode = (product.branchCode != null && product.branchCode!.trim().isNotEmpty)
+        ? product.branchCode!.trim()
+        : 'GLOBAL';
     final nameController = TextEditingController(text: product.name);
     final unitController = TextEditingController(text: product.unit.isNotEmpty ? product.unit : 'pcs');
     final retailPriceController = TextEditingController(text: product.retailPrice.toString());
@@ -1858,14 +1872,20 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                                 const SizedBox(width: 10),
                                 Expanded(
                                   flex: 2,
-                                  child: _buildFormTextField(
+                                  child: _buildFormDropdown<String>(
                                     context: context,
-                                    controller: branchController,
-                                    label: 'Branch Code',
-                                    hint: 'e.g. MAIN',
-                                    icon: Icons.store_outlined,
+                                    label: 'Target Branch',
+                                    value: branches.any((b) => b.code == selectedBranchCode) ? selectedBranchCode : 'GLOBAL',
+                                    icon: Icons.storefront_outlined,
                                     activeColor: sectorColor,
-                                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Branch required' : null,
+                                    items: [
+                                      const DropdownMenuItem(value: 'GLOBAL', child: Text('All Branches (Global)', overflow: TextOverflow.ellipsis)),
+                                      ...branches.map((b) => DropdownMenuItem(
+                                        value: b.code,
+                                        child: Text('${b.name} (${b.code})', overflow: TextOverflow.ellipsis),
+                                      )),
+                                    ],
+                                    onChanged: (v) => setState(() => selectedBranchCode = v!),
                                   ),
                                 ),
                               ],
@@ -2195,7 +2215,7 @@ class _InventoryControlScreenState extends ConsumerState<InventoryControlScreen>
                                 final alertQty = double.tryParse(alertQuantityController.text) ?? product.lowStockThreshold;
 
                                 final updatedProduct = product.copyWith(
-                                  branchCode: branchController.text.trim().isEmpty ? 'MAIN' : branchController.text.trim(),
+                                  branchCode: selectedBranchCode == 'GLOBAL' ? null : selectedBranchCode,
                                   category: selectedCategory == 'Other' ? otherCategoryController.text.trim() : selectedCategory,
                                   name: nameController.text.trim(),
                                   unit: unitController.text.trim(),
