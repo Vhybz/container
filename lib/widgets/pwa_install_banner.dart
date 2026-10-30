@@ -23,102 +23,123 @@ class _PwaInstallBannerState extends ConsumerState<PwaInstallBanner> {
       return const SizedBox.shrink();
     }
 
-    final isDesktop = MediaQuery.of(context).size.width >= 768;
+    final size = MediaQuery.of(context).size;
+    final isMobile = size.width < 600;
 
     return Positioned(
-      bottom: 20,
-      left: 16,
-      right: 16,
+      bottom: 16,
+      left: 12,
+      right: 12,
       child: Center(
         child: Material(
           color: Colors.transparent,
           child: Container(
             constraints: const BoxConstraints(maxWidth: 580),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: const Color(0xFF0F172A),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.amber.withValues(alpha: 0.5), width: 1.5),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.amber.withValues(alpha: 0.6), width: 1.5),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.4),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
                 ),
               ],
             ),
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.withValues(alpha: 0.15),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    isIosSafari ? Icons.share_rounded : (isDesktop ? Icons.desktop_windows_rounded : Icons.install_mobile_rounded),
-                    color: Colors.amber,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Install App for Faster Access & Offline Mode',
-                        style: GoogleFonts.oswald(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
-                        ),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
+                      child: Icon(
                         isIosSafari
-                            ? "Tap the Share button → Select 'Add to Home Screen'"
-                            : "1-Click install for desktop and mobile offline access",
-                        style: TextStyle(
-                          color: isIosSafari ? Colors.amberAccent : Colors.white70,
-                          fontSize: 11,
-                          fontWeight: isIosSafari ? FontWeight.bold : FontWeight.normal,
+                            ? Icons.share_rounded
+                            : (isMobile ? Icons.install_mobile_rounded : Icons.desktop_windows_rounded),
+                        color: Colors.amber,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Install App for Fast & Offline Access',
+                            style: GoogleFonts.oswald(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.4,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            isIosSafari
+                                ? "Tap Share → 'Add to Home Screen'"
+                                : "1-Click install for desktop and mobile offline POS",
+                            style: TextStyle(
+                              color: isIosSafari ? Colors.amberAccent : Colors.white70,
+                              fontSize: 11,
+                              fontWeight: isIosSafari ? FontWeight.bold : FontWeight.normal,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      onTap: () => setState(() => _dismissed = true),
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        child: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white70,
+                          size: 18,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
                 if (canInstall && !isIosSafari) ...[
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    onPressed: () async {
-                      final installed = await ref.read(pwaCanInstallProvider.notifier).triggerPwaInstall();
-                      if (installed) {
-                        setState(() => _dismissed = true);
-                      }
-                    },
-                    icon: const Icon(Icons.download_rounded, size: 16),
-                    label: Text(
-                      'INSTALL APP NOW',
-                      style: GoogleFonts.oswald(fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 0.8),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.amber,
-                      foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 36,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final installed = await ref.read(pwaCanInstallProvider.notifier).triggerPwaInstall();
+                        if (installed) {
+                          setState(() => _dismissed = true);
+                        }
+                      },
+                      icon: const Icon(Icons.download_rounded, size: 16),
+                      label: Text(
+                        'INSTALL APP NOW',
+                        style: GoogleFonts.oswald(fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 0.8),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.amber,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      ),
                     ),
                   ),
                 ],
-                IconButton(
-                  onPressed: () => setState(() => _dismissed = true),
-                  icon: const Icon(Icons.close_rounded, color: Colors.white60, size: 20),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                  tooltip: 'Dismiss Banner',
-                ),
               ],
             ),
           ),
