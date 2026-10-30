@@ -43,7 +43,7 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch Event: Cache-First / Stale-While-Revalidate with Navigation Fallback
+// Fetch Event: Cache-First / Stale-While-Revalidate with Fail-Safe Fallbacks
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
@@ -61,8 +61,13 @@ self.addEventListener('fetch', (event) => {
   // 2. Handle HTML Navigation requests offline
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req).catch(() => {
-        return caches.match('./index.html') || caches.match('./');
+      fetch(req).catch(async () => {
+        const cache = await caches.open(CACHE_NAME);
+        const cachedIndex = await cache.match('./index.html') || await cache.match('/index.html') || await cache.match('./');
+        if (cachedIndex) return cachedIndex;
+        return new Response('<!DOCTYPE html><html><body>App Offline</body></html>', {
+          headers: { 'Content-Type': 'text/html' }
+        });
       })
     );
     return;
@@ -90,8 +95,10 @@ self.addEventListener('fetch', (event) => {
           cache.put(req, responseToCache);
         });
         return networkResponse;
-      }).catch((err) => {
-        console.warn('[Service Worker] Offline fetch failed:', req.url);
+      }).catch(async () => {
+        const cached = await caches.match(req);
+        if (cached) return cached;
+        return new Response('', { status: 503, statusText: 'Offline' });
       });
     })
   );
