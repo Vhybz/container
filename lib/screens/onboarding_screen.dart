@@ -203,10 +203,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 duration: const Duration(milliseconds: 800),
                 scale: isActive ? 1.0 : 0.6,
                 curve: Curves.elasticOut,
-                child: OnboardingVideoPlayer(
-                  videoPath: data.videoAsset,
-                  color: data.color,
-                  isSmall: isSmall,
+                child: SizedBox(
+                  width: isSmall ? 130.0 : 160.0,
+                  height: isSmall ? 130.0 : 160.0,
+                  child: OnboardingVideoPlayer(
+                    videoPath: data.videoAsset,
+                    color: data.color,
+                    icon: data.icon,
+                    isSmall: isSmall,
+                  ),
                 ),
               ),
               const SizedBox(height: 28),
@@ -286,12 +291,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 class OnboardingVideoPlayer extends StatefulWidget {
   final String videoPath;
   final Color color;
+  final IconData icon;
   final bool isSmall;
 
   const OnboardingVideoPlayer({
     super.key,
     required this.videoPath,
     required this.color,
+    required this.icon,
     this.isSmall = false,
   });
 
@@ -300,7 +307,7 @@ class OnboardingVideoPlayer extends StatefulWidget {
 }
 
 class _OnboardingVideoPlayerState extends State<OnboardingVideoPlayer> {
-  late VideoPlayerController _controller;
+  VideoPlayerController? _controller;
   bool _isInitialized = false;
 
   @override
@@ -313,19 +320,20 @@ class _OnboardingVideoPlayerState extends State<OnboardingVideoPlayer> {
   void didUpdateWidget(covariant OnboardingVideoPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.videoPath != widget.videoPath) {
-      _controller.dispose();
+      _controller?.dispose();
       _isInitialized = false;
       _initVideo();
     }
   }
 
   Future<void> _initVideo() async {
-    _controller = VideoPlayerController.asset(widget.videoPath);
     try {
-      await _controller.initialize();
-      _controller.setLooping(true);
-      _controller.setVolume(0.0);
-      await _controller.play();
+      final controller = VideoPlayerController.asset(widget.videoPath);
+      _controller = controller;
+      await controller.initialize();
+      controller.setLooping(true);
+      controller.setVolume(0.0);
+      await controller.play();
       if (mounted) {
         setState(() => _isInitialized = true);
       }
@@ -336,7 +344,7 @@ class _OnboardingVideoPlayerState extends State<OnboardingVideoPlayer> {
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
@@ -360,21 +368,22 @@ class _OnboardingVideoPlayerState extends State<OnboardingVideoPlayer> {
         ],
       ),
       child: ClipOval(
-        child: _isInitialized
-            ? FittedBox(
-                fit: BoxFit.cover,
-                child: SizedBox(
-                  width: _controller.value.size.width,
-                  height: _controller.value.size.height,
-                  child: VideoPlayer(_controller),
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: _isInitialized && _controller != null && _controller!.value.isInitialized
+              ? AspectRatio(
+                  aspectRatio: _controller!.value.aspectRatio > 0 ? _controller!.value.aspectRatio : 1.0,
+                  child: VideoPlayer(_controller!),
+                )
+              : Center(
+                  child: Icon(
+                    widget.icon,
+                    color: widget.color,
+                    size: size * 0.45,
+                  ),
                 ),
-              )
-            : Center(
-                child: CircularProgressIndicator(
-                  color: widget.color,
-                  strokeWidth: 2,
-                ),
-              ),
+        ),
       ),
     );
   }
