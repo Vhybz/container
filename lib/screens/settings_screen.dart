@@ -10,6 +10,7 @@ import '../services/user_provider.dart';
 import '../services/theme_provider.dart';
 import '../services/offline_sync_service.dart';
 import '../services/app_settings_provider.dart';
+import '../services/pwa_install_service.dart';
 import '../widgets/role_pop_scope.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -169,6 +170,70 @@ class SettingsScreen extends ConsumerWidget {
                               subtitle: const Text('Keep your account secure with regular updates'),
                               trailing: const Icon(Icons.chevron_right),
                               onTap: () => _showChangePasswordDialog(context),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.l),
+
+                        _buildSection(
+                          context,
+                          'Application Installation (PWA)',
+                          Icons.install_desktop_rounded,
+                          [
+                            Consumer(
+                              builder: (context, ref, child) {
+                                final canInstall = ref.watch(pwaInstallableProvider);
+                                return ListTile(
+                                  leading: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: canInstall ? Colors.amber.withValues(alpha: 0.15) : Colors.green.withValues(alpha: 0.15),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      canInstall ? Icons.install_mobile_rounded : Icons.verified_rounded,
+                                      color: canInstall ? Colors.amber.shade800 : Colors.green,
+                                    ),
+                                  ),
+                                  title: Text(
+                                    canInstall ? 'Install Container POS App' : 'App Installed & Offline-Ready',
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                  subtitle: Text(
+                                    canInstall 
+                                      ? 'Install on desktop or mobile home screen for 1-click launch & offline working mode'
+                                      : 'Container POS is running in standalone desktop/mobile mode',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  trailing: canInstall
+                                      ? ElevatedButton.icon(
+                                          onPressed: () => ref.read(pwaInstallableProvider.notifier).promptInstall(),
+                                          icon: const Icon(Icons.download_rounded, size: 16),
+                                          label: const Text('INSTALL NOW', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.amber.shade700,
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                          ),
+                                        )
+                                      : Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.green.shade50,
+                                            borderRadius: BorderRadius.circular(12),
+                                            border: Border.all(color: Colors.green.shade300),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: const [
+                                              Icon(Icons.check_circle, color: Colors.green, size: 14),
+                                              SizedBox(width: 4),
+                                              Text('INSTALLED', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.green)),
+                                            ],
+                                          ),
+                                        ),
+                                );
+                              },
                             ),
                           ],
                         ),
