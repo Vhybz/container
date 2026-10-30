@@ -7,6 +7,7 @@ import '../../core/image_picker_helper.dart';
 import '../../widgets/main_app_bar.dart';
 import '../../widgets/product_card.dart';
 import '../../services/product_service.dart';
+import '../../services/branch_provider.dart';
 import '../../models/product.dart';
 import '../../core/uuid_utils.dart';
 import 'package:intl/intl.dart';
