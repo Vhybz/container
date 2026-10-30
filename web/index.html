@@ -8,6 +8,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="description" content="Container Multi-Business Management System for Pharmacy, Barbershop, Tech & Retail">
 
+  <!-- Web App Manifest -->
+  <link rel="manifest" href="manifest.json">
+
   <!-- Mobile & PWA Theme Colors -->
   <meta name="theme-color" content="#2563EB">
   <meta name="background-color" content="#0F172A">
@@ -88,10 +91,11 @@
 
     // Helper function for Flutter to check if PWA can be installed
     window.checkPwaCanInstall = function() {
-      if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+      if (isStandalone) {
         return false;
       }
-      return pwaDeferredPrompt !== null;
+      return true; // Always allow install trigger when running in a browser tab!
     };
 
     // Helper function for Flutter to trigger native install popup
@@ -102,8 +106,10 @@
         pwaDeferredPrompt = null;
         window.dispatchEvent(new CustomEvent('pwa_install_ready'));
         return choice.outcome === 'accepted';
+      } else {
+        alert("To install Container POS app:\n\n1. Click the 3 Dots (⋮) or Install icon in your browser address bar.\n2. Click 'Install Container POS' or 'Add to Home Screen'.");
+        return true;
       }
-      return false;
     };
 
     if ('serviceWorker' in navigator) {
