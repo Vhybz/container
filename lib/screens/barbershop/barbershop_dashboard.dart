@@ -2467,12 +2467,16 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
   Widget _buildCommissionsTab(ThemeData theme, List<SaleRecord> todaySales, List<UserAccount> staff) {
     final allRecords = ref.watch(barberRecordsProvider);
     final barberNames = _getCompiledBarberNames(staff);
+    final selectedBranch = ref.watch(selectedBranchProvider);
+    final user = ref.watch(currentUserProvider);
+    final effectiveBranch = selectedBranch ?? user?.branchCode;
 
     // Retrieve accurate aggregated summaries for each barber
     final summariesMap = ref.watch(barberRecordsProvider.notifier).getAllBarbersCommissionSummary(
       dateFilter: _commissionDateFilter,
       range: _commissionCustomRange,
       includeBarbers: barberNames,
+      branchCode: effectiveBranch,
     );
 
     // Calculate shop-wide totals for the selected period

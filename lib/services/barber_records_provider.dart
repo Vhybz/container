@@ -25,10 +25,25 @@ class BarberRecordsNotifier extends StateNotifier<List<BarberRecord>> {
   Future<void> _init() async {
     await _loadFromCache();
     await _fetchFromSupabase();
+    _subscribeRealtime();
     // Run backfill after a short delay so other providers are loaded
     Future.delayed(const Duration(milliseconds: 600), () {
       _backfillFromExistingSalesAndQueue();
     });
+  }
+
+  void _subscribeRealtime() {
+    try {
+      SupabaseConfig.client
+          .channel('public:barber_records')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'barber_records',
+            callback: (_) => _fetchFromSupabase(),
+          )
+          .subscribe();
+    } catch (_) {}
   }
 
   Future<void> _loadFromCache() async {
@@ -67,7 +82,7 @@ class BarberRecordsNotifier extends StateNotifier<List<BarberRecord>> {
           .from('barber_records')
           .select()
           .order('timestamp', ascending: false)
-          .limit(100);
+          .limit(2000);
 
       final List data = response as List? ?? [];
       if (data.isNotEmpty) {
@@ -368,6 +383,7 @@ class BarberRecordsNotifier extends StateNotifier<List<BarberRecord>> {
     DateTimeRange? customRange,
     String selectedPaymentMethod = 'All',
     String? paymentMethod,
+    String? branchCode,
   }) {
     final query = searchQuery.trim().toLowerCase();
     final now = DateTime.now();
@@ -379,6 +395,13 @@ class BarberRecordsNotifier extends StateNotifier<List<BarberRecord>> {
     final effectivePayment = paymentMethod ?? selectedPaymentMethod;
 
     return state.where((record) {
+      // 0. Filter by Branch Code
+      if (branchCode != null && branchCode.isNotEmpty && branchCode != 'ALL') {
+        if (record.branchCode != null && record.branchCode!.isNotEmpty && record.branchCode != branchCode) {
+          return false;
+        }
+      }
+
       // 1. Search Query: matches Customer Name, Phone, Barber, Service, or Record/Sale ID
       if (query.isNotEmpty) {
         final matchesCustomer = record.customerName.toLowerCase().contains(query);
@@ -459,11 +482,13 @@ class BarberRecordsNotifier extends StateNotifier<List<BarberRecord>> {
     DateTime? sinceDate,
     DateTimeRange? range,
     String dateFilter = 'All Time',
+    String? branchCode,
   }) {
     final filtered = filter(
       barber: barberName,
       dateFilter: range != null ? 'Custom Range' : dateFilter,
       customRange: range,
+      branchCode: branchCode,
     ).where((r) {
       if (sinceDate != null && r.timestamp.isBefore(sinceDate)) {
         return false;
@@ -480,6 +505,7 @@ class BarberRecordsNotifier extends StateNotifier<List<BarberRecord>> {
     DateTimeRange? range,
     String dateFilter = 'All Time',
     List<String>? includeBarbers,
+    String? branchCode,
   }) {
     final Map<String, BarberCommissionSummary> map = {};
     final allBarberNames = <String>{
@@ -494,6 +520,7 @@ class BarberRecordsNotifier extends StateNotifier<List<BarberRecord>> {
         sinceDate: sinceDate,
         range: range,
         dateFilter: dateFilter,
+        branchCode: branchCode,
       );
     }
 
