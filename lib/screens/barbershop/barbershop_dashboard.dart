@@ -1876,6 +1876,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
     final double totalRevenue = filtered.fold(0.0, (sum, r) => sum + r.totalPaid);
     final double avgTicket = filtered.isNotEmpty ? totalRevenue / filtered.length : 0.0;
 
+    final currentUser = ref.watch(currentUserProvider);
     final isMobile = MediaQuery.of(context).size.width < 600;
     final bool hasActiveFilters = _recordsSearchController.text.isNotEmpty ||
         _recordBarberFilter != 'All' ||
@@ -1948,7 +1949,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                           icon: const Icon(Icons.filter_alt_off, size: 16, color: Colors.red),
                           label: const Text('Clear Filters', style: TextStyle(color: Colors.red, fontSize: 12)),
                         ),
-                      if (user?.role == UserRole.admin || user?.role == UserRole.superAdmin)
+                      if (currentUser?.role == UserRole.admin || currentUser?.role == UserRole.superAdmin)
                         OutlinedButton.icon(
                           onPressed: () => _confirmClearShavingRecords(context),
                           icon: const Icon(Icons.delete_sweep_rounded, size: 16, color: Colors.red),

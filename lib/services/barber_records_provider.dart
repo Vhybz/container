@@ -9,6 +9,7 @@ import '../core/supabase_config.dart';
 import '../models/barbershop_models.dart';
 import '../models/sale_model.dart';
 import 'sale_provider.dart';
+import 'offline_sync_service.dart';
 import 'barber_queue_provider.dart';
 import 'barbershop_service.dart';
 import 'product_service.dart';
@@ -375,32 +376,38 @@ class BarberRecordsNotifier extends StateNotifier<List<BarberRecord>> {
       );
     } catch (_) {}
 
-    // Sync to Supabase
-    try {
-      final connectivity = await Connectivity().checkConnectivity();
-      if (!connectivity.contains(ConnectivityResult.none)) {
-        try {
-          await SupabaseConfig.client.from('barber_records').upsert(record.toJson());
-        } catch (_) {
-          await SupabaseConfig.client.from('barber_records').upsert(record.toDbJson());
+    // Non-blocking background remote sync to Supabase
+    unawaited(() async {
+      try {
+        final connectivity = await Connectivity().checkConnectivity();
+        if (!connectivity.contains(ConnectivityResult.none)) {
+          try {
+            await SupabaseConfig.client.from('barber_records').upsert(record.toJson());
+          } catch (_) {
+            await SupabaseConfig.client.from('barber_records').upsert(record.toDbJson());
+          }
+        } else {
+          OfflineSyncService.queueAction('UPSERT_BARBER_RECORD', record.toJson());
         }
+      } catch (e) {
+        OfflineSyncService.queueAction('UPSERT_BARBER_RECORD', record.toJson());
       }
-    } catch (e) {
-      debugPrint('Supabase record sync notice: $e');
-    }
+    }());
 
     return record;
   }
 
   /// Clears all shaving records permanently from Supabase and local cache
   Future<void> clearAllRecords() async {
-    try {
-      state = [];
-      await _saveToCache([]);
-      await SupabaseConfig.client.from('barber_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    } catch (e) {
-      debugPrint('Clear all barber records notice: $e');
-    }
+    state = [];
+    await _saveToCache([]);
+    unawaited(() async {
+      try {
+        await SupabaseConfig.client.from('barber_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      } catch (e) {
+        debugPrint('Clear all barber records notice: $e');
+      }
+    }());
   }
 
   /// Filters records with multiple criteria
