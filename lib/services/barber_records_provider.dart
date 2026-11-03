@@ -444,47 +444,25 @@ class BarberRecordsNotifier extends StateNotifier<List<BarberRecord>> {
         }
       }
 
-      // 6. Filter by Date Range (Smart dataset timestamp mapping)
-      DateTime targetDate = now;
-      if (state.isNotEmpty) {
-        final hasRealNowRecords = state.any((r) => r.timestamp.year == now.year && r.timestamp.month == now.month);
-        if (!hasRealNowRecords) {
-          targetDate = state.first.timestamp;
-        }
-      }
-
+      // 6. Filter by Date Range
       final t = record.timestamp;
       if (effectiveDateFilter == 'Today') {
-        final isMatchRealToday = t.year == now.year && t.month == now.month && t.day == now.day;
-        final isMatchTargetToday = t.year == targetDate.year && t.month == targetDate.month && t.day == targetDate.day;
-        if (!isMatchRealToday && !isMatchTargetToday) {
+        if (t.year != now.year || t.month != now.month || t.day != now.day) {
           return false;
         }
       } else if (effectiveDateFilter == 'Yesterday') {
         final yesterday = now.subtract(const Duration(days: 1));
-        final targetYesterday = targetDate.subtract(const Duration(days: 1));
-        final isMatchRealYest = t.year == yesterday.year && t.month == yesterday.month && t.day == yesterday.day;
-        final isMatchTargetYest = t.year == targetYesterday.year && t.month == targetYesterday.month && t.day == targetYesterday.day;
-        if (!isMatchRealYest && !isMatchTargetYest) {
+        if (t.year != yesterday.year || t.month != yesterday.month || t.day != yesterday.day) {
           return false;
         }
       } else if (effectiveDateFilter == 'This Week') {
-        final startOfWeekReal = now.subtract(Duration(days: now.weekday - 1));
-        final startOfDayReal = DateTime(startOfWeekReal.year, startOfWeekReal.month, startOfWeekReal.day);
-        
-        final startOfWeekTarget = targetDate.subtract(Duration(days: targetDate.weekday - 1));
-        final startOfDayTarget = DateTime(startOfWeekTarget.year, startOfWeekTarget.month, startOfWeekTarget.day);
-
-        final isAfterRealWeek = !t.isBefore(startOfDayReal) && t.year == now.year;
-        final isAfterTargetWeek = !t.isBefore(startOfDayTarget) && t.year == targetDate.year;
-
-        if (!isAfterRealWeek && !isAfterTargetWeek) {
+        final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+        final startOfDay = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
+        if (t.isBefore(startOfDay)) {
           return false;
         }
       } else if (effectiveDateFilter == 'This Month') {
-        final isMatchRealMonth = t.year == now.year && t.month == now.month;
-        final isMatchTargetMonth = t.year == targetDate.year && t.month == targetDate.month;
-        if (!isMatchRealMonth && !isMatchTargetMonth) {
+        if (t.year != now.year || t.month != now.month) {
           return false;
         }
       } else if ((effectiveDateFilter == 'Custom' || effectiveDateFilter == 'Custom Range') && effectiveCustomRange != null) {
