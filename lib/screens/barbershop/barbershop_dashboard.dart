@@ -1930,21 +1930,36 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                       ),
                     ],
                   ),
-                  if (hasActiveFilters)
-                    TextButton.icon(
-                      onPressed: () {
-                        setState(() {
-                          _recordsSearchController.clear();
-                          _recordBarberFilter = 'All';
-                          _recordServiceFilter = 'All';
-                          _recordDateFilter = 'All Time';
-                          _recordCustomRange = null;
-                          _recordPaymentFilter = 'All';
-                        });
-                      },
-                      icon: const Icon(Icons.filter_alt_off, size: 16, color: Colors.red),
-                      label: const Text('Clear All Filters', style: TextStyle(color: Colors.red, fontSize: 12)),
-                    ),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      if (hasActiveFilters)
+                        TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _recordsSearchController.clear();
+                              _recordBarberFilter = 'All';
+                              _recordServiceFilter = 'All';
+                              _recordDateFilter = 'All Time';
+                              _recordCustomRange = null;
+                              _recordPaymentFilter = 'All';
+                            });
+                          },
+                          icon: const Icon(Icons.filter_alt_off, size: 16, color: Colors.red),
+                          label: const Text('Clear Filters', style: TextStyle(color: Colors.red, fontSize: 12)),
+                        ),
+                      if (user?.role == UserRole.admin || user?.role == UserRole.superAdmin)
+                        OutlinedButton.icon(
+                          onPressed: () => _confirmClearShavingRecords(context),
+                          icon: const Icon(Icons.delete_sweep_rounded, size: 16, color: Colors.red),
+                          label: const Text('Clear Shaving Records', style: TextStyle(color: Colors.red, fontSize: 12)),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.red, width: 1.2),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
               ),
             const SizedBox(height: AppSpacing.m),
@@ -2461,6 +2476,55 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                   );
                 },
               ),
+      ),
+    );
+  }
+
+  void _confirmClearShavingRecords(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.m)),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_sweep_rounded, color: Colors.red, size: 24),
+            SizedBox(width: 8),
+            Text('Clear All Shaving Records?'),
+          ],
+        ),
+        content: const Text(
+          'This action will permanently delete all shaving and haircut transaction records from history.\n\n'
+          '• Customer Directory: 100% Intact & Safe\n'
+          '• Barbers & Staff Accounts: 100% Intact & Safe\n'
+          '• POS Services & Prices: 100% Intact & Safe',
+          style: TextStyle(fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.delete_forever, size: 18),
+            label: const Text('CLEAR SHAVING RECORDS NOW'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade800,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await ref.read(barberRecordsProvider.notifier).clearAllRecords();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('All shaving records cleared! Customers & services remain intact.'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+          ),
+        ],
       ),
     );
   }

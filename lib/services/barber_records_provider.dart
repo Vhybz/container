@@ -392,6 +392,17 @@ class BarberRecordsNotifier extends StateNotifier<List<BarberRecord>> {
     return record;
   }
 
+  /// Clears all shaving records permanently from Supabase and local cache
+  Future<void> clearAllRecords() async {
+    try {
+      state = [];
+      await _saveToCache([]);
+      await SupabaseConfig.client.from('barber_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    } catch (e) {
+      debugPrint('Clear all barber records notice: $e');
+    }
+  }
+
   /// Filters records with multiple criteria
   List<BarberRecord> filter({
     String searchQuery = '',
