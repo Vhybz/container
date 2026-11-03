@@ -18,8 +18,8 @@ class _PwaInstallBannerState extends ConsumerState<PwaInstallBanner> {
     final canInstall = ref.watch(pwaCanInstallProvider);
     final isIosSafari = PwaInstallService.isIosSafari();
 
-    // Do not display if dismissed or if neither native install nor iOS Safari tip applies
-    if (_dismissed || (!canInstall && !isIosSafari)) {
+    // Do not display if dismissed in memory, dismissed in Hive, or if neither applies
+    if (_dismissed || PwaInstallService.isDismissed() || (!canInstall && !isIosSafari)) {
       return const SizedBox.shrink();
     }
 
@@ -101,7 +101,10 @@ class _PwaInstallBannerState extends ConsumerState<PwaInstallBanner> {
                     ),
                     const SizedBox(width: 6),
                     GestureDetector(
-                      onTap: () => setState(() => _dismissed = true),
+                      onTap: () {
+                        PwaInstallService.markDismissed();
+                        setState(() => _dismissed = true);
+                      },
                       behavior: HitTestBehavior.opaque,
                       child: Container(
                         padding: const EdgeInsets.all(4),
