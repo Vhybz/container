@@ -1890,38 +1890,12 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top Header: Title & Clear Filters Action
-            if (isMobile)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Shaving & Grooming Records Archive', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                  const SizedBox(height: 2),
-                  Text('Filtered by selected criteria • ${allRecords.length} Total Records', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                  if (hasActiveFilters) ...[
-                    const SizedBox(height: 6),
-                    TextButton.icon(
-                      onPressed: () {
-                        setState(() {
-                          _recordsSearchController.clear();
-                          _recordBarberFilter = 'All';
-                          _recordServiceFilter = 'All';
-                          _recordDateFilter = 'All Time';
-                          _recordCustomRange = null;
-                          _recordPaymentFilter = 'All';
-                        });
-                      },
-                      icon: const Icon(Icons.filter_alt_off, size: 14, color: Colors.red),
-                      label: const Text('Clear All Filters', style: TextStyle(color: Colors.red, fontSize: 11)),
-                    ),
-                  ],
-                ],
-              )
-            else
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
+            // Top Header: Title, Clear Filters & Clear Records Actions
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text('Shaving & Grooming Records Archive', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
@@ -1931,38 +1905,39 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                       ),
                     ],
                   ),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      if (hasActiveFilters)
-                        TextButton.icon(
-                          onPressed: () {
-                            setState(() {
-                              _recordsSearchController.clear();
-                              _recordBarberFilter = 'All';
-                              _recordServiceFilter = 'All';
-                              _recordDateFilter = 'All Time';
-                              _recordCustomRange = null;
-                              _recordPaymentFilter = 'All';
-                            });
-                          },
-                          icon: const Icon(Icons.filter_alt_off, size: 16, color: Colors.red),
-                          label: const Text('Clear Filters', style: TextStyle(color: Colors.red, fontSize: 12)),
-                        ),
-                      if (currentUser?.role == UserRole.admin || currentUser?.role == UserRole.superAdmin)
-                        OutlinedButton.icon(
-                          onPressed: () => _confirmClearShavingRecords(context),
-                          icon: const Icon(Icons.delete_sweep_rounded, size: 16, color: Colors.red),
-                          label: const Text('Clear Shaving Records', style: TextStyle(color: Colors.red, fontSize: 12)),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Colors.red, width: 1.2),
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
+                ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (hasActiveFilters)
+                      TextButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _recordsSearchController.clear();
+                            _recordBarberFilter = 'All';
+                            _recordServiceFilter = 'All';
+                            _recordDateFilter = 'All Time';
+                            _recordCustomRange = null;
+                            _recordPaymentFilter = 'All';
+                          });
+                        },
+                        icon: const Icon(Icons.filter_alt_off, size: 16, color: Colors.red),
+                        label: const Text('Clear Filters', style: TextStyle(color: Colors.red, fontSize: 12)),
+                      ),
+                    OutlinedButton.icon(
+                      onPressed: () => _confirmClearShavingRecords(context),
+                      icon: const Icon(Icons.delete_sweep_rounded, size: 16, color: Colors.red),
+                      label: const Text('Clear Shaving Records', style: TextStyle(color: Colors.red, fontSize: 12)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.red, width: 1.2),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
             const SizedBox(height: AppSpacing.m),
 
             // 1. Search Bar (Customer Name, Phone, Service, Barber, Receipt ID)
