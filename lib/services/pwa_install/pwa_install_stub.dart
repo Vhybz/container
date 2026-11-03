@@ -4,4 +4,6 @@ class PwaInstallImpl {
   static bool canInstallImpl() => false;
 
   static Future<bool> promptInstallImpl() async => false;
+
+  static bool isIosSafariImpl() => false;
 }

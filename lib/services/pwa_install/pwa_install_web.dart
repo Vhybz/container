@@ -1,4 +1,5 @@
 import 'dart:js_interop';
+import 'package:web/web.dart' as web;
 
 @JS('checkPwaCanInstall')
 external JSBoolean? checkPwaCanInstall();
@@ -26,6 +27,17 @@ class PwaInstallImpl {
         return res.toDart;
       }
       return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static bool isIosSafariImpl() {
+    try {
+      final userAgent = web.window.navigator.userAgent.toLowerCase();
+      final isIos = userAgent.contains('iphone') || userAgent.contains('ipad') || userAgent.contains('ipod');
+      final isSafari = userAgent.contains('safari') && !userAgent.contains('chrome') && !userAgent.contains('crios') && !userAgent.contains('fxios');
+      return isIos && isSafari;
     } catch (_) {
       return false;
     }

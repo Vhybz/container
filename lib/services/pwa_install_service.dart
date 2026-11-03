@@ -10,27 +10,44 @@ class PwaInstallService {
     PwaInstallImpl.initPwaInstallImpl();
   }
 
-  static bool get canInstall => PwaInstallImpl.canInstallImpl();
+  static bool canInstall() => PwaInstallImpl.canInstallImpl();
+
+  static bool isIosSafari() => PwaInstallImpl.isIosSafariImpl();
 
   static Future<bool> promptInstall() async {
     return await PwaInstallImpl.promptInstallImpl();
   }
 
-  /// Checks if user previously clicked "Not Now" (saved in Hive); if ready, delays 2s and displays showInstallDialog.
-  static Future<void> checkAndShowPrompt(BuildContext context) async {
-    if (!canInstall) return;
+  /// Checks if user previously dismissed prompt in Hive
+  static bool isDismissed() {
+    try {
+      if (!Hive.isBoxOpen('app_settings')) return false;
+      final box = Hive.box('app_settings');
+      return box.get('pwa_install_dismissed', defaultValue: false) == true;
+    } catch (_) {
+      return false;
+    }
+  }
 
+  /// Persists banner dismissal state to Hive
+  static Future<void> markDismissed() async {
     try {
       final box = Hive.isBoxOpen('app_settings')
           ? Hive.box('app_settings')
           : await Hive.openBox('app_settings');
-      final bool dismissed = box.get('pwa_install_dismissed', defaultValue: false);
-      if (dismissed) return;
-    } catch (_) {}
+      await box.put('pwa_install_dismissed', true);
+    } catch (_) {
+      //
+    }
+  }
+
+  /// Checks if user previously clicked "Not Now" (saved in Hive); if ready, delays 2s and displays showInstallDialog.
+  static Future<void> checkAndShowPrompt(BuildContext context) async {
+    if (!canInstall() || isDismissed()) return;
 
     await Future.delayed(const Duration(seconds: 2));
 
-    if (!context.mounted || !canInstall) return;
+    if (!context.mounted || !canInstall() || isDismissed()) return;
 
     await showInstallDialog(context);
   }
@@ -118,12 +135,7 @@ class PwaInstallService {
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () async {
-                        try {
-                          final box = Hive.isBoxOpen('app_settings')
-                              ? Hive.box('app_settings')
-                              : await Hive.openBox('app_settings');
-                          await box.put('pwa_install_dismissed', true);
-                        } catch (_) {}
+                        await markDismissed();
                         if (ctx.mounted) Navigator.pop(ctx);
                       },
                       style: OutlinedButton.styleFrom(
@@ -160,22 +172,34 @@ class PwaInstallService {
   }
 }
 
-/// Riverpod provider for PWA install State
-final pwaInstallNotifierProvider = StateNotifierProvider<PwaInstallStateNotifier, bool>((ref) {
-  return PwaInstallStateNotifier();
+/// Reactive Riverpod provider for PWA install State
+final pwaCanInstallProvider = StateNotifierProvider<PwaInstallNotifier, bool>((ref) {
+  return PwaInstallNotifier();
 });
 
-class PwaInstallStateNotifier extends StateNotifier<bool> {
-  PwaInstallStateNotifier() : super(PwaInstallService.canInstall);
+// Alias for backwards compatibility across all screens
+final pwaInstallableProvider = pwaCanInstallProvider;
+final pwaInstallNotifierProvider = pwaCanInstallProvider;
+
+class PwaInstallNotifier extends StateNotifier<bool> {
+  PwaInstallNotifier() : super(PwaInstallService.canInstall());
 
   bool checkCanInstall() {
-    state = PwaInstallService.canInstall;
+    state = PwaInstallService.canInstall();
     return state;
   }
 
+  Future<bool> triggerPwaInstall() async {
+    final success = await PwaInstallService.promptInstall();
+    state = PwaInstallService.canInstall();
+    return success;
+  }
+
   Future<bool> promptInstall() async {
-    final result = await PwaInstallService.promptInstall();
-    state = PwaInstallService.canInstall;
-    return result;
+    return await triggerPwaInstall();
+  }
+
+  void dismissBanner() {
+    PwaInstallService.markDismissed();
   }
 }
