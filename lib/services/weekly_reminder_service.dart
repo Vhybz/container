@@ -97,7 +97,7 @@ class WeeklyReminderService {
       'Card / Bank': cardTotal,
     };
 
-    // Sector breakdown
+    // Sector breakdown with comprehensive sector category matching
     double pharmacyRevenue = 0.0;
     double barberRevenue = 0.0;
     double techRevenue = 0.0;
@@ -109,11 +109,57 @@ class WeeklyReminderService {
         final name = item.product.name.toUpperCase();
         final itemTotal = item.total;
 
-        if (cat.contains('PHARM') || cat.contains('MED') || cat.contains('DRUG')) {
+        final isPharmacy = item.product.requiresPrescription ||
+            cat.contains('PHARM') ||
+            cat.contains('MED') ||
+            cat.contains('DRUG') ||
+            cat.contains('HEALTH') ||
+            cat.contains('ANALGESIC') ||
+            cat.contains('SUPPLEMENT') ||
+            cat.contains('ANTIMALARIAL') ||
+            cat.contains('CONTRACEPTIVE') ||
+            cat.contains('GASTROINTESTINAL') ||
+            cat.contains('ANTIBIOTIC') ||
+            cat.contains('TOPICAL') ||
+            cat.contains('GEL') ||
+            cat.contains('VITAMIN') ||
+            cat.contains('SYRUP') ||
+            cat.contains('INJECTION') ||
+            cat.contains('TABLET') ||
+            cat.contains('CAPSULE') ||
+            cat.contains('SOLUTION');
+
+        final isBarber = (item.product.isService ||
+                cat.contains('BARBER') ||
+                cat.contains('HAIR') ||
+                cat.contains('BEARD') ||
+                cat.contains('GROOM') ||
+                cat.contains('SHAVE') ||
+                cat.contains('DYE') ||
+                cat.contains('FACIAL') ||
+                cat.contains('CUT') ||
+                cat.contains('SALON')) &&
+            !cat.contains('REPAIR') &&
+            !name.contains('IPHONE') &&
+            !name.contains('BATTERY');
+
+        final isTech = item.product.requiresImei ||
+            cat.contains('PHONE') ||
+            cat.contains('TECH') ||
+            cat.contains('REPAIR') ||
+            cat.contains('DEVICE') ||
+            cat.contains('ACCESSOR') ||
+            cat.contains('AUDIO') ||
+            cat.contains('CHARGER') ||
+            cat.contains('CASE') ||
+            name.contains('IPHONE') ||
+            name.contains('SAMSUNG');
+
+        if (isPharmacy) {
           pharmacyRevenue += itemTotal;
-        } else if (cat.contains('BARBER') || cat.contains('HAIR') || cat.contains('BEARD') || cat.contains('GROOM')) {
+        } else if (isBarber) {
           barberRevenue += itemTotal;
-        } else if (cat.contains('PHONE') || cat.contains('TECH') || cat.contains('REPAIR') || name.contains('IPHONE')) {
+        } else if (isTech) {
           techRevenue += itemTotal;
         } else {
           retailRevenue += itemTotal;
@@ -128,10 +174,13 @@ class WeeklyReminderService {
       'Retail / Wholesale': retailRevenue,
     };
 
-    // Staff performance
+    // Staff performance with clean name formatting
     final Map<String, double> staffRevenueMap = {};
     for (final sale in weeklySalesList) {
-      final cashier = sale.cashierName.trim();
+      String cashier = sale.cashierName.trim();
+      if (cashier.contains('(')) {
+        cashier = cashier.split('(').first.trim();
+      }
       if (cashier.isNotEmpty) {
         staffRevenueMap[cashier] = (staffRevenueMap[cashier] ?? 0.0) + sale.totalAmount;
       }
