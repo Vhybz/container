@@ -509,9 +509,23 @@ class BarberRecordsNotifier extends StateNotifier<List<BarberRecord>> {
     String? branchCode,
   }) {
     final Map<String, BarberCommissionSummary> map = {};
+
+    // Get all records matching period & branch first
+    final periodRecords = filter(
+      dateFilter: range != null ? 'Custom Range' : dateFilter,
+      customRange: range,
+      branchCode: branchCode,
+    ).where((r) {
+      if (sinceDate != null && r.timestamp.isBefore(sinceDate)) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    // Extract all barber names present in period records as well as active staff/custom barbers
     final allBarberNames = <String>{
       ...?includeBarbers,
-      ...state.map((r) => r.barber),
+      ...periodRecords.map((r) => r.barber),
     }.where((b) => b.trim().isNotEmpty).toList()
       ..sort();
 
