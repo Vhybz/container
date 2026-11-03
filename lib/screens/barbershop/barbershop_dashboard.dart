@@ -18,6 +18,7 @@ import '../../models/customer_model.dart';
 import '../../services/barber_records_provider.dart';
 import '../../services/receipt_service.dart';
 import '../../services/menu_service.dart';
+import '../../services/branch_provider.dart';
 import '../../widgets/app_sidebar.dart';
 import '../../widgets/main_app_bar.dart';
 import '../../widgets/responsive_layout.dart';
