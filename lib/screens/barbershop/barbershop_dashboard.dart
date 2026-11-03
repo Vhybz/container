@@ -44,7 +44,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
   String _recordDateFilter = 'All Time';
   DateTimeRange? _recordCustomRange;
   String _recordPaymentFilter = 'All';
-  String _commissionDateFilter = 'All Time';
+  String _commissionDateFilter = 'Today';
   DateTimeRange? _commissionCustomRange;
 
   @override
@@ -2488,10 +2488,59 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
     );
 
     // 3. Calculate shop-wide totals directly from periodRecords (100% match with Shaving & Records)
-    final int totalServicesAll = periodRecords.length;
-    final double totalGrossAll = periodRecords.fold(0.0, (sum, r) => sum + r.price);
-    final double totalCommissionAll = periodRecords.fold(0.0, (sum, r) => sum + r.effectiveCommission);
-    final double totalTipsAll = periodRecords.fold(0.0, (sum, r) => sum + r.tip);
+    int totalServicesAll = periodRecords.length;
+    double totalGrossAll = periodRecords.fold(0.0, (sum, r) => sum + r.price);
+    double totalCommissionAll = periodRecords.fold(0.0, (sum, r) => sum + r.effectiveCommission);
+    double totalTipsAll = periodRecords.fold(0.0, (sum, r) => sum + r.tip);
+
+    // Unbreakable Sales Sync: If barber_records has 0 cuts for the selected filter, calculate directly from sales history!
+    if (totalServicesAll == 0) {
+      final now = DateTime.now();
+      final allSales = ref.watch(saleHistoryProvider);
+      
+      final filteredSales = allSales.where((s) {
+        final t = s.timestamp;
+        if (_commissionDateFilter == 'Today') {
+          return t.year == now.year && t.month == now.month && t.day == now.day;
+        } else if (_commissionDateFilter == 'Yesterday') {
+          final yest = now.subtract(const Duration(days: 1));
+          return t.year == yest.year && t.month == yest.month && t.day == yest.day;
+        } else if (_commissionDateFilter == 'This Week') {
+          final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+          final startOfDay = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
+          return !t.isBefore(startOfDay);
+        } else if (_commissionDateFilter == 'This Month') {
+          return t.year == now.year && t.month == now.month;
+        }
+        return true;
+      }).toList();
+
+      for (final sale in filteredSales) {
+        if (effectiveBranch != null && effectiveBranch.isNotEmpty && effectiveBranch != 'ALL') {
+          if (sale.branchCode != null && sale.branchCode!.isNotEmpty && sale.branchCode != effectiveBranch) {
+            continue;
+          }
+        }
+
+        for (final item in sale.items) {
+          final cat = item.product.category.toUpperCase();
+          final name = item.product.name.toUpperCase();
+          final isBarberItem = (cat.contains('BARBER') || cat.contains('HAIR') || cat.contains('BEARD') || item.product.isService) &&
+              !cat.contains('REPAIR') && !name.contains('IPHONE') && !name.contains('BATTERY');
+
+          if (isBarberItem) {
+            totalServicesAll += item.quantity.toInt();
+            final itemGross = item.priceAtSale * item.quantity;
+            totalGrossAll += itemGross;
+            final itemComm = item.product.serviceCommission > 0
+                ? (item.product.serviceCommission * item.quantity)
+                : (itemGross * 0.4);
+            totalCommissionAll += itemComm;
+          }
+        }
+      }
+    }
+
     final double totalPayoutAll = totalCommissionAll + totalTipsAll;
 
     final summaries = summariesMap.values.toList()
