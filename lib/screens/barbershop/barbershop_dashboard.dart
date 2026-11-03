@@ -2525,8 +2525,26 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
         for (final item in sale.items) {
           final cat = item.product.category.toUpperCase();
           final name = item.product.name.toUpperCase();
-          final isBarberItem = (cat.contains('BARBER') || cat.contains('HAIR') || cat.contains('BEARD') || item.product.isService) &&
-              !cat.contains('REPAIR') && !name.contains('IPHONE') && !name.contains('BATTERY');
+          final isBarberItem = (item.product.isService ||
+                  cat.contains('BARBER') ||
+                  cat.contains('HAIR') ||
+                  cat.contains('BEARD') ||
+                  cat.contains('GROOM') ||
+                  cat.contains('SALON') ||
+                  cat.contains('SHAVE') ||
+                  cat.contains('DYE') ||
+                  cat.contains('FACIAL') ||
+                  cat.contains('CUT') ||
+                  cat.contains('SERVICE') ||
+                  name.contains('HAIRCUT') ||
+                  name.contains('SHAVE') ||
+                  name.contains('SAKORA') ||
+                  name.contains('SHAP') ||
+                  name.contains('DYE') ||
+                  name.contains('KIDS')) &&
+              !cat.contains('REPAIR') &&
+              !name.contains('IPHONE') &&
+              !name.contains('BATTERY');
 
           if (isBarberItem) {
             totalServicesAll += item.quantity.toInt();
