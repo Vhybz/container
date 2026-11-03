@@ -387,10 +387,10 @@ class BarberRecordsNotifier extends StateNotifier<List<BarberRecord>> {
             await SupabaseConfig.client.from('barber_records').upsert(record.toDbJson());
           }
         } else {
-          OfflineSyncService.queueAction('UPSERT_BARBER_RECORD', record.toJson());
+          await OfflineSyncService.addToQueue(actionType: 'UPSERT_BARBER_RECORD', data: record.toJson());
         }
       } catch (e) {
-        OfflineSyncService.queueAction('UPSERT_BARBER_RECORD', record.toJson());
+        await OfflineSyncService.addToQueue(actionType: 'UPSERT_BARBER_RECORD', data: record.toJson());
       }
     }());
 
