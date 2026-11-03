@@ -57,9 +57,9 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
     }
   }
 
-  void _saveToCache(List<SaleRecord> sales) {
+  void _saveToCache(List<SaleRecord> sales, {bool forceClear = false}) {
     try {
-      if (sales.isEmpty && state.isNotEmpty) {
+      if (sales.isEmpty && state.isNotEmpty && !forceClear) {
         // Safety: Don't overwrite a non-empty cache with an empty list unless we've verified it's intentional.
         // This prevents data loss during transient network/indexing delays.
         return;
@@ -106,8 +106,13 @@ class SaleHistoryNotifier extends StateNotifier<List<SaleRecord>> {
   Future<void> _fetchFreshSales(String? branchCode, bool canSeeAll) async {
     try {
       final sales = await _service.getSales(branchCode, canSeeAll: canSeeAll);
-      _applyPendingAndSetState(sales);
-      _saveToCache(sales);
+      if (sales.isEmpty) {
+        state = [];
+        _saveToCache([], forceClear: true);
+      } else {
+        _applyPendingAndSetState(sales);
+        _saveToCache(sales);
+      }
     } catch (e) {
       if (kIsWeb) {
         debugPrint('Sale Fetch Error (Web): $e');

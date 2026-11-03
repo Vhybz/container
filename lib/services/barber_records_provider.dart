@@ -89,12 +89,14 @@ class BarberRecordsNotifier extends StateNotifier<List<BarberRecord>> {
           .limit(2000);
 
       final List data = response as List? ?? [];
-      if (data.isNotEmpty) {
+      if (data.isEmpty) {
+        state = [];
+        await _saveToCache([]);
+      } else {
         final remoteList = data
             .map((e) => BarberRecord.fromJson(Map<String, dynamic>.from(e)))
             .toList();
 
-        // Merge remote with local to preserve newly created items
         final Map<String, BarberRecord> map = {
           for (var item in state) item.id: item,
         };
