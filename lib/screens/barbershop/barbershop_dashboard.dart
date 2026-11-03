@@ -44,7 +44,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
   String _recordDateFilter = 'All Time';
   DateTimeRange? _recordCustomRange;
   String _recordPaymentFilter = 'All';
-  String _commissionDateFilter = 'This Month';
+  String _commissionDateFilter = 'All Time';
   DateTimeRange? _commissionCustomRange;
 
   @override
