@@ -2516,12 +2516,6 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
       }).toList();
 
       for (final sale in filteredSales) {
-        if (effectiveBranch != null && effectiveBranch.isNotEmpty && effectiveBranch != 'ALL') {
-          if (sale.branchCode != null && sale.branchCode!.isNotEmpty && sale.branchCode != effectiveBranch) {
-            continue;
-          }
-        }
-
         for (final item in sale.items) {
           final cat = item.product.category.toUpperCase();
           final name = item.product.name.toUpperCase();
