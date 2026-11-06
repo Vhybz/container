@@ -98,11 +98,20 @@ class BarberRecordsNotifier extends StateNotifier<List<BarberRecord>> {
             .map((e) => BarberRecord.fromJson(Map<String, dynamic>.from(e)))
             .toList();
 
-        final Map<String, BarberRecord> map = {
-          for (var item in state) item.id: item,
-        };
+        final Map<String, BarberRecord> map = {};
+        for (var item in state) {
+          final key = (item.saleId != null && item.saleId!.isNotEmpty)
+              ? 'sale_${item.saleId}'
+              : ((item.queueId != null && item.queueId!.isNotEmpty) ? 'queue_${item.queueId}' : item.id);
+          map[key] = item;
+        }
         for (var remote in remoteList) {
-          map[remote.id] = remote;
+          final key = (remote.saleId != null && remote.saleId!.isNotEmpty)
+              ? 'sale_${remote.saleId}'
+              : ((remote.queueId != null && remote.queueId!.isNotEmpty) ? 'queue_${remote.queueId}' : remote.id);
+          if (!map.containsKey(key)) {
+            map[key] = remote;
+          }
         }
         final merged = map.values.toList()
           ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
@@ -363,8 +372,20 @@ class BarberRecordsNotifier extends StateNotifier<List<BarberRecord>> {
       commissionAmount: effectiveComm,
     );
 
-    // Save locally
-    final updatedList = [record, ...state]
+    // Save locally with deduplication by saleId or queueId
+    final Map<String, BarberRecord> map = {};
+    for (var item in state) {
+      final key = (item.saleId != null && item.saleId!.isNotEmpty)
+          ? 'sale_${item.saleId}'
+          : ((item.queueId != null && item.queueId!.isNotEmpty) ? 'queue_${item.queueId}' : item.id);
+      map[key] = item;
+    }
+    final recordKey = (record.saleId != null && record.saleId!.isNotEmpty)
+        ? 'sale_${record.saleId}'
+        : ((record.queueId != null && record.queueId!.isNotEmpty) ? 'queue_${record.queueId}' : record.id);
+    map[recordKey] = record;
+
+    final updatedList = map.values.toList()
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
     state = updatedList;
     await _saveToCache(updatedList);
@@ -439,7 +460,7 @@ class BarberRecordsNotifier extends StateNotifier<List<BarberRecord>> {
     return state.where((record) {
       // 0. Filter by Branch Code
       if (branchCode != null && branchCode.isNotEmpty && branchCode != 'ALL') {
-        if (record.branchCode != null && record.branchCode!.isNotEmpty && record.branchCode != branchCode) {
+        if (record.branchCode.isNotEmpty && record.branchCode != branchCode) {
           return false;
         }
       }
