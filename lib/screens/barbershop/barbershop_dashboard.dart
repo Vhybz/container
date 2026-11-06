@@ -1877,7 +1877,6 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
     final double avgTicket = filtered.isNotEmpty ? totalRevenue / filtered.length : 0.0;
 
     final currentUser = ref.watch(currentUserProvider);
-    final isMobile = MediaQuery.of(context).size.width < 600;
     final bool hasActiveFilters = _recordsSearchController.text.isNotEmpty ||
         _recordBarberFilter != 'All' ||
         _recordServiceFilter != 'All' ||
@@ -1925,15 +1924,16 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                         icon: const Icon(Icons.filter_alt_off, size: 16, color: Colors.red),
                         label: const Text('Clear Filters', style: TextStyle(color: Colors.red, fontSize: 12)),
                       ),
-                    OutlinedButton.icon(
-                      onPressed: () => _confirmClearShavingRecords(context),
-                      icon: const Icon(Icons.delete_sweep_rounded, size: 16, color: Colors.red),
-                      label: const Text('Clear Shaving Records', style: TextStyle(color: Colors.red, fontSize: 12)),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.red, width: 1.2),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    if (currentUser?.role == UserRole.admin || currentUser?.role == UserRole.superAdmin)
+                      OutlinedButton.icon(
+                        onPressed: () => _confirmClearShavingRecords(context),
+                        icon: const Icon(Icons.delete_sweep_rounded, size: 16, color: Colors.red),
+                        label: const Text('Clear Shaving Records', style: TextStyle(color: Colors.red, fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Colors.red, width: 1.2),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ],

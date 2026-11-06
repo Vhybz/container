@@ -552,14 +552,36 @@ class SmsService {
     return await _sendSms(phone, message);
   }
 
+  static final Set<String> _sentSmsTracker = {};
+
+  static bool _isDuplicateSms(String key) {
+    if (_sentSmsTracker.contains(key)) {
+      debugPrint('SMS Engine: Blocked duplicate SMS dispatch for key: $key');
+      return true;
+    }
+    _sentSmsTracker.add(key);
+    if (_sentSmsTracker.length > 500) {
+      _sentSmsTracker.clear();
+    }
+    Future.delayed(const Duration(seconds: 60), () {
+      _sentSmsTracker.remove(key);
+    });
+    return false;
+  }
+
   static Future<bool> sendPostHaircutSms({
     required String name,
     required String phone,
     required String serviceName,
     required String barberName,
     String? shopName,
+    String? trackingId,
   }) async {
     if (phone.trim().isEmpty) return false;
+
+    final key = trackingId ?? '${phone.trim()}_${serviceName.trim()}_${barberName.trim()}';
+    if (_isDuplicateSms(key)) return true;
+
     final String store = shopName ?? 'Container Barbershop';
     final String message = 'Hello $name, thank you for visiting $store for your $serviceName with $barberName! We hope you love your fresh look. Keep looking sharp & see you next time!';
     return await _sendSms(phone.trim(), message);
@@ -587,8 +609,13 @@ class SmsService {
     required String serviceName,
     required String barberName,
     String? shopName,
+    String? trackingId,
   }) async {
     if (parentPhone.trim().isEmpty) return false;
+
+    final key = trackingId ?? '${parentPhone.trim()}_${childName.trim()}_${serviceName.trim()}';
+    if (_isDuplicateSms(key)) return true;
+
     final String store = shopName ?? 'Container Barbershop';
     final String message = 'Hello! Your little one $childName just had a fresh $serviceName at $store with $barberName! They look amazing. Thank you for trusting us with your child. See you next time!';
     return await _sendSms(parentPhone.trim(), message);
