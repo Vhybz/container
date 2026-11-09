@@ -2506,6 +2506,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
   }
 
   Widget _buildCommissionsTab(ThemeData theme, List<SaleRecord> todaySales, List<UserAccount> staff) {
+    final isMobile = ResponsiveLayout.isMobile(context);
     final allRecords = ref.watch(barberRecordsProvider);
     final barberNames = _getCompiledBarberNames(staff);
     final currentBranch = ref.watch(currentBranchProvider);
@@ -2671,50 +2672,103 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
             ),
             const SizedBox(height: AppSpacing.m),
 
-            // Shop-Wide Summary KPI Grid
-            Row(
-              children: [
-                Expanded(
-                  child: _buildCommissionKpiCard(
-                    title: 'SERVICES COMPLETED',
-                    value: '$totalServicesAll Services',
-                    subtitle: 'Cuts, shaves, dye & facials',
-                    icon: Icons.content_cut_rounded,
-                    color: const Color(0xFF1565C0),
+            // Shop-Wide Summary KPI Grid (2x2 Grid on Mobile, 1x4 Row on Desktop)
+            if (isMobile)
+              Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildCommissionKpiCard(
+                          title: 'SERVICES COMPLETED',
+                          value: '$totalServicesAll Services',
+                          subtitle: 'Cuts, shaves, dye & facials',
+                          icon: Icons.content_cut_rounded,
+                          color: const Color(0xFF1565C0),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildCommissionKpiCard(
+                          title: 'GROSS SERVICE SALES',
+                          value: currencyFormat.format(totalGrossAll),
+                          subtitle: 'Total billed revenue',
+                          icon: Icons.attach_money_rounded,
+                          color: Colors.blueGrey,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildCommissionKpiCard(
-                    title: 'GROSS SERVICE SALES',
-                    value: currencyFormat.format(totalGrossAll),
-                    subtitle: 'Total billed revenue',
-                    icon: Icons.attach_money_rounded,
-                    color: Colors.blueGrey,
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildCommissionKpiCard(
+                          title: 'COMMISSION EARNED',
+                          value: currencyFormat.format(totalCommissionAll),
+                          subtitle: 'Standard ~40% split',
+                          icon: Icons.account_balance_wallet_rounded,
+                          color: Colors.green.shade700,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildCommissionKpiCard(
+                          title: 'TOTAL PAYOUT (+TIPS)',
+                          value: currencyFormat.format(totalPayoutAll),
+                          subtitle: 'Includes ${currencyFormat.format(totalTipsAll)} tips',
+                          icon: Icons.payments_rounded,
+                          color: Colors.orange.shade800,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildCommissionKpiCard(
-                    title: 'COMMISSION EARNED',
-                    value: currencyFormat.format(totalCommissionAll),
-                    subtitle: 'Standard ~40% split',
-                    icon: Icons.account_balance_wallet_rounded,
-                    color: Colors.green.shade700,
+                ],
+              )
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildCommissionKpiCard(
+                      title: 'SERVICES COMPLETED',
+                      value: '$totalServicesAll Services',
+                      subtitle: 'Cuts, shaves, dye & facials',
+                      icon: Icons.content_cut_rounded,
+                      color: const Color(0xFF1565C0),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildCommissionKpiCard(
-                    title: 'TOTAL PAYOUT (+TIPS)',
-                    value: currencyFormat.format(totalPayoutAll),
-                    subtitle: 'Includes ${currencyFormat.format(totalTipsAll)} tips',
-                    icon: Icons.payments_rounded,
-                    color: Colors.orange.shade800,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildCommissionKpiCard(
+                      title: 'GROSS SERVICE SALES',
+                      value: currencyFormat.format(totalGrossAll),
+                      subtitle: 'Total billed revenue',
+                      icon: Icons.attach_money_rounded,
+                      color: Colors.blueGrey,
+                    ),
                   ),
-                ),
-              ],
-            ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildCommissionKpiCard(
+                      title: 'COMMISSION EARNED',
+                      value: currencyFormat.format(totalCommissionAll),
+                      subtitle: 'Standard ~40% split',
+                      icon: Icons.account_balance_wallet_rounded,
+                      color: Colors.green.shade700,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildCommissionKpiCard(
+                      title: 'TOTAL PAYOUT (+TIPS)',
+                      value: currencyFormat.format(totalPayoutAll),
+                      subtitle: 'Includes ${currencyFormat.format(totalTipsAll)} tips',
+                      icon: Icons.payments_rounded,
+                      color: Colors.orange.shade800,
+                    ),
+                  ),
+                ],
+              ),
             const SizedBox(height: AppSpacing.m),
             const Divider(),
 
@@ -2841,7 +2895,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
     required Color color,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(AppRadius.m),
@@ -2850,19 +2904,33 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
       child: Row(
         children: [
           CircleAvatar(
-            radius: 18,
+            radius: 16,
             backgroundColor: color.withValues(alpha: 0.15),
-            child: Icon(icon, color: color, size: 18),
+            child: Icon(icon, color: color, size: 16),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(title, style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: color, letterSpacing: 0.5)),
-                Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color)),
-                Text(subtitle, style: const TextStyle(fontSize: 10, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(
+                  title, 
+                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: color, letterSpacing: 0.3),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color)),
+                ),
+                Text(
+                  subtitle, 
+                  style: const TextStyle(fontSize: 9, color: Colors.grey), 
+                  maxLines: 1, 
+                  overflow: TextOverflow.ellipsis,
+                ),
               ],
             ),
           ),
