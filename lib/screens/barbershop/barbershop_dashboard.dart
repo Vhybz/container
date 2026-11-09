@@ -1876,7 +1876,7 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
     final double totalRevenue = filtered.fold(0.0, (sum, r) => sum + r.totalPaid);
     final double avgTicket = filtered.isNotEmpty ? totalRevenue / filtered.length : 0.0;
 
-    final currentUser = ref.watch(currentUserProvider);
+    final isMobile = ResponsiveLayout.isMobile(context);
     final bool hasActiveFilters = _recordsSearchController.text.isNotEmpty ||
         _recordBarberFilter != 'All' ||
         _recordServiceFilter != 'All' ||
@@ -1890,41 +1890,36 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Top Header: Title, Clear Filters & Clear Records Actions
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Shaving & Grooming Records Archive', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      Text(
-                        'Search by customer, barber, haircut, and date range • ${allRecords.length} total records saved',
-                        style: const TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                    ],
+            if (isMobile)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Shaving & Grooming Records Archive', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Search by customer, barber, haircut, and date range • ${allRecords.length} total records saved',
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
                   ),
-                ),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    if (hasActiveFilters)
-                      TextButton.icon(
-                        onPressed: () {
-                          setState(() {
-                            _recordsSearchController.clear();
-                            _recordBarberFilter = 'All';
-                            _recordServiceFilter = 'All';
-                            _recordDateFilter = 'All Time';
-                            _recordCustomRange = null;
-                            _recordPaymentFilter = 'All';
-                          });
-                        },
-                        icon: const Icon(Icons.filter_alt_off, size: 16, color: Colors.red),
-                        label: const Text('Clear Filters', style: TextStyle(color: Colors.red, fontSize: 12)),
-                      ),
-                    if (currentUser?.role == UserRole.admin || currentUser?.role == UserRole.superAdmin)
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (hasActiveFilters)
+                        TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _recordsSearchController.clear();
+                              _recordBarberFilter = 'All';
+                              _recordServiceFilter = 'All';
+                              _recordDateFilter = 'All Time';
+                              _recordCustomRange = null;
+                              _recordPaymentFilter = 'All';
+                            });
+                          },
+                          icon: const Icon(Icons.filter_alt_off, size: 16, color: Colors.red),
+                          label: const Text('Clear Filters', style: TextStyle(color: Colors.red, fontSize: 12)),
+                        ),
                       OutlinedButton.icon(
                         onPressed: () => _confirmClearShavingRecords(context),
                         icon: const Icon(Icons.delete_sweep_rounded, size: 16, color: Colors.red),
@@ -1934,10 +1929,58 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                         ),
                       ),
-                  ],
-                ),
-              ],
-            ),
+                    ],
+                  ),
+                ],
+              )
+            else
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Shaving & Grooming Records Archive', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        Text(
+                          'Search by customer, barber, haircut, and date range • ${allRecords.length} total records saved',
+                          style: const TextStyle(fontSize: 11, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (hasActiveFilters)
+                        TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _recordsSearchController.clear();
+                              _recordBarberFilter = 'All';
+                              _recordServiceFilter = 'All';
+                              _recordDateFilter = 'All Time';
+                              _recordCustomRange = null;
+                              _recordPaymentFilter = 'All';
+                            });
+                          },
+                          icon: const Icon(Icons.filter_alt_off, size: 16, color: Colors.red),
+                          label: const Text('Clear Filters', style: TextStyle(color: Colors.red, fontSize: 12)),
+                        ),
+                      OutlinedButton.icon(
+                        onPressed: () => _confirmClearShavingRecords(context),
+                        icon: const Icon(Icons.delete_sweep_rounded, size: 16, color: Colors.red),
+                        label: const Text('Clear Shaving Records', style: TextStyle(color: Colors.red, fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Colors.red, width: 1.2),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             const SizedBox(height: AppSpacing.m),
 
             // 1. Search Bar (Customer Name, Phone, Service, Barber, Receipt ID)
@@ -1962,42 +2005,67 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
             const SizedBox(height: AppSpacing.s),
 
             // 2. Dropdown Filters Row: Barber, Haircut / Service, Payment Method
-            Row(
-              children: [
-                // Filter by Barber
-                Expanded(
-                  flex: 3,
-                  child: DropdownButtonFormField<String>(
-                    isExpanded: true,
-                    initialValue: allBarberNames.contains(_recordBarberFilter) ? _recordBarberFilter : 'All',
-                    decoration: const InputDecoration(
-                      labelText: 'Filter by Barber',
-                      prefixIcon: Icon(Icons.badge_outlined, size: 16),
-                      isDense: true,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(),
-                    ),
-                    items: allBarberNames.map((name) {
-                      return DropdownMenuItem(
-                        value: name,
-                        child: Text(
-                          name == 'All' ? 'All Barbers' : name,
-                          style: const TextStyle(fontSize: 12),
-                          overflow: TextOverflow.ellipsis,
+            if (isMobile)
+              Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          isExpanded: true,
+                          initialValue: allBarberNames.contains(_recordBarberFilter) ? _recordBarberFilter : 'All',
+                          decoration: const InputDecoration(
+                            labelText: 'Barber',
+                            prefixIcon: Icon(Icons.badge_outlined, size: 16),
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                            border: OutlineInputBorder(),
+                          ),
+                          items: allBarberNames.map((name) {
+                            return DropdownMenuItem(
+                              value: name,
+                              child: Text(
+                                name == 'All' ? 'All Barbers' : name,
+                                style: const TextStyle(fontSize: 12),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null) setState(() => _recordBarberFilter = val);
+                          },
                         ),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      if (val != null) setState(() => _recordBarberFilter = val);
-                    },
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          isExpanded: true,
+                          initialValue: _recordPaymentFilter,
+                          decoration: const InputDecoration(
+                            labelText: 'Payment',
+                            prefixIcon: Icon(Icons.payments_outlined, size: 16),
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                            border: OutlineInputBorder(),
+                          ),
+                          items: ['All', 'Cash', 'MoMo', 'Card'].map((m) {
+                            return DropdownMenuItem(
+                              value: m,
+                              child: Text(
+                                m == 'All' ? 'All Methods' : m,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null) setState(() => _recordPaymentFilter = val);
+                          },
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(width: 8),
-
-                // Filter by Haircut / Service
-                Expanded(
-                  flex: 3,
-                  child: DropdownButtonFormField<String>(
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
                     isExpanded: true,
                     initialValue: allServiceOptions.contains(_recordServiceFilter) ? _recordServiceFilter : 'All',
                     decoration: const InputDecoration(
@@ -2008,6 +2076,68 @@ class _BarbershopDashboardState extends ConsumerState<BarbershopDashboard> with 
                       border: OutlineInputBorder(),
                     ),
                     items: allServiceOptions.map((srv) {
+                      return DropdownMenuItem(
+                        value: srv,
+                        child: Text(
+                          srv == 'All' ? 'All Haircuts / Services' : srv,
+                          style: const TextStyle(fontSize: 12),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) setState(() => _recordServiceFilter = val);
+                    },
+                  ),
+                ],
+              )
+            else
+              Row(
+                children: [
+                  // Filter by Barber
+                  Expanded(
+                    flex: 3,
+                    child: DropdownButtonFormField<String>(
+                      isExpanded: true,
+                      initialValue: allBarberNames.contains(_recordBarberFilter) ? _recordBarberFilter : 'All',
+                      decoration: const InputDecoration(
+                        labelText: 'Filter by Barber',
+                        prefixIcon: Icon(Icons.badge_outlined, size: 16),
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: allBarberNames.map((name) {
+                        return DropdownMenuItem(
+                          value: name,
+                          child: Text(
+                            name == 'All' ? 'All Barbers' : name,
+                            style: const TextStyle(fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (val) {
+                        if (val != null) setState(() => _recordBarberFilter = val);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+
+                  // Filter by Haircut / Service
+                  Expanded(
+                    flex: 3,
+                    child: DropdownButtonFormField<String>(
+                      isExpanded: true,
+                      initialValue: allServiceOptions.contains(_recordServiceFilter) ? _recordServiceFilter : 'All',
+                      decoration: const InputDecoration(
+                        labelText: 'Filter by Haircut / Service',
+                        prefixIcon: Icon(Icons.cut_outlined, size: 16),
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: allServiceOptions.map((srv) {
                       return DropdownMenuItem(
                         value: srv,
                         child: Text(
